@@ -67,6 +67,79 @@ function findLastStaffRow_(sheet) {
 }
 
 // ============================================================
+// 汎用シートテーブル取得API（第1.5段階）
+// ============================================================
+
+/**
+ * 汎用シートデータ取得
+ * @param {string} sheetName - シート名
+ * @param {Object} opt - オプション
+ * @param {number} opt.limit - 行数上限（デフォルト300）
+ * @param {boolean} opt.filterThisWeek - 今週フィルタを適用するか
+ * @param {string} opt.dateColName - 日付列名（デフォルト'日付'）
+ */
+function getSheetTable(sheetName, opt) {
+  opt = opt || {};
+  const ss = SpreadsheetApp.openById(SS_ID);
+  const sh = ss.getSheetByName(sheetName);
+  if (!sh) throw new Error('シートが見つかりません: ' + sheetName);
+
+  const values = sh.getDataRange().getValues();
+  if (values.length === 0) return { headers: [], rows: [] };
+
+  const headers = values[0];
+  let rows = values.slice(1);
+
+  // 空行を除去
+  rows = rows.filter(r => r.some(cell => cell !== '' && cell !== null && cell !== undefined));
+
+  // 今週フィルタ（"日付"列がある場合だけ適用）
+  if (opt.filterThisWeek) {
+    const tz = ss.getSpreadsheetTimeZone();
+    const dateColName = opt.dateColName || '日付';
+    const idxDate = headers.indexOf(dateColName);
+
+    if (idxDate >= 0) {
+      const { start, end } = getThisWeekRange_(tz);
+      rows = rows.filter(r => {
+        const d = r[idxDate];
+        return (d instanceof Date) && d >= start && d <= end;
+      });
+    }
+  }
+
+  // 行数制限（末尾から）
+  const limit = opt.limit || 300;
+  if (rows.length > limit) rows = rows.slice(rows.length - limit);
+
+  // Date型をISO文字列に変換（JSON転送用）
+  rows = rows.map(row => row.map(cell => {
+    if (cell instanceof Date) {
+      return { _type: 'date', value: cell.toISOString() };
+    }
+    return cell;
+  }));
+
+  return { headers, rows, rowCount: rows.length };
+}
+
+/**
+ * 今週の範囲を取得（月曜開始）
+ */
+function getThisWeekRange_(tz) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = today.getDay();
+  const diffToMonday = (day + 6) % 7;
+  const start = new Date(today);
+  start.setDate(today.getDate() - diffToMonday);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+// ============================================================
 // GAS実行ラッパー関数（UIから呼ばれる）
 // ============================================================
 
