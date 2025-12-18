@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base target="_top">
+  <style>
+    /* ============================================================
+       基本レイアウト
+       ============================================================ */
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+      background: #f5f5f5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ============================================================
+       ヘッダー
+       ============================================================ */
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .header-status {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    /* ============================================================
+       メインコンテンツ（3段構成の準備）
+       ============================================================ */
+    .main-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 上部：GPTチャット欄（第2段階で有効化） */
+    .chat-area {
+      display: none; /* 第2段階で有効化 */
+      height: 200px;
+      border-bottom: 1px solid #ddd;
+      background: #fff;
+      padding: 10px;
+    }
+
+    /* 中央：週ビュー + ボタン群 */
+    .content-area {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* 下部：タブ（第2段階で有効化） */
+    .tab-area {
+      display: none; /* 第2段階で有効化 */
+      height: 40px;
+      border-top: 1px solid #ddd;
+      background: #fff;
+    }
+
+    /* ============================================================
+       左側：週ビュー表示エリア
+       ============================================================ */
+    .left-panel {
+      flex: 1;
+      padding: 16px;
+      overflow: auto;
+      background: #fff;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding: 8px 12px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .status-text {
+      color: #666;
+    }
+
+    .status-text.loading {
+      color: #667eea;
+    }
+
+    .status-text.error {
+      color: #dc3545;
+    }
+
+    .status-text.success {
+      color: #28a745;
+    }
+
+    .refresh-btn {
+      padding: 4px 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .refresh-btn:hover {
+      background: #5a6fd6;
+    }
+
+    .refresh-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    /* ============================================================
+       週ビューテーブル
+       ============================================================ */
+    .week-table-container {
+      overflow: auto;
+      max-height: calc(100vh - 200px);
+    }
+
+    #weekTable {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 800px;
+      font-size: 13px;
+    }
+
+    #weekTable th {
+      position: sticky;
+      top: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 10px 8px;
+      text-align: center;
+      font-weight: 600;
+      border: 1px solid #5a6fd6;
+      z-index: 10;
+    }
+
+    #weekTable th:first-child {
+      left: 0;
+      z-index: 20;
+      min-width: 160px;
+      text-align: left;
+    }
+
+    #weekTable td {
+      border: 1px solid #e0e0e0;
+      padding: 8px;
+      vertical-align: top;
+      background: #fff;
+    }
+
+    #weekTable td:first-child {
+      position: sticky;
+      left: 0;
+      background: #f8f9fa;
+      font-weight: 600;
+      min-width: 160px;
+      z-index: 5;
+    }
+
+    #weekTable tr:nth-child(even) td {
+      background: #fafafa;
+    }
+
+    #weekTable tr:nth-child(even) td:first-child {
+      background: #f0f0f0;
+    }
+
+    #weekTable tr:hover td {
+      background: #f0f7ff;
+    }
+
+    #weekTable tr:hover td:first-child {
+      background: #e8f4ff;
+    }
+
+    .cell-content {
+      white-space: pre-wrap;
+      line-height: 1.4;
+      font-size: 12px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .cell-empty {
+      color: #ccc;
+      font-style: italic;
+    }
+
+    /* ============================================================
+       右側：ボタンパネル
+       ============================================================ */
+    .right-panel {
+      width: 260px;
+      border-left: 1px solid #e0e0e0;
+      background: #fff;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #667eea;
+    }
+
+    .button-group {
+      margin-bottom: 20px;
+    }
+
+    .button-group-title {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .action-btn {
+      width: 100%;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: left;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .action-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .action-btn.primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .action-btn.primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .action-btn.secondary {
+      background: #f8f9fa;
+      color: #333;
+      border: 1px solid #e0e0e0;
+    }
+
+    .action-btn.secondary:hover:not(:disabled) {
+      background: #e9ecef;
+    }
+
+    .action-btn .icon {
+      font-size: 16px;
+    }
+
+    .action-btn .spinner {
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .action-btn.loading .spinner {
+      display: inline-block;
+    }
+
+    .action-btn.loading .icon {
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ============================================================
+       実行ログ
+       ============================================================ */
+    .log-section {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .log-title {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .log-list {
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 11px;
+    }
+
+    .log-item {
+      padding: 6px 8px;
+      margin-bottom: 4px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      border-left: 3px solid #28a745;
+    }
+
+    .log-item.error {
+      border-left-color: #dc3545;
+    }
+
+    .log-item-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 2px;
+    }
+
+    .log-item-action {
+      font-weight: 600;
+    }
+
+    .log-item-time {
+      color: #888;
+    }
+
+    .log-item-message {
+      color: #666;
+    }
+
+    /* ============================================================
+       設定エラー表示
+       ============================================================ */
+    .config-error {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .config-error h3 {
+      margin: 0 0 8px;
+      color: #856404;
+      font-size: 14px;
+    }
+
+    .config-error ul {
+      margin: 0;
+      padding-left: 20px;
+      color: #856404;
+    }
+
+    /* ============================================================
+       レスポンシブ
+       ============================================================ */
+    @media (max-width: 768px) {
+      .content-area {
+        flex-direction: column;
+      }
+
+      .right-panel {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid #e0e0e0;
+        max-height: 300px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ヘッダー -->
+  <div class="header">
+    <h1>訪問看護 自動スケジューリング</h1>
+    <span class="header-status" id="headerStatus">第1段階：週ビュー表示</span>
+  </div>
+
+  <!-- メインコンテンツ -->
+  <div class="main-container">
+    <!-- 上部：GPTチャット欄（第2段階用の枠） -->
+    <div class="chat-area" id="chatArea">
+      <!-- 第2段階で実装 -->
+    </div>
+
+    <!-- 中央：週ビュー + ボタン群 -->
+    <div class="content-area">
+      <!-- 左側：週ビュー -->
+      <div class="left-panel">
+        <div class="status-bar">
+          <span class="status-text" id="statusText">読み込み中...</span>
+          <button class="refresh-btn" id="refreshBtn" onclick="loadWeekView()">更新</button>
+        </div>
+
+        <div id="configError" class="config-error" style="display: none;">
+          <h3>設定エラー</h3>
+          <ul id="configErrorList"></ul>
+        </div>
+
+        <div class="week-table-container">
+          <table id="weekTable"></table>
+        </div>
+      </div>
+
+      <!-- 右側：ボタンパネル -->
+      <div class="right-panel">
+        <div class="panel-title">GAS実行メニュー</div>
+
+        <!-- スケジュール生成系 -->
+        <div class="button-group">
+          <div class="button-group-title">スケジュール生成</div>
+          <button class="action-btn primary" onclick="runAction('runGenerateWeeklyRequests', this)">
+            <span class="icon">📋</span>
+            <span class="spinner"></span>
+            週間リクエストを生成
+          </button>
+          <button class="action-btn primary" onclick="runAction('runCreateAssignments', this)">
+            <span class="icon">📅</span>
+            <span class="spinner"></span>
+            割当結果を作成
+          </button>
+        </div>
+
+        <!-- 更新系 -->
+        <div class="button-group">
+          <div class="button-group-title">データ更新</div>
+          <button class="action-btn secondary" onclick="runAction('runUpdateWeekView', this)">
+            <span class="icon">🔄</span>
+            <span class="spinner"></span>
+            週ビューを更新
+          </button>
+          <button class="action-btn secondary" onclick="runAction('runCreateRouteSummary', this)">
+            <span class="icon">🗺️</span>
+            <span class="spinner"></span>
+            ルートサマリを作成
+          </button>
+          <button class="action-btn secondary" onclick="runAction('runUpdateLocation', this)">
+            <span class="icon">📍</span>
+            <span class="spinner"></span>
+            位置情報を更新
+          </button>
+        </div>
+
+        <!-- 実行ログ -->
+        <div class="log-section">
+          <div class="log-title">
+            <span>最近の実行ログ</span>
+            <button class="refresh-btn" onclick="loadLogs()" style="padding: 2px 8px; font-size: 11px;">更新</button>
+          </div>
+          <div class="log-list" id="logList">
+            <div style="color: #888; font-style: italic;">ログを読み込み中...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 下部：タブ（第2段階用の枠） -->
+    <div class="tab-area" id="tabArea">
+      <!-- 第2段階で実装：週ビュー／割当結果／ルートサマリ／訪問履歴 -->
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // 初期化
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() {
+      checkConfig();
+      loadWeekView();
+      loadLogs();
+    });
+
+    // ============================================================
+    // 設定チェック
+    // ============================================================
+    function checkConfig() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            showConfigError(result.issues);
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.error('Config check failed:', error);
+        })
+        .checkConfiguration();
+    }
+
+    function showConfigError(issues) {
+      const errorDiv = document.getElementById('configError');
+      const errorList = document.getElementById('configErrorList');
+
+      errorList.innerHTML = issues.map(function(issue) {
+        return '<li>' + escapeHtml(issue) + '</li>';
+      }).join('');
+
+      errorDiv.style.display = 'block';
+    }
+
+    // ============================================================
+    // 週ビュー読み込み
+    // ============================================================
+    function loadWeekView() {
+      setStatus('loading', '週ビューを取得中...');
+      document.getElementById('refreshBtn').disabled = true;
+
+      google.script.run
+        .withSuccessHandler(renderWeekView)
+        .withFailureHandler(function(error) {
+          setStatus('error', 'エラー: ' + error.message);
+          document.getElementById('refreshBtn').disabled = false;
+        })
+        .getWeekView();
+    }
+
+    function renderWeekView(data) {
+      document.getElementById('refreshBtn').disabled = false;
+
+      if (!data.success) {
+        setStatus('error', 'エラー: ' + data.error);
+        return;
+      }
+
+      const table = document.getElementById('weekTable');
+      table.innerHTML = '';
+
+      // ヘッダー行
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+
+      data.header.forEach(function(h, i) {
+        const th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+      });
+
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // データ行
+      const tbody = document.createElement('tbody');
+
+      data.rows.forEach(function(row) {
+        const tr = document.createElement('tr');
+
+        // 職員名
+        const tdStaff = document.createElement('td');
+        tdStaff.textContent = row.staff;
+        tr.appendChild(tdStaff);
+
+        // 各日のセル
+        row.cells.forEach(function(cell) {
+          const td = document.createElement('td');
+          const content = (cell || '').toString().trim();
+
+          if (content) {
+            const div = document.createElement('div');
+            div.className = 'cell-content';
+            div.textContent = content;
+            td.appendChild(div);
+          } else {
+            td.innerHTML = '<span class="cell-empty">-</span>';
+          }
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+
+      setStatus('success', '表示完了（スタッフ ' + data.rows.length + '名）');
+    }
+
+    function setStatus(type, message) {
+      const statusText = document.getElementById('statusText');
+      statusText.className = 'status-text ' + type;
+      statusText.textContent = message;
+    }
+
+    // ============================================================
+    // GASアクション実行
+    // ============================================================
+    function runAction(functionName, button) {
+      // ボタンをローディング状態に
+      button.classList.add('loading');
+      button.disabled = true;
+
+      // 全ボタンを無効化
+      const allButtons = document.querySelectorAll('.action-btn');
+      allButtons.forEach(function(btn) {
+        btn.disabled = true;
+      });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          // ボタンを元に戻す
+          button.classList.remove('loading');
+          allButtons.forEach(function(btn) {
+            btn.disabled = false;
+          });
+
+          if (result.success) {
+            showNotification('success', result.message);
+            // 週ビュー関連の処理なら再読み込み
+            if (functionName.includes('WeekView') || functionName.includes('Assignments')) {
+              loadWeekView();
+            }
+          } else {
+            showNotification('error', result.error);
+          }
+
+          // ログを更新
+          loadLogs();
+        })
+        .withFailureHandler(function(error) {
+          button.classList.remove('loading');
+          allButtons.forEach(function(btn) {
+            btn.disabled = false;
+          });
+          showNotification('error', error.message);
+          loadLogs();
+        })
+        [functionName]();
+    }
+
+    function showNotification(type, message) {
+      // シンプルなアラート（将来的にはトースト通知に変更可能）
+      if (type === 'success') {
+        alert('✓ ' + message);
+      } else {
+        alert('✗ エラー: ' + message);
+      }
+    }
+
+    // ============================================================
+    // 実行ログ
+    // ============================================================
+    function loadLogs() {
+      google.script.run
+        .withSuccessHandler(renderLogs)
+        .withFailureHandler(function(error) {
+          document.getElementById('logList').innerHTML =
+            '<div style="color: #dc3545;">ログの取得に失敗しました</div>';
+        })
+        .getExecutionLogs(5);
+    }
+
+    function renderLogs(data) {
+      const logList = document.getElementById('logList');
+
+      if (!data.success || !data.logs || data.logs.length === 0) {
+        logList.innerHTML = '<div style="color: #888; font-style: italic;">実行ログはありません</div>';
+        return;
+      }
+
+      logList.innerHTML = data.logs.map(function(log) {
+        const time = formatLogTime(log.timestamp);
+        const itemClass = log.success ? '' : ' error';
+
+        return '<div class="log-item' + itemClass + '">' +
+          '<div class="log-item-header">' +
+            '<span class="log-item-action">' + escapeHtml(log.action) + '</span>' +
+            '<span class="log-item-time">' + time + '</span>' +
+          '</div>' +
+          '<div class="log-item-message">' + escapeHtml(log.message) + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function formatLogTime(timestamp) {
+      if (!timestamp) return '-';
+      try {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        return String(timestamp).substring(11, 16);
+      }
+    }
+
+    // ============================================================
+    // ユーティリティ
+    // ============================================================
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+
+</body>
+</html>
