@@ -6,6 +6,7 @@
 // スクリプトプロパティから設定を取得
 const SS_ID = PropertiesService.getScriptProperties().getProperty('SS_ID');
 const ADMIN_SHEET = '管理者';
+const OUTPUT_APP_URL = PropertiesService.getScriptProperties().getProperty('OUTPUT_APP_URL') || '';
 
 // ============================================================
 // Webアプリ エントリポイント
@@ -241,5 +242,15 @@ function checkConfiguration() {
   return {
     success: issues.length === 0,
     issues
+  };
+}
+
+/**
+ * アプリリンク情報を取得
+ */
+function getAppLinks() {
+  return {
+    outputAppUrl: OUTPUT_APP_URL || null,
+    hasOutputApp: !!OUTPUT_APP_URL
   };
 }
