@@ -475,7 +475,7 @@
 
     .tabs-left {
       display: flex;
-      gap: 6px;
+      gap: 8px;
     }
 
     .input-app-link {
@@ -679,19 +679,18 @@
     <!-- 下部：タブバー（第1.5段階） -->
     <div class="bottom-bar">
       <div class="tabs-left">
-        <!-- 入力管理画面へのリンク -->
-        <a id="inputAppLink" class="input-app-link disabled" href="#" target="_blank">
-          <span class="icon">📝</span>
-          入力管理画面へ
-        </a>
-      </div>
-
-      <div class="tabs-right">
         <button class="tab-btn active" onclick="showWeekView(this)">週ビュー</button>
         <button class="tab-btn" onclick="showSheet('週間リクエスト', this)">週間リクエスト</button>
         <button class="tab-btn" onclick="showSheet('割当結果', this)">割当結果</button>
         <button class="tab-btn" onclick="showSheet('割当不可', this)">割当不可</button>
         <button class="tab-btn" onclick="showSheet('ルートサマリ', this)">ルートサマリ</button>
+      </div>
+
+      <div class="tabs-right">
+        <!-- 入力管理画面へのリンク -->
+        <a id="inputAppLink" class="input-app-link disabled" href="#" target="_blank">
+          入力管理画面へ →
+        </a>
       </div>
     </div>
   </div>
@@ -938,7 +937,7 @@
     let currentView = 'weekView'; // 現在表示中のビュー
 
     function setActiveTab(btn) {
-      document.querySelectorAll('.tabs-right .tab-btn').forEach(function(b) {
+      document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) {
         b.classList.remove('active');
       });
       btn.classList.add('active');
