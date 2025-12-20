@@ -1109,14 +1109,13 @@ function 週間リクエストを生成_(ss) {
     const tz = ss.getSpreadsheetTimeZone();
 
     const patientSheet = ss.getSheetByName('患者マスタ');
-    const regularSheet = ss.getSheetByName('定期リクエスト');
     const weeklySheet  = ss.getSheetByName('週間リクエスト');
     const changeSheet  = ss.getSheetByName('個別変更リクエスト');
     const assignSheet  = ss.getSheetByName('割当結果');
     const historySheet = ss.getSheetByName('訪問履歴');
 
-    if (!patientSheet || !regularSheet || !changeSheet || !weeklySheet) {
-      throw new Error('患者マスタ / 定期リクエスト / 個別変更リクエスト / 週間リクエスト のシート名を確認してください。');
+    if (!patientSheet || !changeSheet || !weeklySheet) {
+      throw new Error('患者マスタ / 個別変更リクエスト / 週間リクエスト のシート名を確認してください。');
     }
 
     const pValues = patientSheet.getDataRange().getValues();

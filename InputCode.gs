@@ -227,7 +227,7 @@ function checkConfiguration() {
     }
 
     // 入力シートチェック
-    const inputSheets = ['患者マスタ', 'スタッフマスタ', '定期リクエスト', '個別変更リクエスト'];
+    const inputSheets = ['患者マスタ', 'スタッフマスタ', '個別変更リクエスト'];
     inputSheets.forEach(name => {
       const sheet = ss.getSheetByName(name);
       if (!sheet) {
