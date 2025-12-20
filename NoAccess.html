@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base target="_top">
+  <style>
+    :root {
+      --color-green: #B7D38A;
+      --color-green-dark: #9BC06A;
+      --color-orange: #F6B26B;
+      --color-orange-dark: #E89D4A;
+      --color-text: #333333;
+      --color-text-light: #666666;
+      --color-bg: #FAFAFA;
+      --color-white: #FFFFFF;
+      --color-error: #E88B8B;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Hiragino Sans', 'Meiryo', 'Segoe UI', sans-serif;
+      background: var(--color-bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      color: var(--color-text);
+    }
+
+    .header {
+      background: linear-gradient(135deg, var(--color-green) 0%, var(--color-green-dark) 100%);
+      color: var(--color-white);
+      padding: 14px 24px;
+      text-align: center;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+
+    .error-card {
+      background: var(--color-white);
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 40px;
+      max-width: 500px;
+      text-align: center;
+    }
+
+    .error-icon {
+      font-size: 60px;
+      margin-bottom: 20px;
+    }
+
+    .error-title {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--color-error);
+      margin: 0 0 16px;
+    }
+
+    .error-message {
+      font-size: 14px;
+      color: var(--color-text-light);
+      line-height: 1.8;
+      margin: 0 0 24px;
+    }
+
+    .info-box {
+      background: #FFF5F5;
+      border: 1px solid var(--color-error);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 24px;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    .info-box h4 {
+      margin: 0 0 8px;
+      color: var(--color-error);
+      font-size: 13px;
+    }
+
+    .info-box ul {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--color-text-light);
+    }
+
+    .info-box li {
+      margin-bottom: 4px;
+    }
+
+    .contact-section {
+      background: var(--color-bg);
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 13px;
+      color: var(--color-text-light);
+    }
+
+    .contact-section strong {
+      color: var(--color-text);
+    }
+
+    .footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 11px;
+      color: var(--color-text-light);
+      border-top: 1px solid #E0E0E0;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>訪問看護 自動スケジューリング</h1>
+  </div>
+
+  <div class="container">
+    <div class="error-card">
+      <div class="error-icon">🔒</div>
+      <h2 class="error-title">アクセス権限がありません</h2>
+      <p class="error-message">
+        この画面は管理者専用です。<br>
+        アクセスするには管理者権限が必要です。
+      </p>
+
+      <div class="info-box">
+        <h4>考えられる原因</h4>
+        <ul>
+          <li>ログインしているアカウントに管理者権限がない</li>
+          <li>管理者シートにメールアドレスが登録されていない</li>
+          <li>アカウントが無効化されている（enabled = FALSE）</li>
+        </ul>
+      </div>
+
+      <div class="contact-section">
+        <strong>アクセスが必要な場合</strong><br>
+        システム管理者にお問い合わせください。<br>
+        管理者シートへのメールアドレス登録が必要です。
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    訪問看護 自動スケジューリングシステム - 入力管理画面
+  </div>
+
+</body>
+</html>
