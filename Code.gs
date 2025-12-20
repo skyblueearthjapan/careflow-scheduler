@@ -7,6 +7,7 @@
 const SS_ID = PropertiesService.getScriptProperties().getProperty('SS_ID');
 const WEEKVIEW_SHEET = PropertiesService.getScriptProperties().getProperty('SHEET_WEEKVIEW') || '週ビュー';
 const LOG_SHEET = PropertiesService.getScriptProperties().getProperty('SHEET_LOG') || '実行ログ';
+const INPUT_APP_URL = PropertiesService.getScriptProperties().getProperty('INPUT_APP_URL') || '';
 
 /**
  * Webアプリのエントリポイント
@@ -292,6 +293,16 @@ function checkConfiguration() {
     success: issues.length === 0,
     issues,
     config: { SS_ID: SS_ID ? '設定済み' : '未設定', WEEKVIEW_SHEET, LOG_SHEET }
+  };
+}
+
+/**
+ * アプリリンク情報を取得
+ */
+function getAppLinks() {
+  return {
+    inputAppUrl: INPUT_APP_URL || null,
+    hasInputApp: !!INPUT_APP_URL
   };
 }
 

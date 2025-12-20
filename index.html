@@ -478,15 +478,35 @@
       gap: 6px;
     }
 
-    .tabs-left button {
-      opacity: 0.5;
-      padding: 6px 12px;
+    .input-app-link {
+      padding: 8px 16px;
       font-size: 12px;
-      border: 1px solid var(--color-border);
-      background: var(--color-bg);
-      border-radius: 6px;
-      color: var(--color-text-light);
+      font-weight: 500;
+      border: 1px solid var(--color-orange);
+      background: var(--color-orange-light);
+      border-radius: 8px;
+      color: var(--color-text);
+      cursor: pointer;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .input-app-link:hover {
+      background: var(--color-orange);
+      color: var(--color-white);
+    }
+
+    .input-app-link.disabled {
+      opacity: 0.5;
       cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .input-app-link .icon {
+      font-size: 14px;
     }
 
     .tabs-right {
@@ -659,11 +679,11 @@
     <!-- 下部：タブバー（第1.5段階） -->
     <div class="bottom-bar">
       <div class="tabs-left">
-        <!-- 将来のマスタ系（今は無効） -->
-        <button disabled>患者マスタ</button>
-        <button disabled>スタッフマスタ</button>
-        <button disabled>定期リクエスト</button>
-        <button disabled>個別変更</button>
+        <!-- 入力管理画面へのリンク -->
+        <a id="inputAppLink" class="input-app-link disabled" href="#" target="_blank">
+          <span class="icon">📝</span>
+          入力管理画面へ
+        </a>
       </div>
 
       <div class="tabs-right">
@@ -684,6 +704,7 @@
       checkConfig();
       loadWeekView();
       loadLogs();
+      loadAppLinks();
     });
 
     // ============================================================
@@ -1000,6 +1021,24 @@
       }
 
       return String(cell);
+    }
+
+    // ============================================================
+    // 入力管理画面リンク
+    // ============================================================
+    function loadAppLinks() {
+      google.script.run
+        .withSuccessHandler(function(data) {
+          if (data && data.hasInputApp && data.inputAppUrl) {
+            const link = document.getElementById('inputAppLink');
+            link.href = data.inputAppUrl;
+            link.classList.remove('disabled');
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.log('App links not configured:', error);
+        })
+        .getAppLinks();
     }
   </script>
 
