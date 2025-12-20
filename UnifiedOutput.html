@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base target="_top">
+  <style>
+    /* ============================================================
+       よりよりブランドカラー
+       ============================================================ */
+    :root {
+      --color-green: #B7D38A;
+      --color-green-dark: #9BC06A;
+      --color-green-light: #D4E8B8;
+      --color-orange: #F6B26B;
+      --color-orange-dark: #E89D4A;
+      --color-orange-light: #FACCAA;
+      --color-yellow: #F9E0A6;
+      --color-yellow-light: #FDF5E6;
+      --color-blue: #7DA7D9;
+      --color-blue-dark: #5A8BC4;
+      --color-blue-light: #B8D4F0;
+      --color-text: #333333;
+      --color-text-light: #666666;
+      --color-border: #E0E0E0;
+      --color-bg: #FAFAFA;
+      --color-white: #FFFFFF;
+      --color-success: #B7D38A;
+      --color-error: #E88B8B;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Hiragino Sans', 'Meiryo', 'Segoe UI', sans-serif;
+      background: var(--color-bg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      color: var(--color-text);
+    }
+
+    /* ============================================================
+       ヘッダー
+       ============================================================ */
+    .header {
+      background: linear-gradient(135deg, var(--color-green) 0%, var(--color-green-dark) 100%);
+      color: var(--color-white);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .header-status {
+      font-size: 12px;
+      background: rgba(255,255,255,0.2);
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+
+    /* ============================================================
+       メインコンテンツ
+       ============================================================ */
+    .main-container {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* 左パネル */
+    .left-panel {
+      flex: 1;
+      padding: 16px;
+      overflow: auto;
+      background: var(--color-white);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding: 10px 14px;
+      background: var(--color-yellow-light);
+      border-radius: 8px;
+      border: 1px solid var(--color-yellow);
+      font-size: 13px;
+    }
+
+    .status-text { color: var(--color-text-light); }
+    .status-text.loading { color: var(--color-blue-dark); }
+    .status-text.error { color: var(--color-error); }
+    .status-text.success { color: var(--color-green-dark); }
+
+    .refresh-btn {
+      padding: 6px 14px;
+      background: var(--color-green);
+      color: var(--color-white);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .refresh-btn:hover { background: var(--color-green-dark); }
+    .refresh-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+    /* テーブルコンテナ */
+    #mainContent {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .table-container {
+      flex: 1;
+      overflow: auto;
+      border: 1px solid var(--color-green-light);
+      border-radius: 8px;
+    }
+
+    /* 週ビューテーブル */
+    .week-table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 800px;
+      font-size: 13px;
+    }
+
+    .week-table th {
+      position: sticky;
+      top: 0;
+      background: var(--color-blue);
+      color: var(--color-white);
+      padding: 12px 10px;
+      text-align: center;
+      font-weight: 600;
+      border: 1px solid var(--color-blue-dark);
+      z-index: 10;
+    }
+
+    .week-table th:first-child {
+      left: 0;
+      z-index: 20;
+      min-width: 140px;
+      text-align: left;
+      background: var(--color-green);
+      border-color: var(--color-green-dark);
+    }
+
+    .week-table td {
+      border: 1px solid var(--color-green-light);
+      padding: 8px 10px;
+      vertical-align: top;
+      background: var(--color-white);
+    }
+
+    .week-table td:first-child {
+      position: sticky;
+      left: 0;
+      background: var(--color-yellow-light);
+      font-weight: 600;
+      min-width: 140px;
+      z-index: 5;
+      border-left: 3px solid var(--color-green);
+    }
+
+    .week-table tr:nth-child(even) td { background: #FDFDFB; }
+    .week-table tr:nth-child(even) td:first-child { background: #FDF8E8; }
+    .week-table tr:hover td { background: var(--color-blue-light); }
+    .week-table tr:hover td:first-child { background: var(--color-yellow); }
+
+    .cell-content {
+      white-space: pre-wrap;
+      line-height: 1.5;
+      font-size: 12px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    /* 汎用シートテーブル */
+    .sheet-table {
+      border-collapse: collapse;
+      width: max-content;
+      min-width: 100%;
+      font-size: 12px;
+    }
+
+    .sheet-table th, .sheet-table td {
+      border: 1px solid var(--color-border);
+      padding: 8px 10px;
+      white-space: nowrap;
+    }
+
+    .sheet-table thead th {
+      position: sticky;
+      top: 0;
+      background: var(--color-blue);
+      color: var(--color-white);
+      font-weight: 600;
+      z-index: 1;
+    }
+
+    .sheet-table tbody tr:nth-child(even) { background: #FDFDFB; }
+    .sheet-table tbody tr:hover { background: var(--color-blue-light); }
+
+    /* ============================================================
+       右パネル（GAS実行メニュー）
+       ============================================================ */
+    .right-panel {
+      width: 260px;
+      border-left: 1px solid var(--color-border);
+      background: var(--color-white);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .panel-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 3px solid var(--color-green);
+    }
+
+    .button-group { margin-bottom: 20px; }
+
+    .button-group-title {
+      font-size: 11px;
+      color: var(--color-text-light);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    .action-btn {
+      width: 100%;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: left;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .action-btn.primary {
+      background: var(--color-orange);
+      color: var(--color-white);
+      box-shadow: 0 2px 4px rgba(246, 178, 107, 0.3);
+    }
+    .action-btn.primary:hover:not(:disabled) {
+      background: var(--color-orange-dark);
+      transform: translateY(-1px);
+    }
+
+    .action-btn.secondary {
+      background: var(--color-yellow-light);
+      color: var(--color-text);
+      border: 1px solid var(--color-yellow);
+    }
+    .action-btn.secondary:hover:not(:disabled) {
+      background: var(--color-yellow);
+    }
+
+    .action-btn .spinner {
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .action-btn.loading .spinner { display: inline-block; }
+    .action-btn.loading .icon { display: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 実行ログ */
+    .log-section {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .log-title {
+      font-size: 12px;
+      color: var(--color-text-light);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .log-list {
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 11px;
+    }
+
+    .log-item {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      background: var(--color-yellow-light);
+      border-radius: 6px;
+      border-left: 3px solid var(--color-green);
+    }
+    .log-item.error { border-left-color: var(--color-error); background: #FFF5F5; }
+
+    /* ============================================================
+       下部タブバー
+       ============================================================ */
+    .bottom-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      border-top: 1px solid var(--color-green-light);
+      background: var(--color-white);
+    }
+
+    .tabs-left { display: flex; gap: 8px; }
+
+    .tab-btn {
+      border: 1px solid var(--color-green-light);
+      background: var(--color-white);
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-text);
+      transition: all 0.2s ease;
+    }
+    .tab-btn:hover { background: var(--color-green-light); }
+    .tab-btn.active {
+      background: var(--color-green);
+      border-color: var(--color-green);
+      color: var(--color-white);
+    }
+
+    .tabs-right { display: flex; gap: 8px; }
+
+    .nav-link {
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--color-orange);
+      background: var(--color-orange-light);
+      border-radius: 8px;
+      color: var(--color-text);
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .nav-link:hover {
+      background: var(--color-orange);
+      color: var(--color-white);
+    }
+
+    /* トースト */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: var(--color-green); color: white; }
+    .toast.error { background: var(--color-error); color: white; }
+  </style>
+</head>
+<body>
+
+  <!-- ヘッダー -->
+  <div class="header">
+    <h1>訪問看護 自動スケジューリング</h1>
+    <span class="header-status" id="headerStatus">出力画面</span>
+  </div>
+
+  <!-- メインコンテンツ -->
+  <div class="main-container">
+    <!-- 左：メイン表示 -->
+    <div class="left-panel">
+      <div class="status-bar">
+        <span class="status-text" id="statusText">読み込み中...</span>
+        <button class="refresh-btn" id="refreshBtn" onclick="refreshCurrentView()">更新</button>
+      </div>
+      <div id="mainContent">
+        <div class="table-container">
+          <table class="week-table" id="weekTable"></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右：GAS実行メニュー -->
+    <div class="right-panel">
+      <div class="panel-title">GAS実行メニュー</div>
+
+      <div class="button-group">
+        <div class="button-group-title">スケジュール生成</div>
+        <button class="action-btn primary" onclick="runJob('weeklyRequest', this)">
+          <span class="icon">📋</span><span class="spinner"></span>
+          週間リクエストを生成
+        </button>
+        <button class="action-btn primary" onclick="runJob('assignResult', this)">
+          <span class="icon">📅</span><span class="spinner"></span>
+          割当結果を作成
+        </button>
+      </div>
+
+      <div class="button-group">
+        <div class="button-group-title">データ更新</div>
+        <button class="action-btn secondary" onclick="runJob('updateWeekView', this)">
+          <span class="icon">🔄</span><span class="spinner"></span>
+          週ビューを更新
+        </button>
+        <button class="action-btn secondary" onclick="runJob('routeSummary', this)">
+          <span class="icon">🗺️</span><span class="spinner"></span>
+          ルートサマリを作成
+        </button>
+        <button class="action-btn secondary" onclick="runJob('updateGeo', this)">
+          <span class="icon">📍</span><span class="spinner"></span>
+          位置情報を更新
+        </button>
+      </div>
+
+      <div class="log-section">
+        <div class="log-title">
+          <span>最近の実行ログ</span>
+          <button class="refresh-btn" onclick="loadLogs()" style="padding:4px 10px;font-size:11px;">更新</button>
+        </div>
+        <div class="log-list" id="logList">ログを読み込み中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 下部タブバー -->
+  <div class="bottom-bar">
+    <div class="tabs-left">
+      <button class="tab-btn active" data-tab="weekView" onclick="showTab('weekView', this)">週ビュー</button>
+      <button class="tab-btn" data-tab="weeklyRequest" onclick="showTab('weeklyRequest', this)">週間リクエスト</button>
+      <button class="tab-btn" data-tab="assignResult" onclick="showTab('assignResult', this)">割当結果</button>
+      <button class="tab-btn" data-tab="assignNg" onclick="showTab('assignNg', this)">割当不可</button>
+      <button class="tab-btn" data-tab="routeSummary" onclick="showTab('routeSummary', this)">ルートサマリ</button>
+    </div>
+    <div class="tabs-right">
+      <a class="nav-link" id="inputLink" onclick="goToInput()">入力管理画面へ →</a>
+    </div>
+  </div>
+
+  <!-- トースト -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var baseUrl = '';
+    var currentTab = 'weekView';
+
+    // シート名マッピング
+    var SHEET_MAP = {
+      'weekView': '週ビュー',
+      'weeklyRequest': '週間リクエスト',
+      'assignResult': '割当結果',
+      'assignNg': '割当不可',
+      'routeSummary': 'ルートサマリ'
+    };
+
+    // 初期化
+    document.addEventListener('DOMContentLoaded', function() {
+      google.script.run
+        .withSuccessHandler(function(url) { baseUrl = url; })
+        .getBaseUrl();
+
+      loadWeekView();
+      loadLogs();
+    });
+
+    // ============================================================
+    // タブ切替
+    // ============================================================
+    function showTab(tabKey, btn) {
+      document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) {
+        b.classList.remove('active');
+      });
+      btn.classList.add('active');
+      currentTab = tabKey;
+
+      if (tabKey === 'weekView') {
+        loadWeekView();
+      } else {
+        loadSheetTable(SHEET_MAP[tabKey]);
+      }
+    }
+
+    function refreshCurrentView() {
+      if (currentTab === 'weekView') {
+        loadWeekView();
+      } else {
+        loadSheetTable(SHEET_MAP[currentTab]);
+      }
+    }
+
+    // ============================================================
+    // 週ビュー表示
+    // ============================================================
+    function loadWeekView() {
+      setStatus('loading', '週ビューを読み込み中...');
+      document.getElementById('refreshBtn').disabled = true;
+
+      google.script.run
+        .withSuccessHandler(renderWeekView)
+        .withFailureHandler(function(e) {
+          setStatus('error', 'エラー: ' + e.message);
+          document.getElementById('refreshBtn').disabled = false;
+        })
+        .getWeekViewData();
+    }
+
+    function renderWeekView(data) {
+      document.getElementById('refreshBtn').disabled = false;
+
+      if (!data.headerRow || data.headerRow.length === 0) {
+        setStatus('error', 'データがありません');
+        return;
+      }
+
+      setStatus('success', '週ビュー（' + data.rowCount + '名）');
+
+      var html = '<div class="table-container"><table class="week-table">';
+
+      // ヘッダー
+      html += '<thead><tr>';
+      data.headerRow.forEach(function(h) {
+        html += '<th>' + escapeHtml(h) + '</th>';
+      });
+      html += '</tr></thead>';
+
+      // ボディ
+      html += '<tbody>';
+      data.bodyRows.forEach(function(row) {
+        html += '<tr>';
+        row.forEach(function(cell, idx) {
+          var content = cell ? '<div class="cell-content">' + escapeHtml(cell) + '</div>' : '-';
+          html += '<td>' + content + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      document.getElementById('mainContent').innerHTML = html;
+    }
+
+    // ============================================================
+    // 汎用シート表示
+    // ============================================================
+    function loadSheetTable(sheetName) {
+      setStatus('loading', sheetName + ' を読み込み中...');
+      document.getElementById('refreshBtn').disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(data) { renderSheetTable(data); })
+        .withFailureHandler(function(e) {
+          setStatus('error', 'エラー: ' + e.message);
+          document.getElementById('refreshBtn').disabled = false;
+        })
+        .getSheetTableData(sheetName, 500);
+    }
+
+    function renderSheetTable(data) {
+      document.getElementById('refreshBtn').disabled = false;
+
+      if (data.error) {
+        setStatus('error', data.error);
+        return;
+      }
+
+      if (!data.header || data.header.length === 0) {
+        setStatus('error', 'データがありません');
+        document.getElementById('mainContent').innerHTML = '<div style="padding:20px;text-align:center;color:#888;">データがありません</div>';
+        return;
+      }
+
+      setStatus('success', (data.sheetName || '') + '（' + data.rowCount + '行）');
+
+      var html = '<div class="table-container"><table class="sheet-table">';
+
+      html += '<thead><tr>';
+      data.header.forEach(function(h) {
+        html += '<th>' + escapeHtml(h) + '</th>';
+      });
+      html += '</tr></thead>';
+
+      html += '<tbody>';
+      data.rows.forEach(function(row) {
+        html += '<tr>';
+        row.forEach(function(cell) {
+          html += '<td>' + escapeHtml(cell || '') + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      document.getElementById('mainContent').innerHTML = html;
+    }
+
+    // ============================================================
+    // GAS実行
+    // ============================================================
+    function runJob(jobKey, btn) {
+      btn.classList.add('loading');
+      btn.disabled = true;
+
+      var allBtns = document.querySelectorAll('.action-btn');
+      allBtns.forEach(function(b) { b.disabled = true; });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.classList.remove('loading');
+          allBtns.forEach(function(b) { b.disabled = false; });
+
+          if (result.ok) {
+            showToast(result.message, 'success');
+            if (jobKey === 'updateWeekView' || jobKey === 'assignResult') {
+              loadWeekView();
+            }
+          } else {
+            showToast('エラー: ' + result.message, 'error');
+          }
+          loadLogs();
+        })
+        .withFailureHandler(function(e) {
+          btn.classList.remove('loading');
+          allBtns.forEach(function(b) { b.disabled = false; });
+          showToast('エラー: ' + e.message, 'error');
+          loadLogs();
+        })
+        .runJob(jobKey);
+    }
+
+    // ============================================================
+    // 実行ログ
+    // ============================================================
+    function loadLogs() {
+      google.script.run
+        .withSuccessHandler(renderLogs)
+        .withFailureHandler(function() {
+          document.getElementById('logList').innerHTML = '<div style="color:#E88B8B;">ログ取得失敗</div>';
+        })
+        .getExecutionLogs(5);
+    }
+
+    function renderLogs(data) {
+      if (!data.success || !data.logs || data.logs.length === 0) {
+        document.getElementById('logList').innerHTML = '<div style="color:#888;font-style:italic;">ログなし</div>';
+        return;
+      }
+
+      var html = data.logs.map(function(log) {
+        var time = formatTime(log.timestamp);
+        var cls = log.success ? '' : ' error';
+        return '<div class="log-item' + cls + '">' +
+          '<div style="display:flex;justify-content:space-between;margin-bottom:3px;">' +
+          '<span style="font-weight:600;">' + escapeHtml(log.action) + '</span>' +
+          '<span style="color:#666;">' + time + '</span></div>' +
+          '<div style="color:#666;">' + escapeHtml(log.message || '') + '</div></div>';
+      }).join('');
+
+      document.getElementById('logList').innerHTML = html;
+    }
+
+    // ============================================================
+    // 画面遷移
+    // ============================================================
+    function goToInput() {
+      if (baseUrl) {
+        window.location.href = baseUrl + '?page=input';
+      } else {
+        showToast('URLを取得中...', 'error');
+      }
+    }
+
+    // ============================================================
+    // ユーティリティ
+    // ============================================================
+    function setStatus(type, msg) {
+      var el = document.getElementById('statusText');
+      el.className = 'status-text ' + type;
+      el.textContent = msg;
+    }
+
+    function showToast(msg, type) {
+      var toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.className = 'toast ' + type + ' show';
+      setTimeout(function() { toast.classList.remove('show'); }, 3000);
+    }
+
+    function formatTime(ts) {
+      if (!ts) return '-';
+      try {
+        var d = new Date(ts);
+        return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) { return '-'; }
+    }
+
+    function escapeHtml(s) {
+      var div = document.createElement('div');
+      div.textContent = s || '';
+      return div.innerHTML;
+    }
+  </script>
+
+</body>
+</html>
