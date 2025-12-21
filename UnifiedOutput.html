@@ -701,13 +701,18 @@
     // 画面遷移
     // ============================================================
     function goToInput() {
+      var targetUrl;
       if (baseUrl) {
-        window.location.href = baseUrl + '?page=input';
+        targetUrl = baseUrl + '?page=input';
       } else {
-        // baseUrlがまだ取得できていない場合、現在のURLから構築
         var currentUrl = window.location.href;
-        var newUrl = currentUrl.split('?')[0] + '?page=input';
-        window.location.href = newUrl;
+        targetUrl = currentUrl.split('?')[0] + '?page=input';
+      }
+      // GASはiframe内で動くため、window.topを使用
+      try {
+        window.top.location.href = targetUrl;
+      } catch (e) {
+        window.location.href = targetUrl;
       }
     }
 
