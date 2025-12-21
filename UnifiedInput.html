@@ -699,7 +699,10 @@
       if (baseUrl) {
         window.location.href = baseUrl + '?page=output';
       } else {
-        alert('URLを取得中です。少々お待ちください。');
+        // baseUrlがまだ取得できていない場合、現在のURLから構築
+        var currentUrl = window.location.href;
+        var newUrl = currentUrl.split('?')[0] + '?page=output';
+        window.location.href = newUrl;
       }
     }
 

@@ -171,12 +171,10 @@
     });
 
     function goToOutput() {
-      if (baseUrl) {
-        window.location.href = baseUrl + '?page=output';
-      } else {
-        // フォールバック：同じURLでpageパラメータなし
-        window.location.href = window.location.href.split('?')[0];
-      }
+      // 現在のURLからベースURLを構築してナビゲート
+      var currentUrl = window.location.href;
+      var newUrl = currentUrl.split('?')[0] + '?page=output';
+      window.location.href = newUrl;
     }
   </script>
 

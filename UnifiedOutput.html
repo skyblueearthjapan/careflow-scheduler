@@ -704,7 +704,10 @@
       if (baseUrl) {
         window.location.href = baseUrl + '?page=input';
       } else {
-        showToast('URLを取得中...', 'error');
+        // baseUrlがまだ取得できていない場合、現在のURLから構築
+        var currentUrl = window.location.href;
+        var newUrl = currentUrl.split('?')[0] + '?page=input';
+        window.location.href = newUrl;
       }
     }
 
