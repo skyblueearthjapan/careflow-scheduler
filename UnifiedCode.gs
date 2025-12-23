@@ -503,7 +503,7 @@ function input_copyRows(sheetName, rowNumbers) {
 }
 
 /**
- * 指定行の下に空行を挿入
+ * 指定行の下に空行を挿入（ID自動採番付き）
  * @param {string} sheetName - シート名
  * @param {number} baseRowIndex - 基準行のシート行番号（1-based）。この行の下に挿入
  * @returns {Object} { success, newRowIndex, newRowData }
@@ -525,6 +525,7 @@ function input_insertRowBelow(sheetName, baseRowIndex) {
 
     const numCols = sheet.getLastColumn();
     const lastRow = sheet.getLastRow();
+    const header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
 
     // 挿入位置を決定
     let insertAt;
@@ -542,6 +543,25 @@ function input_insertRowBelow(sheetName, baseRowIndex) {
 
     // 空行データを作成
     const emptyRow = new Array(numCols).fill('');
+
+    // シートに応じてIDを自動採番
+    if (sheetName === SHEETS.PATIENT_MASTER) {
+      const idxPid = header.indexOf('patient_id');
+      if (idxPid >= 0) {
+        emptyRow[idxPid] = generateNextId_(sheet, 'patient_id', 'P', 3);
+      }
+    } else if (sheetName === SHEETS.STAFF_MASTER) {
+      const idxSid = header.indexOf('staff_id');
+      if (idxSid >= 0) {
+        emptyRow[idxSid] = generateNextId_(sheet, 'staff_id', 'S', 3);
+      }
+    } else if (sheetName === SHEETS.CHANGE_REQUEST) {
+      const idxCid = header.indexOf('change_id');
+      if (idxCid >= 0) {
+        emptyRow[idxCid] = generateNextId_(sheet, 'change_id', 'C', 3);
+      }
+    }
+
     sheet.getRange(insertAt, 1, 1, numCols).setValues([emptyRow]);
 
     return {
@@ -705,6 +725,81 @@ function input_getDictionaries() {
 function input_getAreaOptions() {
   // 固定候補（実運用ではマスタ化も可）
   return ['A1', 'A2', 'A3', 'B1', 'B2', 'B3'];
+}
+
+/**
+ * スタッフ選択肢一覧を取得（ID + 名前）
+ * @returns {Array<{id: string, name: string, label: string}>}
+ */
+function input_getStaffOptions() {
+  requireAdmin_();
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.STAFF_MASTER);
+    if (!sheet) return [];
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return [];
+
+    const header = data[0];
+    const idxId = header.indexOf('staff_id');
+    const idxName = header.indexOf('スタッフ名');
+    if (idxId < 0 || idxName < 0) return [];
+
+    const options = [];
+    for (let i = 1; i < data.length; i++) {
+      const id = String(data[i][idxId] || '').trim();
+      const name = String(data[i][idxName] || '').trim();
+      if (id) {
+        options.push({
+          id: id,
+          name: name,
+          label: id + ' ' + name
+        });
+      }
+    }
+    return options;
+  } catch (e) {
+    console.error('input_getStaffOptions error:', e);
+    return [];
+  }
+}
+
+/**
+ * 次のIDを生成（P001, S001, C001形式）
+ * @param {Sheet} sheet - 対象シート
+ * @param {string} idHeaderName - IDのヘッダー名（patient_id, staff_id, change_id）
+ * @param {string} prefix - プレフィックス（P, S, C）
+ * @param {number} padLen - ゼロ埋め桁数（デフォルト3）
+ * @returns {string} 新しいID
+ */
+function generateNextId_(sheet, idHeaderName, prefix, padLen) {
+  padLen = padLen || 3;
+
+  if (!sheet) return prefix + '001';
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return prefix + '001';
+
+  const header = data[0];
+  const idxId = header.indexOf(idHeaderName);
+  if (idxId < 0) return prefix + '001';
+
+  let maxNum = 0;
+  const regex = new RegExp('^' + prefix + '(\\d+)$', 'i');
+
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][idxId] || '').trim();
+    const match = id.match(regex);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  }
+
+  const nextNum = maxNum + 1;
+  return prefix + String(nextNum).padStart(padLen, '0');
 }
 
 // ============================================================

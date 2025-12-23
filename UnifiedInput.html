@@ -152,6 +152,11 @@
     .weekday-editor label { display: flex; align-items: center; gap: 2px; font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
     .weekday-editor label:hover { background: var(--color-blue-light); }
     .weekday-editor input { width: 14px; height: 14px; }
+    /* スタッフ複数選択 */
+    .staff-multi-select { display: flex; flex-direction: column; gap: 2px; padding: 4px; max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #ccc; border-radius: 4px; min-width: 180px; }
+    .staff-multi-select label { display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 4px; white-space: nowrap; }
+    .staff-multi-select label:hover { background: var(--color-blue-light); }
+    .staff-multi-select input { width: 14px; height: 14px; }
     @media (max-width: 900px) { .right-panel { display: none; } }
   </style>
 </head>
@@ -234,10 +239,15 @@
     var editingCell = null;
     var focusedCell = null; // { rowIdx, colIdx }
     var dictionaries = { patients: {}, staff: {} };
+    var staffOptions = []; // { id, name, label }
+    var patientOptions = []; // { id, name, label }
 
     // 列タイプ定義
     var WEEKDAYS_EN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     var WEEKDAYS_JP = ['日','月','火','水','木','金','土'];
+    // 英語→日本語変換マップ
+    var EN_TO_JP_MAP = { 'Sun':'日', 'Mon':'月', 'Tue':'火', 'Wed':'水', 'Thu':'木', 'Fri':'金', 'Sat':'土' };
+    var JP_TO_EN_MAP = { '日':'Sun', '月':'Mon', '火':'Tue', '水':'Wed', '木':'Thu', '金':'Fri', '土':'Sat' };
     var TIME_OPTIONS = generateTimeOptions(8, 20, 10); // 08:00〜20:00, 10分刻み
 
     function generateTimeOptions(startHour, endHour, stepMin) {
@@ -256,15 +266,25 @@
     // ============================================================
     function getEditorType(headerName) {
       var h = (headerName || '').toLowerCase();
-      if (h.includes('patient_id') || h.includes('staff_id') || h.includes('change_id')) return 'id_text';
-      if (h === '患者名' || h === 'スタッフ名') return 'readonly_text';
-      if (h === '性別') return 'sex_select';
-      if (h === 'エリア') return 'area_select';
+      var hOrig = headerName || '';
+      // ID列は対応するシートでのみ自動採番（読み取り専用）
+      if (h === 'patient_id' && currentSheetName === '患者マスタ') return 'auto_id';
+      if (h === 'staff_id' && currentSheetName === 'スタッフマスタ') return 'auto_id';
+      if (h === 'change_id' && currentSheetName === '個別変更リクエスト') return 'auto_id';
+      // 個別変更リクエストのpatient_idは患者選択
+      if (h === 'patient_id' && currentSheetName === '個別変更リクエスト') return 'patient_select';
+      // 患者名・スタッフ名は自由入力
+      if (hOrig === '患者名' || hOrig === 'スタッフ名') return 'text';
+      // 指定スタッフID・NGスタッフIDはスタッフ選択（複数）
+      if (hOrig === '指定スタッフID' || hOrig === 'NGスタッフID') return 'staff_multi_select';
+      if (hOrig === '性別') return 'sex_select';
+      if (hOrig === 'エリア' || hOrig === '得意エリア') return 'area_select';
       if (h.includes('緯度') || h.includes('経度')) return 'geo_readonly';
       if (h.includes('日付')) return 'date_picker';
       if (h.includes('時刻') || h.includes('開始') || h.includes('終了') || h.includes('時間帯（開始）') || h.includes('時間帯（終）') || h.includes('シフト')) return 'time_select';
       if (h.includes('曜日') && (h.includes('複数') || h.includes('希望') || h.includes('勤務'))) return 'weekday_multi';
-      if (h.includes('曜日ng') || h === '曜日ng') return 'weekday_single';
+      // 曜日NGは日本語単一選択
+      if (hOrig === '曜日NG' || h.includes('曜日ng')) return 'weekday_ng_jp';
       if (h.includes('優先度') || h === '曜日優先度') return 'priority_select';
       if (h.includes('時間タイプ')) return 'time_type_select';
       if (h.includes('性別制限')) return 'sex_limit_select';
@@ -281,8 +301,24 @@
     document.addEventListener('DOMContentLoaded', function() {
       google.script.run.withSuccessHandler(function(url) { baseUrl = url; }).getBaseUrl();
       google.script.run.withSuccessHandler(function(result) {
-        if (result.success) dictionaries = result.data;
+        if (result.success) {
+          dictionaries = result.data;
+          // 辞書から患者選択肢を生成
+          patientOptions = [];
+          for (var pid in dictionaries.patients) {
+            patientOptions.push({
+              id: pid,
+              name: dictionaries.patients[pid],
+              label: pid + ' ' + dictionaries.patients[pid]
+            });
+          }
+          patientOptions.sort(function(a, b) { return a.id.localeCompare(b.id); });
+        }
       }).input_getDictionaries();
+      // スタッフ選択肢を読み込み
+      google.script.run.withSuccessHandler(function(options) {
+        staffOptions = options || [];
+      }).input_getStaffOptions();
 
       var lastSheet = localStorage.getItem('unifiedInput_lastSheet');
       if (lastSheet) {
@@ -402,6 +438,24 @@
           return idx >= 0 ? WEEKDAYS_JP[idx] : d;
         }).join(',');
       }
+      if (editorType === 'weekday_ng_jp' && value) {
+        // Sun → 日 (英語→日本語変換)
+        var v = String(value).trim();
+        return EN_TO_JP_MAP[v] || v;
+      }
+      if (editorType === 'staff_multi_select' && value) {
+        // S001,S002 → S001 田中,S002 鈴木
+        return String(value).split(',').map(function(id) {
+          id = id.trim();
+          var staff = staffOptions.find(function(s) { return s.id === id; });
+          return staff ? staff.label : id;
+        }).join(', ');
+      }
+      if (editorType === 'patient_select' && value) {
+        // P001 → P001 山田太郎
+        var patient = patientOptions.find(function(p) { return p.id === String(value).trim(); });
+        return patient ? patient.label : value;
+      }
       if (editorType === 'time_select' && value) {
         // HH:MM:SS → HH:MM
         return String(value).substring(0, 5);
@@ -497,7 +551,7 @@
       var currentValue = dirtyCells.hasOwnProperty(cellKey) ? dirtyCells[cellKey] : tableData.rows[rowIdx][colIdx];
 
       // 読み取り専用
-      if (editorType === 'readonly_text' || editorType === 'geo_readonly') {
+      if (editorType === 'readonly_text' || editorType === 'geo_readonly' || editorType === 'auto_id') {
         showToast('info', 'この列は自動入力されます');
         return;
       }
@@ -533,7 +587,7 @@
         case 'sex_limit_select':
           return createSelect(['', '男性のみ', '女性のみ'], value);
         case 'staff_type_select':
-          return createSelect(['同じ人', 'ローテーション', 'どちらでも'], value);
+          return createSelect(['同じ人希望', 'ローテーション優先', 'どちらでも'], value);
         case 'operation_select':
           return createSelect(['キャンセル', '時間変更', '追加'], value);
         case 'skill_select':
@@ -546,8 +600,14 @@
           return '<input type="date" value="' + dateVal + '" />';
         case 'weekday_multi':
           return createWeekdayEditor(value);
-        case 'weekday_single':
-          return createSelect(['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], value);
+        case 'weekday_ng_jp':
+          // 曜日NG: 日本語表示・保存（既存の英語値は変換して表示）
+          var jpValue = EN_TO_JP_MAP[String(value).trim()] || value || '';
+          return createSelect(['', '月', '火', '水', '木', '金', '土', '日'], jpValue);
+        case 'staff_multi_select':
+          return createStaffMultiSelect(value);
+        case 'patient_select':
+          return createPatientSelect(value);
         case 'number':
           return '<input type="number" value="' + (value || '') + '" />';
         default:
@@ -573,6 +633,33 @@
         html += '<label><input type="checkbox" value="' + en + '"' + checked + '>' + WEEKDAYS_JP[i] + '</label>';
       });
       html += '</div>';
+      return html;
+    }
+
+    function createStaffMultiSelect(value) {
+      var selected = (value || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+      var html = '<div class="staff-multi-select">';
+      if (staffOptions.length === 0) {
+        html += '<span style="color:#999;">スタッフデータなし</span>';
+      } else {
+        staffOptions.forEach(function(staff) {
+          var checked = selected.indexOf(staff.id) >= 0 ? ' checked' : '';
+          html += '<label><input type="checkbox" value="' + escapeHtml(staff.id) + '"' + checked + '>' + escapeHtml(staff.label) + '</label>';
+        });
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function createPatientSelect(value) {
+      var currentVal = String(value || '').trim();
+      var html = '<select>';
+      html += '<option value="">-- 選択 --</option>';
+      patientOptions.forEach(function(patient) {
+        var selected = (patient.id === currentVal) ? ' selected' : '';
+        html += '<option value="' + escapeHtml(patient.id) + '"' + selected + '>' + escapeHtml(patient.label) + '</option>';
+      });
+      html += '</select>';
       return html;
     }
 
@@ -629,10 +716,18 @@
       if (input) return input.value;
 
       // 曜日チェックボックス
-      var checkboxes = td.querySelectorAll('.weekday-editor input[type="checkbox"]');
-      if (checkboxes.length > 0) {
+      var weekdayCheckboxes = td.querySelectorAll('.weekday-editor input[type="checkbox"]');
+      if (weekdayCheckboxes.length > 0) {
         var vals = [];
-        checkboxes.forEach(function(cb) { if (cb.checked) vals.push(cb.value); });
+        weekdayCheckboxes.forEach(function(cb) { if (cb.checked) vals.push(cb.value); });
+        return vals.join(',');
+      }
+
+      // スタッフ複数選択チェックボックス
+      var staffCheckboxes = td.querySelectorAll('.staff-multi-select input[type="checkbox"]');
+      if (staffCheckboxes.length > 0) {
+        var vals = [];
+        staffCheckboxes.forEach(function(cb) { if (cb.checked) vals.push(cb.value); });
         return vals.join(',');
       }
       return '';
