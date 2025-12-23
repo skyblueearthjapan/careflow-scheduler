@@ -157,6 +157,9 @@
     .staff-multi-select label { display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 4px; white-space: nowrap; }
     .staff-multi-select label:hover { background: var(--color-blue-light); }
     .staff-multi-select input { width: 14px; height: 14px; }
+    /* 未使用列のスタイル */
+    .unused-column { background: #f5f5f0 !important; color: #888; }
+    .unused-mark { color: #e67e22; font-weight: bold; font-size: 10px; vertical-align: super; cursor: help; }
     @media (max-width: 900px) { .right-panel { display: none; } }
   </style>
 </head>
@@ -259,6 +262,23 @@
         }
       }
       return opts;
+    }
+
+    // ============================================================
+    // 未使用列の判定（スケジューリングに影響しない列）
+    // ============================================================
+    function isUnusedColumn(headerName) {
+      var h = headerName || '';
+      if (h === 'エリア' && currentSheetName === '患者マスタ') {
+        return '現在スケジューリング計算に未使用';
+      }
+      if (h === '得意エリア' && currentSheetName === 'スタッフマスタ') {
+        return '現在スケジューリング計算に未使用';
+      }
+      if (h === 'スキル' && currentSheetName === 'スタッフマスタ') {
+        return '現在スケジューリング計算に未使用';
+      }
+      return null;
     }
 
     // ============================================================
@@ -403,6 +423,10 @@
       updateInfo(data.sheetName || currentSheetName, data.rowCount, data.header.length);
 
       var headerHtml = '<tr><th class="row-handle"></th><th>#</th>' + data.header.map(function(h) {
+        var unusedNote = isUnusedColumn(h);
+        if (unusedNote) {
+          return '<th class="unused-column" title="' + escapeHtml(unusedNote) + '">' + escapeHtml(String(h)) + ' <span class="unused-mark">*</span></th>';
+        }
         return '<th>' + escapeHtml(String(h)) + '</th>';
       }).join('') + '</tr>';
 
@@ -556,6 +580,12 @@
         return;
       }
 
+      // 未使用列の注記表示
+      var unusedNote = isUnusedColumn(headerName);
+      if (unusedNote) {
+        showToast('info', '※ ' + headerName + ': ' + unusedNote);
+      }
+
       td.classList.add('editing');
       editingCell = { rowIdx: rowIdx, colIdx: colIdx, headerName: headerName };
 
@@ -579,7 +609,7 @@
         case 'sex_select':
           return createSelect(['男性', '女性'], value);
         case 'area_select':
-          return createSelect(['A1', 'A2', 'A3', 'B1', 'B2', 'B3'], value);
+          return createSelect(['', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3'], value);
         case 'priority_select':
           return createSelect(['高', '中', '低'], value);
         case 'time_type_select':
@@ -591,7 +621,7 @@
         case 'operation_select':
           return createSelect(['キャンセル', '時間変更', '追加'], value);
         case 'skill_select':
-          return createSelect(['ベテラン', '中堅', '新人'], value);
+          return createSelect(['', 'ベテラン', '中堅', '新人'], value);
         case 'time_select':
           var timeVal = value ? String(value).substring(0, 5) : '';
           return createSelect(TIME_OPTIONS, timeVal);
