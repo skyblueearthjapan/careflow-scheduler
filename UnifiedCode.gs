@@ -337,7 +337,7 @@ function input_getTable(sheetName) {
 function input_appendRows(sheetName, rows) {
   requireAdmin_();
 
-  const lock = LockService.getDocumentLock();
+  const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
     throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
   }
@@ -384,7 +384,7 @@ function input_deleteRows(sheetName, rowNumbers) {
     throw new Error('削除する行を指定してください');
   }
 
-  const lock = LockService.getDocumentLock();
+  const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
     throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
   }
@@ -429,7 +429,7 @@ function input_updateCells(sheetName, updates) {
     return { success: true, message: '更新するデータがありません', updatedCount: 0 };
   }
 
-  const lock = LockService.getDocumentLock();
+  const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
     throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
   }
@@ -466,7 +466,7 @@ function input_copyRows(sheetName, rowNumbers) {
     throw new Error('コピーする行を指定してください');
   }
 
-  const lock = LockService.getDocumentLock();
+  const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
     throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
   }
