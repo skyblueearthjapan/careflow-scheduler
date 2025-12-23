@@ -271,13 +271,39 @@
       padding: 8px 12px;
       background: var(--color-white);
       white-space: nowrap;
+      cursor: pointer;
     }
 
     .data-table tbody tr:nth-child(even) td { background: #FDFDFB; }
     .data-table tbody tr:hover td { background: var(--color-blue-light); }
 
+    /* 選択行のスタイル */
+    .data-table tbody tr.selected td {
+      background: var(--color-orange-light) !important;
+      border-color: var(--color-orange);
+    }
+
+    /* 編集中セルのスタイル */
+    .data-table td.dirty {
+      background: var(--color-yellow) !important;
+      font-weight: 600;
+    }
+
+    .data-table td.editing {
+      padding: 0;
+    }
+
+    .data-table td.editing input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 2px solid var(--color-blue);
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+
     /* ============================================================
-       右パネル（将来用）
+       右パネル（操作メニュー）
        ============================================================ */
     .right-panel {
       width: 240px;
@@ -300,9 +326,21 @@
       justify-content: space-between;
     }
 
+    .dirty-badge {
+      font-size: 10px;
+      background: var(--color-orange);
+      color: var(--color-white);
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: none;
+    }
+
+    .dirty-badge.show {
+      display: inline-block;
+    }
+
     .operation-group {
       margin-bottom: 20px;
-      opacity: 0.6;
     }
 
     .operation-group-title {
@@ -322,17 +360,45 @@
       margin-bottom: 8px;
       border: 1px solid var(--color-border);
       border-radius: 6px;
-      background: var(--color-bg);
-      color: var(--color-text-light);
+      background: var(--color-white);
+      color: var(--color-text);
       font-size: 12px;
       text-align: left;
-      cursor: not-allowed;
+      cursor: pointer;
       display: flex;
       align-items: center;
       gap: 8px;
+      transition: all 0.15s ease;
+    }
+
+    .operation-btn:hover:not(:disabled) {
+      background: var(--color-green-light);
+      border-color: var(--color-green);
+    }
+
+    .operation-btn:disabled {
+      background: var(--color-bg);
+      color: var(--color-disabled);
+      cursor: not-allowed;
     }
 
     .operation-btn .icon { font-size: 14px; }
+
+    .operation-btn.primary {
+      background: var(--color-green);
+      color: var(--color-white);
+      border-color: var(--color-green-dark);
+    }
+
+    .operation-btn.primary:hover:not(:disabled) {
+      background: var(--color-green-dark);
+    }
+
+    .operation-btn.danger:hover:not(:disabled) {
+      background: var(--color-error);
+      color: var(--color-white);
+      border-color: var(--color-error);
+    }
 
     .info-section {
       margin-top: auto;
@@ -349,6 +415,48 @@
     }
 
     .info-item .label { color: var(--color-text); }
+
+    /* ============================================================
+       トースト通知
+       ============================================================ */
+    .toast-container {
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      animation: slideIn 0.3s ease;
+      max-width: 320px;
+    }
+
+    .toast.success {
+      background: var(--color-green);
+      color: var(--color-white);
+    }
+
+    .toast.error {
+      background: var(--color-error);
+      color: var(--color-white);
+    }
+
+    .toast.info {
+      background: var(--color-blue);
+      color: var(--color-white);
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
 
     /* ============================================================
        下部タブバー
@@ -489,53 +597,44 @@
       </div>
     </div>
 
-    <!-- 右：操作パネル（将来用） -->
+    <!-- 右：操作パネル -->
     <div class="right-panel">
       <div class="panel-title">
         操作メニュー
-        <span class="coming-soon-badge">準備中</span>
+        <span class="dirty-badge" id="dirtyBadge">未保存</span>
       </div>
 
       <div class="operation-group">
-        <div class="operation-group-title">
-          行操作
-          <span class="coming-soon-badge">Coming Soon</span>
-        </div>
-        <button class="operation-btn" disabled>
+        <div class="operation-group-title">行操作</div>
+        <button class="operation-btn" id="btnAddRow" onclick="onAddRow()">
           <span class="icon">+</span>
           新規行を追加
         </button>
-        <button class="operation-btn" disabled>
+        <button class="operation-btn danger" id="btnDeleteRows" onclick="onDeleteSelected()" disabled>
           <span class="icon">-</span>
           選択行を削除
         </button>
-        <button class="operation-btn" disabled>
+        <button class="operation-btn" id="btnCopyRows" onclick="onCopySelected()" disabled>
           <span class="icon">C</span>
           行をコピー
         </button>
       </div>
 
       <div class="operation-group">
-        <div class="operation-group-title">
-          編集操作
-          <span class="coming-soon-badge">Coming Soon</span>
-        </div>
-        <button class="operation-btn" disabled>
+        <div class="operation-group-title">編集操作</div>
+        <button class="operation-btn" id="btnEditCell" onclick="onEditSelectedCell()" disabled>
           <span class="icon">E</span>
           セルを編集
         </button>
-        <button class="operation-btn" disabled>
+        <button class="operation-btn" id="btnUndo" onclick="onDiscardChanges()" disabled>
           <span class="icon">U</span>
           変更を元に戻す
         </button>
       </div>
 
       <div class="operation-group">
-        <div class="operation-group-title">
-          保存
-          <span class="coming-soon-badge">Coming Soon</span>
-        </div>
-        <button class="operation-btn" disabled>
+        <div class="operation-group-title">保存</div>
+        <button class="operation-btn primary" id="btnSave" onclick="onSaveChanges()" disabled>
           <span class="icon">S</span>
           変更を保存
         </button>
@@ -554,6 +653,10 @@
           <span class="label">列数:</span>
           <span id="infoColCount">-</span>
         </div>
+        <div class="info-item">
+          <span class="label">選択中:</span>
+          <span id="infoSelectedCount">0 行</span>
+        </div>
       </div>
     </div>
   </div>
@@ -570,11 +673,25 @@
     </div>
   </div>
 
+  <!-- トースト通知コンテナ -->
+  <div class="toast-container" id="toastContainer"></div>
+
   <script>
+    // ============================================================
+    // 状態管理
+    // ============================================================
     var baseUrl = '';
     var currentSheetName = '患者マスタ';
+    var tableData = { header: [], rows: [] };       // 現在表示中のデータ
+    var originalData = { header: [], rows: [] };    // 読み込み時の元データ
+    var selectedRows = [];                           // 選択中の行インデックス（0-based、データ行）
+    var dirtyCells = {};                             // 未保存の変更 { 'rowIdx-colIdx': newValue }
+    var isDirty = false;                             // 未保存の変更があるか
+    var editingCell = null;                          // 現在編集中のセル { rowIdx, colIdx }
 
+    // ============================================================
     // 初期化
+    // ============================================================
     document.addEventListener('DOMContentLoaded', function() {
       // ベースURL取得
       google.script.run
@@ -597,6 +714,14 @@
 
       checkConfig();
       loadSheet(currentSheetName);
+    });
+
+    // ページ離脱時の警告
+    window.addEventListener('beforeunload', function(e) {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
     });
 
     // ============================================================
@@ -628,6 +753,13 @@
     // シート表示
     // ============================================================
     function showSheet(sheetName, btn) {
+      // 未保存の変更がある場合は確認
+      if (isDirty) {
+        if (!confirm('未保存の変更があります。破棄してよろしいですか？')) {
+          return;
+        }
+      }
+
       document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) {
         b.classList.remove('active');
       });
@@ -636,7 +768,17 @@
       currentSheetName = sheetName;
       localStorage.setItem('unifiedInput_lastSheet', sheetName);
 
+      // 状態リセット
+      resetState();
       loadSheet(sheetName);
+    }
+
+    function resetState() {
+      selectedRows = [];
+      dirtyCells = {};
+      isDirty = false;
+      editingCell = null;
+      updateButtonStates();
     }
 
     function loadSheet(sheetName) {
@@ -645,17 +787,26 @@
 
       google.script.run
         .withSuccessHandler(function(data) {
+          tableData = data;
+          originalData = JSON.parse(JSON.stringify(data)); // ディープコピー
           renderTable(data);
           document.getElementById('refreshBtn').disabled = false;
         })
         .withFailureHandler(function(e) {
           setStatus('error', 'エラー: ' + e.message);
           document.getElementById('refreshBtn').disabled = false;
+          showToast('error', e.message);
         })
         .getSheetTableData(sheetName, 1000);
     }
 
     function reloadCurrentSheet() {
+      if (isDirty) {
+        if (!confirm('未保存の変更があります。破棄して再読み込みしますか？')) {
+          return;
+        }
+      }
+      resetState();
       loadSheet(currentSheetName);
     }
 
@@ -676,26 +827,361 @@
       setStatus('success', (data.sheetName || currentSheetName) + '（' + data.rowCount + '行）');
       updateInfo(data.sheetName || currentSheetName, data.rowCount, data.header.length);
 
-      var headerHtml = '<tr>' + data.header.map(function(h) {
+      var headerHtml = '<tr><th>#</th>' + data.header.map(function(h) {
         return '<th>' + escapeHtml(String(h)) + '</th>';
       }).join('') + '</tr>';
 
-      var rowsHtml = data.rows.map(function(row) {
-        var cells = row.map(function(cell) {
-          return '<td>' + escapeHtml(formatCell(cell)) + '</td>';
+      var rowsHtml = data.rows.map(function(row, rowIdx) {
+        var isSelected = selectedRows.indexOf(rowIdx) >= 0;
+        var rowClass = isSelected ? 'selected' : '';
+        var cells = '<td>' + (rowIdx + 1) + '</td>' + row.map(function(cell, colIdx) {
+          var cellKey = rowIdx + '-' + colIdx;
+          var isDirtyCell = dirtyCells.hasOwnProperty(cellKey);
+          var cellClass = isDirtyCell ? 'dirty' : '';
+          var cellValue = isDirtyCell ? dirtyCells[cellKey] : cell;
+          return '<td class="' + cellClass + '" data-row="' + rowIdx + '" data-col="' + colIdx + '">' +
+                 escapeHtml(formatCell(cellValue)) + '</td>';
         }).join('');
-        return '<tr>' + cells + '</tr>';
+        return '<tr class="' + rowClass + '" data-row="' + rowIdx + '">' + cells + '</tr>';
       }).join('');
 
       document.getElementById('dataTable').innerHTML =
         '<thead>' + headerHtml + '</thead>' +
         '<tbody>' + rowsHtml + '</tbody>';
+
+      // 行クリックイベントを設定
+      attachRowClickHandlers();
+    }
+
+    function attachRowClickHandlers() {
+      var tbody = document.querySelector('#dataTable tbody');
+      if (!tbody) return;
+
+      tbody.addEventListener('click', function(e) {
+        var td = e.target.closest('td');
+        var tr = e.target.closest('tr');
+        if (!tr || !td) return;
+
+        var rowIdx = parseInt(tr.getAttribute('data-row'));
+        if (isNaN(rowIdx)) return;
+
+        // ダブルクリックでセル編集
+        if (e.detail === 2 && td.hasAttribute('data-col')) {
+          var colIdx = parseInt(td.getAttribute('data-col'));
+          startCellEdit(rowIdx, colIdx);
+          return;
+        }
+
+        // 行選択
+        if (e.ctrlKey || e.metaKey) {
+          // Ctrl/Cmd: トグル選択
+          var idx = selectedRows.indexOf(rowIdx);
+          if (idx >= 0) {
+            selectedRows.splice(idx, 1);
+          } else {
+            selectedRows.push(rowIdx);
+          }
+        } else if (e.shiftKey && selectedRows.length > 0) {
+          // Shift: 範囲選択
+          var lastSelected = selectedRows[selectedRows.length - 1];
+          var start = Math.min(lastSelected, rowIdx);
+          var end = Math.max(lastSelected, rowIdx);
+          for (var i = start; i <= end; i++) {
+            if (selectedRows.indexOf(i) < 0) {
+              selectedRows.push(i);
+            }
+          }
+        } else {
+          // 単純クリック: 単一選択
+          selectedRows = [rowIdx];
+        }
+
+        updateRowSelection();
+        updateButtonStates();
+      });
+    }
+
+    function updateRowSelection() {
+      var rows = document.querySelectorAll('#dataTable tbody tr');
+      rows.forEach(function(tr) {
+        var rowIdx = parseInt(tr.getAttribute('data-row'));
+        if (selectedRows.indexOf(rowIdx) >= 0) {
+          tr.classList.add('selected');
+        } else {
+          tr.classList.remove('selected');
+        }
+      });
+      document.getElementById('infoSelectedCount').textContent = selectedRows.length + ' 行';
+    }
+
+    // ============================================================
+    // セル編集
+    // ============================================================
+    function startCellEdit(rowIdx, colIdx) {
+      // 既存の編集を終了
+      if (editingCell) {
+        finishCellEdit();
+      }
+
+      var td = document.querySelector('td[data-row="' + rowIdx + '"][data-col="' + colIdx + '"]');
+      if (!td) return;
+
+      var cellKey = rowIdx + '-' + colIdx;
+      var currentValue = dirtyCells.hasOwnProperty(cellKey) ? dirtyCells[cellKey] : tableData.rows[rowIdx][colIdx];
+
+      td.classList.add('editing');
+      td.innerHTML = '<input type="text" value="' + escapeHtml(formatCell(currentValue)) + '" />';
+
+      var input = td.querySelector('input');
+      input.focus();
+      input.select();
+
+      editingCell = { rowIdx: rowIdx, colIdx: colIdx };
+
+      input.addEventListener('blur', finishCellEdit);
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          finishCellEdit();
+        } else if (e.key === 'Escape') {
+          cancelCellEdit();
+        }
+      });
+    }
+
+    function finishCellEdit() {
+      if (!editingCell) return;
+
+      var td = document.querySelector('td[data-row="' + editingCell.rowIdx + '"][data-col="' + editingCell.colIdx + '"]');
+      var input = td ? td.querySelector('input') : null;
+
+      if (input) {
+        var newValue = input.value;
+        var cellKey = editingCell.rowIdx + '-' + editingCell.colIdx;
+        var originalValue = originalData.rows[editingCell.rowIdx][editingCell.colIdx];
+
+        // 元の値と同じなら変更を削除、違えば変更を記録
+        if (String(newValue) === String(originalValue)) {
+          delete dirtyCells[cellKey];
+        } else {
+          dirtyCells[cellKey] = newValue;
+        }
+
+        // UIを更新
+        td.classList.remove('editing');
+        if (dirtyCells.hasOwnProperty(cellKey)) {
+          td.classList.add('dirty');
+          td.textContent = formatCell(newValue);
+        } else {
+          td.classList.remove('dirty');
+          td.textContent = formatCell(originalValue);
+        }
+
+        // 内部データも更新
+        tableData.rows[editingCell.rowIdx][editingCell.colIdx] = newValue;
+      }
+
+      editingCell = null;
+      updateDirtyState();
+    }
+
+    function cancelCellEdit() {
+      if (!editingCell) return;
+
+      var td = document.querySelector('td[data-row="' + editingCell.rowIdx + '"][data-col="' + editingCell.colIdx + '"]');
+      var cellKey = editingCell.rowIdx + '-' + editingCell.colIdx;
+      var value = dirtyCells.hasOwnProperty(cellKey) ? dirtyCells[cellKey] : tableData.rows[editingCell.rowIdx][editingCell.colIdx];
+
+      td.classList.remove('editing');
+      td.textContent = formatCell(value);
+      editingCell = null;
+    }
+
+    function updateDirtyState() {
+      isDirty = Object.keys(dirtyCells).length > 0;
+      document.getElementById('dirtyBadge').classList.toggle('show', isDirty);
+      updateButtonStates();
+    }
+
+    // ============================================================
+    // 操作ボタン
+    // ============================================================
+    function updateButtonStates() {
+      var hasSelection = selectedRows.length > 0;
+      var hasDirty = Object.keys(dirtyCells).length > 0;
+
+      document.getElementById('btnDeleteRows').disabled = !hasSelection;
+      document.getElementById('btnCopyRows').disabled = !hasSelection;
+      document.getElementById('btnEditCell').disabled = selectedRows.length !== 1;
+      document.getElementById('btnUndo').disabled = !hasDirty;
+      document.getElementById('btnSave').disabled = !hasDirty;
+    }
+
+    // 新規行を追加
+    function onAddRow() {
+      setStatus('loading', '行を追加中...');
+
+      var emptyRow = [new Array(tableData.header.length).fill('')];
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showToast('success', result.message);
+            reloadCurrentSheet();
+          } else {
+            showToast('error', result.message || '追加に失敗しました');
+            setStatus('error', result.message);
+          }
+        })
+        .withFailureHandler(function(e) {
+          showToast('error', e.message);
+          setStatus('error', 'エラー: ' + e.message);
+        })
+        .input_appendRows(currentSheetName, emptyRow);
+    }
+
+    // 選択行を削除
+    function onDeleteSelected() {
+      if (selectedRows.length === 0) {
+        showToast('info', '行を選択してください');
+        return;
+      }
+
+      if (!confirm(selectedRows.length + ' 行を削除しますか？この操作は元に戻せません。')) {
+        return;
+      }
+
+      setStatus('loading', '削除中...');
+
+      // UI上のrowIdxをシートの行番号に変換（+2: ヘッダー行 + 0-based→1-based）
+      var sheetRowNumbers = selectedRows.map(function(rowIdx) {
+        return rowIdx + 2;
+      });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showToast('success', result.message);
+            resetState();
+            loadSheet(currentSheetName);
+          } else {
+            showToast('error', result.message || '削除に失敗しました');
+            setStatus('error', result.message);
+          }
+        })
+        .withFailureHandler(function(e) {
+          showToast('error', e.message);
+          setStatus('error', 'エラー: ' + e.message);
+        })
+        .input_deleteRows(currentSheetName, sheetRowNumbers);
+    }
+
+    // 行をコピー
+    function onCopySelected() {
+      if (selectedRows.length === 0) {
+        showToast('info', '行を選択してください');
+        return;
+      }
+
+      setStatus('loading', 'コピー中...');
+
+      var sheetRowNumbers = selectedRows.map(function(rowIdx) {
+        return rowIdx + 2;
+      });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showToast('success', result.message);
+            resetState();
+            loadSheet(currentSheetName);
+          } else {
+            showToast('error', result.message || 'コピーに失敗しました');
+            setStatus('error', result.message);
+          }
+        })
+        .withFailureHandler(function(e) {
+          showToast('error', e.message);
+          setStatus('error', 'エラー: ' + e.message);
+        })
+        .input_copyRows(currentSheetName, sheetRowNumbers);
+    }
+
+    // セルを編集（選択行の最初のセルを編集）
+    function onEditSelectedCell() {
+      if (selectedRows.length !== 1) {
+        showToast('info', '1行だけ選択してください');
+        return;
+      }
+      startCellEdit(selectedRows[0], 0);
+    }
+
+    // 変更を元に戻す
+    function onDiscardChanges() {
+      if (!confirm('未保存の変更をすべて破棄しますか？')) {
+        return;
+      }
+
+      dirtyCells = {};
+      tableData = JSON.parse(JSON.stringify(originalData));
+      renderTable(tableData);
+      updateDirtyState();
+      showToast('info', '変更を破棄しました');
+    }
+
+    // 変更を保存
+    function onSaveChanges() {
+      var dirtyKeys = Object.keys(dirtyCells);
+      if (dirtyKeys.length === 0) {
+        showToast('info', '保存する変更がありません');
+        return;
+      }
+
+      setStatus('loading', '保存中...');
+
+      // 更新データを構築（row/colは1-based）
+      var updates = dirtyKeys.map(function(key) {
+        var parts = key.split('-');
+        var rowIdx = parseInt(parts[0]);
+        var colIdx = parseInt(parts[1]);
+        return {
+          row: rowIdx + 2,  // シートの行番号（ヘッダー+1, 0-based→1-based）
+          col: colIdx + 1,  // シートの列番号（0-based→1-based）
+          value: dirtyCells[key]
+        };
+      });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showToast('success', result.message);
+            // 保存成功後、現在の状態を「元の状態」として更新
+            originalData = JSON.parse(JSON.stringify(tableData));
+            dirtyCells = {};
+            updateDirtyState();
+            renderTable(tableData);
+            setStatus('success', '保存しました');
+          } else {
+            showToast('error', result.message || '保存に失敗しました');
+            setStatus('error', result.message);
+          }
+        })
+        .withFailureHandler(function(e) {
+          showToast('error', e.message);
+          setStatus('error', 'エラー: ' + e.message);
+        })
+        .input_updateCells(currentSheetName, updates);
     }
 
     // ============================================================
     // 画面遷移（同一タブ）
     // ============================================================
     function goToOutput() {
+      if (isDirty) {
+        if (!confirm('未保存の変更があります。破棄して移動しますか？')) {
+          return;
+        }
+      }
+
       var targetUrl;
       if (baseUrl) {
         targetUrl = baseUrl + '?page=output';
@@ -709,6 +1195,24 @@
       } catch (e) {
         window.location.href = targetUrl;
       }
+    }
+
+    // ============================================================
+    // トースト通知
+    // ============================================================
+    function showToast(type, message) {
+      var container = document.getElementById('toastContainer');
+      var toast = document.createElement('div');
+      toast.className = 'toast ' + type;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(function() {
+        toast.style.opacity = '0';
+        setTimeout(function() {
+          container.removeChild(toast);
+        }, 300);
+      }, 3000);
     }
 
     // ============================================================

@@ -298,6 +298,211 @@ function findLastDataRow_(sheet) {
 }
 
 // ============================================================
+// 入力画面用API（CRUD操作）
+// ============================================================
+
+/**
+ * 管理者チェック（APIで使用）
+ * @returns {boolean}
+ */
+function requireAdmin_() {
+  const email = Session.getActiveUser().getEmail();
+  if (!email || !isAdmin_(email)) {
+    throw new Error('権限がありません。管理者としてログインしてください。');
+  }
+  return true;
+}
+
+/**
+ * 入力対象シート一覧を取得
+ */
+function input_listTables() {
+  return INPUT_TABS;
+}
+
+/**
+ * 入力用テーブルデータを取得（管理者チェック付き）
+ * @param {string} sheetName - シート名
+ */
+function input_getTable(sheetName) {
+  requireAdmin_();
+  return getSheetTableData(sheetName, 1000);
+}
+
+/**
+ * 行を末尾に追加
+ * @param {string} sheetName - シート名
+ * @param {Array<Array>} rows - 追加する行データ [[col1, col2, ...], ...]
+ */
+function input_appendRows(sheetName, rows) {
+  requireAdmin_();
+
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error('シートが見つかりません: ' + sheetName);
+    }
+
+    const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const numCols = headerRow.length;
+
+    // 行データの列数を調整
+    const normalizedRows = rows.map(row => {
+      const newRow = new Array(numCols).fill('');
+      for (let i = 0; i < Math.min(row.length, numCols); i++) {
+        newRow[i] = row[i];
+      }
+      return newRow;
+    });
+
+    if (normalizedRows.length > 0) {
+      const lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow + 1, 1, normalizedRows.length, numCols).setValues(normalizedRows);
+    }
+
+    return { success: true, message: normalizedRows.length + ' 行を追加しました', addedCount: normalizedRows.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 行を削除（複数対応、行番号は1-based）
+ * @param {string} sheetName - シート名
+ * @param {Array<number>} rowNumbers - 削除する行番号（シートの行番号、1-based）
+ */
+function input_deleteRows(sheetName, rowNumbers) {
+  requireAdmin_();
+
+  if (!rowNumbers || rowNumbers.length === 0) {
+    throw new Error('削除する行を指定してください');
+  }
+
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error('シートが見つかりません: ' + sheetName);
+    }
+
+    // 降順にソート（行ずれ防止）
+    const sortedRows = rowNumbers.slice().sort((a, b) => b - a);
+
+    // ヘッダー行（1行目）は削除不可
+    const validRows = sortedRows.filter(r => r > 1);
+
+    let deletedCount = 0;
+    validRows.forEach(rowNum => {
+      if (rowNum <= sheet.getLastRow()) {
+        sheet.deleteRow(rowNum);
+        deletedCount++;
+      }
+    });
+
+    return { success: true, message: deletedCount + ' 行を削除しました', deletedCount: deletedCount };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * セルを更新
+ * @param {string} sheetName - シート名
+ * @param {Array<Object>} updates - 更新データ [{row: number, col: number, value: any}, ...]
+ *                                   row/col は 1-based（シートの実座標）
+ */
+function input_updateCells(sheetName, updates) {
+  requireAdmin_();
+
+  if (!updates || updates.length === 0) {
+    return { success: true, message: '更新するデータがありません', updatedCount: 0 };
+  }
+
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error('シートが見つかりません: ' + sheetName);
+    }
+
+    // ヘッダー行（1行目）は更新不可
+    const validUpdates = updates.filter(u => u.row > 1);
+
+    validUpdates.forEach(u => {
+      sheet.getRange(u.row, u.col).setValue(u.value);
+    });
+
+    return { success: true, message: validUpdates.length + ' セルを更新しました', updatedCount: validUpdates.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 行をコピー（選択行を複製して末尾に追加）
+ * @param {string} sheetName - シート名
+ * @param {Array<number>} rowNumbers - コピー元の行番号（シートの行番号、1-based）
+ */
+function input_copyRows(sheetName, rowNumbers) {
+  requireAdmin_();
+
+  if (!rowNumbers || rowNumbers.length === 0) {
+    throw new Error('コピーする行を指定してください');
+  }
+
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error('シートが見つかりません: ' + sheetName);
+    }
+
+    const lastCol = sheet.getLastColumn();
+    const rowsToCopy = [];
+
+    // 昇順にソート
+    const sortedRows = rowNumbers.slice().sort((a, b) => a - b);
+
+    sortedRows.forEach(rowNum => {
+      if (rowNum > 1 && rowNum <= sheet.getLastRow()) {
+        const rowData = sheet.getRange(rowNum, 1, 1, lastCol).getValues()[0];
+        rowsToCopy.push(rowData);
+      }
+    });
+
+    if (rowsToCopy.length > 0) {
+      const lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow + 1, 1, rowsToCopy.length, lastCol).setValues(rowsToCopy);
+    }
+
+    return { success: true, message: rowsToCopy.length + ' 行をコピーしました', copiedCount: rowsToCopy.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ============================================================
 // 実行API（GAS実行ボタン用）
 // ============================================================
 
