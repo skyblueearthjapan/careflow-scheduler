@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base target="_top">
   <style>
-    /* ============================================================
-       よりよりブランドカラー
-       ============================================================ */
     :root {
       --color-green: #B7D38A;
       --color-green-dark: #9BC06A;
@@ -29,12 +26,9 @@
       --color-error: #E88B8B;
       --color-disabled: #CCCCCC;
     }
-
     * { box-sizing: border-box; }
-
     body {
-      margin: 0;
-      padding: 0;
+      margin: 0; padding: 0;
       font-family: 'Hiragino Sans', 'Meiryo', 'Segoe UI', sans-serif;
       background: var(--color-bg);
       height: 100vh;
@@ -42,10 +36,6 @@
       flex-direction: column;
       color: var(--color-text);
     }
-
-    /* ============================================================
-       ヘッダー
-       ============================================================ */
     .header {
       background: linear-gradient(135deg, var(--color-green) 0%, var(--color-green-dark) 100%);
       color: var(--color-white);
@@ -55,494 +45,117 @@
       justify-content: space-between;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
-
-    .header h1 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-    }
-
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .header-badge {
-      font-size: 11px;
-      background: var(--color-orange);
-      padding: 4px 10px;
-      border-radius: 12px;
-      font-weight: 500;
-    }
-
-    .header-status {
-      font-size: 12px;
-      background: rgba(255,255,255,0.2);
-      padding: 4px 12px;
-      border-radius: 12px;
-    }
-
-    /* ============================================================
-       AIチャット・一括入力エリア（将来用プレースホルダー）
-       ============================================================ */
-    .ai-input-area {
-      background: var(--color-white);
-      border-bottom: 1px solid var(--color-border);
-      padding: 12px 20px;
-    }
-
-    .ai-input-container {
-      display: flex;
-      gap: 12px;
-      align-items: stretch;
-      opacity: 0.6;
-    }
-
-    .ai-chat-box {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 12px;
-      background: var(--color-yellow-light);
-      border: 1px dashed var(--color-yellow);
-      border-radius: 8px;
-    }
-
-    .ai-chat-box .placeholder-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--color-orange-dark);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .ai-chat-box textarea {
-      flex: 1;
-      min-height: 50px;
-      border: 1px solid var(--color-border);
-      border-radius: 6px;
-      padding: 8px;
-      resize: none;
-      font-size: 13px;
-    }
-
-    .ai-chat-box textarea:disabled {
-      background: var(--color-bg);
-      cursor: not-allowed;
-    }
-
-    .bulk-input-box {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 12px;
-      background: var(--color-blue-light);
-      border: 1px dashed var(--color-blue);
-      border-radius: 8px;
-      opacity: 0.7;
-    }
-
-    .bulk-input-box .placeholder-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--color-blue-dark);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .bulk-input-box textarea {
-      flex: 1;
-      min-height: 50px;
-      border: 1px solid var(--color-border);
-      border-radius: 6px;
-      padding: 8px;
-      resize: none;
-      font-size: 13px;
-    }
-
-    .coming-soon-badge {
-      font-size: 10px;
-      background: var(--color-disabled);
-      color: var(--color-white);
-      padding: 2px 6px;
-      border-radius: 4px;
-      margin-left: auto;
-    }
-
-    .disabled-btn {
-      padding: 6px 14px;
-      background: var(--color-disabled);
-      color: var(--color-white);
-      border: none;
-      border-radius: 6px;
-      font-size: 12px;
-      cursor: not-allowed;
-    }
-
-    /* ============================================================
-       メインコンテンツ
-       ============================================================ */
-    .main-container {
-      flex: 1;
-      display: flex;
-      overflow: hidden;
-    }
-
-    .left-panel {
-      flex: 1;
-      padding: 16px;
-      overflow: auto;
-      background: var(--color-white);
-      display: flex;
-      flex-direction: column;
-    }
-
+    .header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-badge { font-size: 11px; background: var(--color-orange); padding: 4px 10px; border-radius: 12px; font-weight: 500; }
+    .header-status { font-size: 12px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 12px; }
+    .main-container { flex: 1; display: flex; overflow: hidden; }
+    .left-panel { flex: 1; padding: 16px; overflow: auto; background: var(--color-white); display: flex; flex-direction: column; }
     .status-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-      padding: 10px 14px;
-      background: var(--color-yellow-light);
-      border-radius: 8px;
-      border: 1px solid var(--color-yellow);
-      font-size: 13px;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px; padding: 10px 14px;
+      background: var(--color-yellow-light); border-radius: 8px; border: 1px solid var(--color-yellow); font-size: 13px;
     }
-
     .status-text { color: var(--color-text-light); }
     .status-text.loading { color: var(--color-blue-dark); }
     .status-text.error { color: var(--color-error); }
     .status-text.success { color: var(--color-green-dark); }
-
     .refresh-btn {
-      padding: 6px 14px;
-      background: var(--color-green);
-      color: var(--color-white);
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
+      padding: 6px 14px; background: var(--color-green); color: var(--color-white);
+      border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500;
     }
     .refresh-btn:hover { background: var(--color-green-dark); }
     .refresh-btn:disabled { background: var(--color-disabled); cursor: not-allowed; }
-
-    #mainContent {
-      flex: 1;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .table-container {
-      flex: 1;
-      overflow: auto;
-      border: 1px solid var(--color-green-light);
-      border-radius: 8px;
-    }
-
-    .data-table {
-      border-collapse: collapse;
-      width: max-content;
-      min-width: 100%;
-      font-size: 12px;
-    }
-
+    #mainContent { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .table-container { flex: 1; overflow: auto; border: 1px solid var(--color-green-light); border-radius: 8px; }
+    .data-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 12px; }
     .data-table th {
-      position: sticky;
-      top: 0;
-      background: var(--color-blue);
-      color: var(--color-white);
-      padding: 10px 12px;
-      text-align: left;
-      font-weight: 600;
-      border: 1px solid var(--color-blue-dark);
-      white-space: nowrap;
-      z-index: 10;
+      position: sticky; top: 0; background: var(--color-blue); color: var(--color-white);
+      padding: 10px 12px; text-align: left; font-weight: 600;
+      border: 1px solid var(--color-blue-dark); white-space: nowrap; z-index: 10;
     }
-
     .data-table td {
-      border: 1px solid var(--color-border);
-      padding: 8px 12px;
-      background: var(--color-white);
-      white-space: nowrap;
-      cursor: pointer;
+      border: 1px solid var(--color-border); padding: 8px 12px;
+      background: var(--color-white); white-space: nowrap; cursor: pointer;
     }
-
     .data-table tbody tr:nth-child(even) td { background: #FDFDFB; }
     .data-table tbody tr:hover td { background: var(--color-blue-light); }
-
-    /* 選択行のスタイル */
-    .data-table tbody tr.selected td {
-      background: var(--color-orange-light) !important;
-      border-color: var(--color-orange);
+    /* Row Handle */
+    .row-handle {
+      width: 30px; text-align: center; cursor: grab; color: var(--color-disabled);
+      user-select: none; font-size: 14px;
     }
-
-    /* 編集中セルのスタイル */
-    .data-table td.dirty {
-      background: var(--color-yellow) !important;
-      font-weight: 600;
+    .row-handle:hover { color: var(--color-text); }
+    /* 行選択状態 */
+    .data-table tbody tr.row-selected td { background: var(--color-orange-light) !important; border-color: var(--color-orange); }
+    .data-table tbody tr.row-selected .row-handle { color: var(--color-orange-dark); font-weight: bold; }
+    /* セル選択状態 */
+    .data-table td.cell-focused { outline: 2px solid var(--color-blue); outline-offset: -2px; }
+    /* 編集中セル */
+    .data-table td.dirty { background: var(--color-yellow) !important; }
+    .data-table td.is-new { background: var(--color-green-light) !important; }
+    .data-table td.editing { padding: 0; }
+    .data-table td.editing input,
+    .data-table td.editing select {
+      width: 100%; padding: 8px 10px; border: 2px solid var(--color-blue);
+      font-size: 12px; font-family: inherit; outline: none;
     }
-
-    .data-table td.editing {
-      padding: 0;
-    }
-
-    .data-table td.editing input {
-      width: 100%;
-      padding: 8px 12px;
-      border: 2px solid var(--color-blue);
-      font-size: 12px;
-      font-family: inherit;
-      outline: none;
-    }
-
-    /* ============================================================
-       右パネル（操作メニュー）
-       ============================================================ */
+    /* 右パネル */
     .right-panel {
-      width: 240px;
-      border-left: 1px solid var(--color-border);
-      background: var(--color-white);
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
+      width: 240px; border-left: 1px solid var(--color-border);
+      background: var(--color-white); padding: 16px;
+      display: flex; flex-direction: column; overflow-y: auto;
     }
-
     .panel-title {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      padding-bottom: 10px;
+      font-size: 14px; font-weight: 600; margin-bottom: 16px; padding-bottom: 10px;
       border-bottom: 3px solid var(--color-green);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      display: flex; align-items: center; justify-content: space-between;
     }
-
-    .dirty-badge {
-      font-size: 10px;
-      background: var(--color-orange);
-      color: var(--color-white);
-      padding: 2px 6px;
-      border-radius: 4px;
-      display: none;
-    }
-
-    .dirty-badge.show {
-      display: inline-block;
-    }
-
-    .operation-group {
-      margin-bottom: 20px;
-    }
-
-    .operation-group-title {
-      font-size: 11px;
-      color: var(--color-text-light);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
+    .dirty-badge { font-size: 10px; background: var(--color-orange); color: var(--color-white); padding: 2px 6px; border-radius: 4px; display: none; }
+    .dirty-badge.show { display: inline-block; }
+    .operation-group { margin-bottom: 20px; }
+    .operation-group-title { font-size: 11px; color: var(--color-text-light); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
     .operation-btn {
-      width: 100%;
-      padding: 10px 14px;
-      margin-bottom: 8px;
-      border: 1px solid var(--color-border);
-      border-radius: 6px;
-      background: var(--color-white);
-      color: var(--color-text);
-      font-size: 12px;
-      text-align: left;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.15s ease;
+      width: 100%; padding: 10px 14px; margin-bottom: 8px;
+      border: 1px solid var(--color-border); border-radius: 6px;
+      background: var(--color-white); color: var(--color-text);
+      font-size: 12px; text-align: left; cursor: pointer;
+      display: flex; align-items: center; gap: 8px; transition: all 0.15s ease;
     }
-
-    .operation-btn:hover:not(:disabled) {
-      background: var(--color-green-light);
-      border-color: var(--color-green);
-    }
-
-    .operation-btn:disabled {
-      background: var(--color-bg);
-      color: var(--color-disabled);
-      cursor: not-allowed;
-    }
-
+    .operation-btn:hover:not(:disabled) { background: var(--color-green-light); border-color: var(--color-green); }
+    .operation-btn:disabled { background: var(--color-bg); color: var(--color-disabled); cursor: not-allowed; }
     .operation-btn .icon { font-size: 14px; }
-
-    .operation-btn.primary {
-      background: var(--color-green);
-      color: var(--color-white);
-      border-color: var(--color-green-dark);
-    }
-
-    .operation-btn.primary:hover:not(:disabled) {
-      background: var(--color-green-dark);
-    }
-
-    .operation-btn.danger:hover:not(:disabled) {
-      background: var(--color-error);
-      color: var(--color-white);
-      border-color: var(--color-error);
-    }
-
-    .info-section {
-      margin-top: auto;
-      padding-top: 16px;
-      border-top: 1px solid var(--color-border);
-    }
-
-    .info-item {
-      font-size: 11px;
-      color: var(--color-text-light);
-      margin-bottom: 6px;
-      display: flex;
-      justify-content: space-between;
-    }
-
+    .operation-btn.primary { background: var(--color-green); color: var(--color-white); border-color: var(--color-green-dark); }
+    .operation-btn.primary:hover:not(:disabled) { background: var(--color-green-dark); }
+    .operation-btn.danger:hover:not(:disabled) { background: var(--color-error); color: var(--color-white); border-color: var(--color-error); }
+    .info-section { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--color-border); }
+    .info-item { font-size: 11px; color: var(--color-text-light); margin-bottom: 6px; display: flex; justify-content: space-between; }
     .info-item .label { color: var(--color-text); }
-
-    /* ============================================================
-       トースト通知
-       ============================================================ */
-    .toast-container {
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .toast {
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 13px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      animation: slideIn 0.3s ease;
-      max-width: 320px;
-    }
-
-    .toast.success {
-      background: var(--color-green);
-      color: var(--color-white);
-    }
-
-    .toast.error {
-      background: var(--color-error);
-      color: var(--color-white);
-    }
-
-    .toast.info {
-      background: var(--color-blue);
-      color: var(--color-white);
-    }
-
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-
-    /* ============================================================
-       下部タブバー
-       ============================================================ */
-    .bottom-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 16px;
-      border-top: 1px solid var(--color-green-light);
-      background: var(--color-white);
-    }
-
+    /* トースト */
+    .toast-container { position: fixed; top: 80px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 20px; border-radius: 8px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; max-width: 320px; }
+    .toast.success { background: var(--color-green); color: var(--color-white); }
+    .toast.error { background: var(--color-error); color: var(--color-white); }
+    .toast.info { background: var(--color-blue); color: var(--color-white); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    /* 下部タブバー */
+    .bottom-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--color-green-light); background: var(--color-white); }
     .tabs-left { display: flex; gap: 8px; }
-
-    .tab-btn {
-      border: 1px solid var(--color-green-light);
-      background: var(--color-white);
-      padding: 8px 14px;
-      border-radius: 999px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--color-text);
-      transition: all 0.2s ease;
-    }
+    .tab-btn { border: 1px solid var(--color-green-light); background: var(--color-white); padding: 8px 14px; border-radius: 999px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--color-text); transition: all 0.2s ease; }
     .tab-btn:hover { background: var(--color-green-light); }
-    .tab-btn.active {
-      background: var(--color-green);
-      border-color: var(--color-green);
-      color: var(--color-white);
-    }
-
+    .tab-btn.active { background: var(--color-green); border-color: var(--color-green); color: var(--color-white); }
     .tabs-right { display: flex; gap: 8px; }
-
-    .nav-link {
-      padding: 8px 16px;
-      font-size: 12px;
-      font-weight: 500;
-      border: 1px solid var(--color-green);
-      background: var(--color-green-light);
-      border-radius: 8px;
-      color: var(--color-text);
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.2s ease;
-    }
-    .nav-link:hover {
-      background: var(--color-green);
-      color: var(--color-white);
-    }
-
-    /* 設定エラー */
-    .config-error {
-      background: var(--color-orange-light);
-      border: 1px solid var(--color-orange);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-    .config-error h3 {
-      margin: 0 0 8px;
-      color: var(--color-orange-dark);
-      font-size: 14px;
-    }
-    .config-error ul {
-      margin: 0;
-      padding-left: 20px;
-      font-size: 13px;
-    }
-
-    /* レスポンシブ */
-    @media (max-width: 900px) {
-      .ai-input-container { flex-direction: column; }
-      .right-panel { display: none; }
-    }
-
-    @media (max-width: 600px) {
-      .tabs-left { flex-wrap: wrap; }
-      .tab-btn { padding: 6px 10px; font-size: 11px; }
-    }
+    .nav-link { padding: 8px 16px; font-size: 12px; font-weight: 500; border: 1px solid var(--color-green); background: var(--color-green-light); border-radius: 8px; color: var(--color-text); cursor: pointer; text-decoration: none; transition: all 0.2s ease; }
+    .nav-link:hover { background: var(--color-green); color: var(--color-white); }
+    /* 曜日チェックボックス */
+    .weekday-editor { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px; }
+    .weekday-editor label { display: flex; align-items: center; gap: 2px; font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+    .weekday-editor label:hover { background: var(--color-blue-light); }
+    .weekday-editor input { width: 14px; height: 14px; }
+    @media (max-width: 900px) { .right-panel { display: none; } }
   </style>
 </head>
 <body>
-
-  <!-- ヘッダー -->
   <div class="header">
     <div class="header-left">
       <h1>訪問看護 自動スケジューリング</h1>
@@ -551,42 +164,12 @@
     <span class="header-status">入力管理画面</span>
   </div>
 
-  <!-- AIチャット・一括入力エリア（将来用） -->
-  <div class="ai-input-area">
-    <div class="ai-input-container">
-      <div class="ai-chat-box">
-        <div class="placeholder-title">
-          <span>AIチャット入力</span>
-          <span class="coming-soon-badge">Coming Soon</span>
-        </div>
-        <textarea disabled placeholder="AIアシスタントに質問や指示を入力...（準備中）"></textarea>
-        <button class="disabled-btn" disabled>送信</button>
-      </div>
-      <div class="bulk-input-box">
-        <div class="placeholder-title">
-          <span>一括コピペ入力</span>
-          <span class="coming-soon-badge">Coming Soon</span>
-        </div>
-        <textarea disabled placeholder="Excelからコピーしたデータを貼り付け...（準備中）"></textarea>
-        <button class="disabled-btn" disabled>解析・プレビュー</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- メインコンテンツ -->
   <div class="main-container">
-    <!-- 左：テーブル表示 -->
     <div class="left-panel">
       <div class="status-bar">
         <span class="status-text" id="statusText">読み込み中...</span>
         <button class="refresh-btn" id="refreshBtn" onclick="reloadCurrentSheet()">更新</button>
       </div>
-
-      <div id="configError" class="config-error" style="display: none;">
-        <h3>設定エラー</h3>
-        <ul id="configErrorList"></ul>
-      </div>
-
       <div id="mainContent">
         <div class="table-container">
           <table class="data-table" id="dataTable">
@@ -597,83 +180,44 @@
       </div>
     </div>
 
-    <!-- 右：操作パネル -->
     <div class="right-panel">
-      <div class="panel-title">
-        操作メニュー
-        <span class="dirty-badge" id="dirtyBadge">未保存</span>
-      </div>
-
+      <div class="panel-title">操作メニュー<span class="dirty-badge" id="dirtyBadge">未保存</span></div>
       <div class="operation-group">
         <div class="operation-group-title">行操作</div>
-        <button class="operation-btn" id="btnAddRow" onclick="onAddRow()">
-          <span class="icon">+</span>
-          新規行を追加
-        </button>
-        <button class="operation-btn danger" id="btnDeleteRows" onclick="onDeleteSelected()" disabled>
-          <span class="icon">-</span>
-          選択行を削除
-        </button>
-        <button class="operation-btn" id="btnCopyRows" onclick="onCopySelected()" disabled>
-          <span class="icon">C</span>
-          行をコピー
-        </button>
+        <button class="operation-btn" id="btnAddRow" onclick="onAddRow()"><span class="icon">+</span>新規行を追加（選択行の下）</button>
+        <button class="operation-btn danger" id="btnDeleteRows" onclick="onDeleteSelected()" disabled><span class="icon">-</span>選択行を削除</button>
+        <button class="operation-btn" id="btnCopyRows" onclick="onCopySelected()" disabled><span class="icon">C</span>行をコピー</button>
       </div>
-
       <div class="operation-group">
         <div class="operation-group-title">編集操作</div>
-        <button class="operation-btn" id="btnEditCell" onclick="onEditSelectedCell()" disabled>
-          <span class="icon">E</span>
-          セルを編集
-        </button>
-        <button class="operation-btn" id="btnUndo" onclick="onDiscardChanges()" disabled>
-          <span class="icon">U</span>
-          変更を元に戻す
-        </button>
+        <button class="operation-btn" id="btnUndo" onclick="onDiscardChanges()" disabled><span class="icon">U</span>変更を元に戻す</button>
       </div>
-
       <div class="operation-group">
         <div class="operation-group-title">保存</div>
-        <button class="operation-btn primary" id="btnSave" onclick="onSaveChanges()" disabled>
-          <span class="icon">S</span>
-          変更を保存
-        </button>
+        <button class="operation-btn primary" id="btnSave" onclick="onSaveChanges()" disabled><span class="icon">S</span>変更を保存</button>
       </div>
-
+      <div class="operation-group" id="geoGroup" style="display:none;">
+        <div class="operation-group-title">位置情報</div>
+        <button class="operation-btn" id="btnUpdateGeo" onclick="onUpdateGeo()" disabled><span class="icon">📍</span>位置情報を更新</button>
+      </div>
       <div class="info-section">
-        <div class="info-item">
-          <span class="label">表示中:</span>
-          <span id="infoSheetName">-</span>
-        </div>
-        <div class="info-item">
-          <span class="label">行数:</span>
-          <span id="infoRowCount">-</span>
-        </div>
-        <div class="info-item">
-          <span class="label">列数:</span>
-          <span id="infoColCount">-</span>
-        </div>
-        <div class="info-item">
-          <span class="label">選択中:</span>
-          <span id="infoSelectedCount">0 行</span>
-        </div>
+        <div class="info-item"><span class="label">表示中:</span><span id="infoSheetName">-</span></div>
+        <div class="info-item"><span class="label">行数:</span><span id="infoRowCount">-</span></div>
+        <div class="info-item"><span class="label">列数:</span><span id="infoColCount">-</span></div>
+        <div class="info-item"><span class="label">選択中:</span><span id="infoSelectedCount">0 行</span></div>
       </div>
     </div>
   </div>
 
-  <!-- 下部タブバー -->
   <div class="bottom-bar">
     <div class="tabs-left">
       <button class="tab-btn active" data-sheet="患者マスタ" onclick="showSheet('患者マスタ', this)">患者マスタ</button>
       <button class="tab-btn" data-sheet="スタッフマスタ" onclick="showSheet('スタッフマスタ', this)">スタッフマスタ</button>
       <button class="tab-btn" data-sheet="個別変更リクエスト" onclick="showSheet('個別変更リクエスト', this)">個別変更リクエスト</button>
     </div>
-    <div class="tabs-right">
-      <a class="nav-link" onclick="goToOutput()">出力画面へ →</a>
-    </div>
+    <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
   </div>
 
-  <!-- トースト通知コンテナ -->
   <div class="toast-container" id="toastContainer"></div>
 
   <script>
@@ -682,113 +226,115 @@
     // ============================================================
     var baseUrl = '';
     var currentSheetName = '患者マスタ';
-    var tableData = { header: [], rows: [] };       // 現在表示中のデータ
-    var originalData = { header: [], rows: [] };    // 読み込み時の元データ
-    var selectedRows = [];                           // 選択中の行インデックス（0-based、データ行）
-    var dirtyCells = {};                             // 未保存の変更 { 'rowIdx-colIdx': newValue }
-    var isDirty = false;                             // 未保存の変更があるか
-    var editingCell = null;                          // 現在編集中のセル { rowIdx, colIdx }
+    var tableData = { header: [], rows: [] };
+    var originalData = { header: [], rows: [] };
+    var rowMeta = []; // { sheetRowIndex, isSelected, isDirty, isNew }
+    var dirtyCells = {}; // 'rowIdx-colIdx': newValue
+    var isDirty = false;
+    var editingCell = null;
+    var focusedCell = null; // { rowIdx, colIdx }
+    var dictionaries = { patients: {}, staff: {} };
+
+    // 列タイプ定義
+    var WEEKDAYS_EN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var WEEKDAYS_JP = ['日','月','火','水','木','金','土'];
+    var TIME_OPTIONS = generateTimeOptions(8, 20, 10); // 08:00〜20:00, 10分刻み
+
+    function generateTimeOptions(startHour, endHour, stepMin) {
+      var opts = [];
+      for (var h = startHour; h <= endHour; h++) {
+        for (var m = 0; m < 60; m += stepMin) {
+          if (h === endHour && m > 0) break;
+          opts.push(String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'));
+        }
+      }
+      return opts;
+    }
+
+    // ============================================================
+    // 列タイプ判定
+    // ============================================================
+    function getEditorType(headerName) {
+      var h = (headerName || '').toLowerCase();
+      if (h.includes('patient_id') || h.includes('staff_id') || h.includes('change_id')) return 'id_text';
+      if (h === '患者名' || h === 'スタッフ名') return 'readonly_text';
+      if (h === '性別') return 'sex_select';
+      if (h === 'エリア') return 'area_select';
+      if (h.includes('緯度') || h.includes('経度')) return 'geo_readonly';
+      if (h.includes('日付')) return 'date_picker';
+      if (h.includes('時刻') || h.includes('開始') || h.includes('終了') || h.includes('時間帯（開始）') || h.includes('時間帯（終）') || h.includes('シフト')) return 'time_select';
+      if (h.includes('曜日') && (h.includes('複数') || h.includes('希望') || h.includes('勤務'))) return 'weekday_multi';
+      if (h.includes('曜日ng') || h === '曜日ng') return 'weekday_single';
+      if (h.includes('優先度') || h === '曜日優先度') return 'priority_select';
+      if (h.includes('時間タイプ')) return 'time_type_select';
+      if (h.includes('性別制限')) return 'sex_limit_select';
+      if (h.includes('必要スタッフ') || h.includes('訪問回数') || h.includes('最大訪問') || h.includes('サービス時間')) return 'number';
+      if (h.includes('指定タイプ') || h.includes('継続希望')) return 'staff_type_select';
+      if (h.includes('操作')) return 'operation_select';
+      if (h.includes('スキル')) return 'skill_select';
+      return 'text';
+    }
 
     // ============================================================
     // 初期化
     // ============================================================
     document.addEventListener('DOMContentLoaded', function() {
-      // ベースURL取得
-      google.script.run
-        .withSuccessHandler(function(url) { baseUrl = url; })
-        .getBaseUrl();
+      google.script.run.withSuccessHandler(function(url) { baseUrl = url; }).getBaseUrl();
+      google.script.run.withSuccessHandler(function(result) {
+        if (result.success) dictionaries = result.data;
+      }).input_getDictionaries();
 
-      // 最後に開いたタブを復元
       var lastSheet = localStorage.getItem('unifiedInput_lastSheet');
       if (lastSheet) {
         currentSheetName = lastSheet;
-        var tabs = document.querySelectorAll('.tabs-left .tab-btn');
-        tabs.forEach(function(tab) {
-          if (tab.getAttribute('data-sheet') === currentSheetName) {
-            tab.classList.add('active');
-          } else {
-            tab.classList.remove('active');
-          }
+        document.querySelectorAll('.tabs-left .tab-btn').forEach(function(tab) {
+          tab.classList.toggle('active', tab.getAttribute('data-sheet') === currentSheetName);
         });
       }
-
-      checkConfig();
       loadSheet(currentSheetName);
     });
 
-    // ページ離脱時の警告
     window.addEventListener('beforeunload', function(e) {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
+      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
     });
-
-    // ============================================================
-    // 設定チェック
-    // ============================================================
-    function checkConfig() {
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (!result.success) {
-            showConfigError(result.issues);
-          }
-        })
-        .withFailureHandler(function(e) {
-          console.error('Config check failed:', e);
-        })
-        .checkConfiguration();
-    }
-
-    function showConfigError(issues) {
-      var errorDiv = document.getElementById('configError');
-      var errorList = document.getElementById('configErrorList');
-      errorList.innerHTML = issues.map(function(issue) {
-        return '<li>' + escapeHtml(issue) + '</li>';
-      }).join('');
-      errorDiv.style.display = 'block';
-    }
 
     // ============================================================
     // シート表示
     // ============================================================
     function showSheet(sheetName, btn) {
-      // 未保存の変更がある場合は確認
-      if (isDirty) {
-        if (!confirm('未保存の変更があります。破棄してよろしいですか？')) {
-          return;
-        }
-      }
-
-      document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) {
-        b.classList.remove('active');
-      });
+      if (isDirty && !confirm('未保存の変更があります。破棄してよろしいですか？')) return;
+      document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) { b.classList.remove('active'); });
       btn.classList.add('active');
-
       currentSheetName = sheetName;
       localStorage.setItem('unifiedInput_lastSheet', sheetName);
-
-      // 状態リセット
       resetState();
       loadSheet(sheetName);
     }
 
     function resetState() {
-      selectedRows = [];
+      rowMeta = [];
       dirtyCells = {};
       isDirty = false;
       editingCell = null;
+      focusedCell = null;
       updateButtonStates();
     }
 
     function loadSheet(sheetName) {
       setStatus('loading', sheetName + ' を読み込み中...');
       document.getElementById('refreshBtn').disabled = true;
+      // 位置情報ボタンの表示制御
+      var showGeo = (sheetName === '患者マスタ' || sheetName === 'スタッフマスタ');
+      document.getElementById('geoGroup').style.display = showGeo ? 'block' : 'none';
 
       google.script.run
         .withSuccessHandler(function(data) {
           tableData = data;
-          originalData = JSON.parse(JSON.stringify(data)); // ディープコピー
+          originalData = JSON.parse(JSON.stringify(data));
+          // rowMeta初期化
+          rowMeta = data.rows.map(function(_, i) {
+            return { sheetRowIndex: i + 2, isSelected: false, isDirty: false, isNew: false };
+          });
           renderTable(data);
           document.getElementById('refreshBtn').disabled = false;
         })
@@ -801,59 +347,69 @@
     }
 
     function reloadCurrentSheet() {
-      if (isDirty) {
-        if (!confirm('未保存の変更があります。破棄して再読み込みしますか？')) {
-          return;
-        }
-      }
+      if (isDirty && !confirm('未保存の変更があります。破棄して再読み込みしますか？')) return;
       resetState();
       loadSheet(currentSheetName);
     }
 
+    // ============================================================
+    // テーブル描画
+    // ============================================================
     function renderTable(data) {
-      if (data.error) {
-        setStatus('error', data.error);
-        return;
-      }
-
+      if (data.error) { setStatus('error', data.error); return; }
       if (!data.header || data.header.length === 0) {
         setStatus('error', 'データがありません');
-        document.getElementById('dataTable').innerHTML =
-          '<thead><tr><th>データがありません</th></tr></thead><tbody></tbody>';
+        document.getElementById('dataTable').innerHTML = '<thead><tr><th>データがありません</th></tr></thead><tbody></tbody>';
         updateInfo('-', 0, 0);
         return;
       }
-
       setStatus('success', (data.sheetName || currentSheetName) + '（' + data.rowCount + '行）');
       updateInfo(data.sheetName || currentSheetName, data.rowCount, data.header.length);
 
-      var headerHtml = '<tr><th>#</th>' + data.header.map(function(h) {
+      var headerHtml = '<tr><th class="row-handle"></th><th>#</th>' + data.header.map(function(h) {
         return '<th>' + escapeHtml(String(h)) + '</th>';
       }).join('') + '</tr>';
 
       var rowsHtml = data.rows.map(function(row, rowIdx) {
-        var isSelected = selectedRows.indexOf(rowIdx) >= 0;
-        var rowClass = isSelected ? 'selected' : '';
-        var cells = '<td>' + (rowIdx + 1) + '</td>' + row.map(function(cell, colIdx) {
+        var meta = rowMeta[rowIdx] || {};
+        var rowClass = [];
+        if (meta.isSelected) rowClass.push('row-selected');
+        var cells = '<td class="row-handle" data-row="' + rowIdx + '">⠿</td>';
+        cells += '<td>' + (rowIdx + 1) + '</td>';
+        cells += row.map(function(cell, colIdx) {
           var cellKey = rowIdx + '-' + colIdx;
-          var isDirtyCell = dirtyCells.hasOwnProperty(cellKey);
-          var cellClass = isDirtyCell ? 'dirty' : '';
-          var cellValue = isDirtyCell ? dirtyCells[cellKey] : cell;
-          return '<td class="' + cellClass + '" data-row="' + rowIdx + '" data-col="' + colIdx + '">' +
-                 escapeHtml(formatCell(cellValue)) + '</td>';
+          var cellClass = [];
+          if (dirtyCells.hasOwnProperty(cellKey)) cellClass.push('dirty');
+          if (meta.isNew) cellClass.push('is-new');
+          if (focusedCell && focusedCell.rowIdx === rowIdx && focusedCell.colIdx === colIdx) cellClass.push('cell-focused');
+          var cellValue = dirtyCells.hasOwnProperty(cellKey) ? dirtyCells[cellKey] : cell;
+          return '<td class="' + cellClass.join(' ') + '" data-row="' + rowIdx + '" data-col="' + colIdx + '">' + escapeHtml(formatCellDisplay(cellValue, data.header[colIdx])) + '</td>';
         }).join('');
-        return '<tr class="' + rowClass + '" data-row="' + rowIdx + '">' + cells + '</tr>';
+        return '<tr class="' + rowClass.join(' ') + '" data-row="' + rowIdx + '">' + cells + '</tr>';
       }).join('');
 
-      document.getElementById('dataTable').innerHTML =
-        '<thead>' + headerHtml + '</thead>' +
-        '<tbody>' + rowsHtml + '</tbody>';
-
-      // 行クリックイベントを設定
-      attachRowClickHandlers();
+      document.getElementById('dataTable').innerHTML = '<thead>' + headerHtml + '</thead><tbody>' + rowsHtml + '</tbody>';
+      attachTableEvents();
     }
 
-    function attachRowClickHandlers() {
+    function formatCellDisplay(value, headerName) {
+      if (value === null || value === undefined) return '';
+      var editorType = getEditorType(headerName);
+      if (editorType === 'weekday_multi' && value) {
+        // Mon,Tue → 月,火
+        return String(value).split(',').map(function(d) {
+          var idx = WEEKDAYS_EN.indexOf(d.trim());
+          return idx >= 0 ? WEEKDAYS_JP[idx] : d;
+        }).join(',');
+      }
+      if (editorType === 'time_select' && value) {
+        // HH:MM:SS → HH:MM
+        return String(value).substring(0, 5);
+      }
+      return String(value);
+    }
+
+    function attachTableEvents() {
       var tbody = document.querySelector('#dataTable tbody');
       if (!tbody) return;
 
@@ -861,167 +417,297 @@
         var td = e.target.closest('td');
         var tr = e.target.closest('tr');
         if (!tr || !td) return;
-
         var rowIdx = parseInt(tr.getAttribute('data-row'));
         if (isNaN(rowIdx)) return;
 
-        // ダブルクリックでセル編集
-        if (e.detail === 2 && td.hasAttribute('data-col')) {
-          var colIdx = parseInt(td.getAttribute('data-col'));
-          startCellEdit(rowIdx, colIdx);
+        // Row Handleクリック → 行選択
+        if (td.classList.contains('row-handle')) {
+          toggleRowSelection(rowIdx, e.ctrlKey || e.metaKey, e.shiftKey);
           return;
         }
 
-        // 行選択
-        if (e.ctrlKey || e.metaKey) {
-          // Ctrl/Cmd: トグル選択
-          var idx = selectedRows.indexOf(rowIdx);
-          if (idx >= 0) {
-            selectedRows.splice(idx, 1);
-          } else {
-            selectedRows.push(rowIdx);
+        // セルクリック → セルフォーカス
+        if (td.hasAttribute('data-col')) {
+          var colIdx = parseInt(td.getAttribute('data-col'));
+          setFocusedCell(rowIdx, colIdx);
+          if (e.detail === 2) { // ダブルクリック
+            startCellEdit(rowIdx, colIdx);
           }
-        } else if (e.shiftKey && selectedRows.length > 0) {
-          // Shift: 範囲選択
-          var lastSelected = selectedRows[selectedRows.length - 1];
-          var start = Math.min(lastSelected, rowIdx);
-          var end = Math.max(lastSelected, rowIdx);
-          for (var i = start; i <= end; i++) {
-            if (selectedRows.indexOf(i) < 0) {
-              selectedRows.push(i);
-            }
-          }
-        } else {
-          // 単純クリック: 単一選択
-          selectedRows = [rowIdx];
         }
-
-        updateRowSelection();
-        updateButtonStates();
       });
     }
 
-    function updateRowSelection() {
-      var rows = document.querySelectorAll('#dataTable tbody tr');
-      rows.forEach(function(tr) {
+    // ============================================================
+    // 行選択
+    // ============================================================
+    function toggleRowSelection(rowIdx, ctrlKey, shiftKey) {
+      if (ctrlKey) {
+        rowMeta[rowIdx].isSelected = !rowMeta[rowIdx].isSelected;
+      } else if (shiftKey && getSelectedRows().length > 0) {
+        var lastSel = getSelectedRows().pop();
+        var start = Math.min(lastSel, rowIdx);
+        var end = Math.max(lastSel, rowIdx);
+        for (var i = start; i <= end; i++) {
+          rowMeta[i].isSelected = true;
+        }
+      } else {
+        rowMeta.forEach(function(m, i) { m.isSelected = (i === rowIdx); });
+      }
+      updateRowSelectionUI();
+      updateButtonStates();
+    }
+
+    function getSelectedRows() {
+      var selected = [];
+      rowMeta.forEach(function(m, i) { if (m.isSelected) selected.push(i); });
+      return selected;
+    }
+
+    function updateRowSelectionUI() {
+      document.querySelectorAll('#dataTable tbody tr').forEach(function(tr) {
         var rowIdx = parseInt(tr.getAttribute('data-row'));
-        if (selectedRows.indexOf(rowIdx) >= 0) {
-          tr.classList.add('selected');
-        } else {
-          tr.classList.remove('selected');
+        if (!isNaN(rowIdx) && rowMeta[rowIdx]) {
+          tr.classList.toggle('row-selected', rowMeta[rowIdx].isSelected);
         }
       });
-      document.getElementById('infoSelectedCount').textContent = selectedRows.length + ' 行';
+      document.getElementById('infoSelectedCount').textContent = getSelectedRows().length + ' 行';
+    }
+
+    // ============================================================
+    // セルフォーカス
+    // ============================================================
+    function setFocusedCell(rowIdx, colIdx) {
+      focusedCell = { rowIdx: rowIdx, colIdx: colIdx };
+      document.querySelectorAll('#dataTable td.cell-focused').forEach(function(td) { td.classList.remove('cell-focused'); });
+      var td = document.querySelector('td[data-row="' + rowIdx + '"][data-col="' + colIdx + '"]');
+      if (td) td.classList.add('cell-focused');
     }
 
     // ============================================================
     // セル編集
     // ============================================================
     function startCellEdit(rowIdx, colIdx) {
-      // 既存の編集を終了
-      if (editingCell) {
-        finishCellEdit();
-      }
-
+      if (editingCell) finishCellEdit();
       var td = document.querySelector('td[data-row="' + rowIdx + '"][data-col="' + colIdx + '"]');
       if (!td) return;
 
+      var headerName = tableData.header[colIdx];
+      var editorType = getEditorType(headerName);
       var cellKey = rowIdx + '-' + colIdx;
       var currentValue = dirtyCells.hasOwnProperty(cellKey) ? dirtyCells[cellKey] : tableData.rows[rowIdx][colIdx];
 
+      // 読み取り専用
+      if (editorType === 'readonly_text' || editorType === 'geo_readonly') {
+        showToast('info', 'この列は自動入力されます');
+        return;
+      }
+
       td.classList.add('editing');
-      td.innerHTML = '<input type="text" value="' + escapeHtml(formatCell(currentValue)) + '" />';
+      editingCell = { rowIdx: rowIdx, colIdx: colIdx, headerName: headerName };
 
-      var input = td.querySelector('input');
-      input.focus();
-      input.select();
+      var editorHtml = createEditorHtml(editorType, currentValue, headerName);
+      td.innerHTML = editorHtml;
 
-      editingCell = { rowIdx: rowIdx, colIdx: colIdx };
+      var input = td.querySelector('input, select');
+      if (input) {
+        input.focus();
+        if (input.tagName === 'INPUT') input.select();
+        input.addEventListener('blur', finishCellEdit);
+        input.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') finishCellEdit();
+          else if (e.key === 'Escape') cancelCellEdit();
+        });
+      }
+    }
 
-      input.addEventListener('blur', finishCellEdit);
-      input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-          finishCellEdit();
-        } else if (e.key === 'Escape') {
-          cancelCellEdit();
-        }
+    function createEditorHtml(editorType, value, headerName) {
+      switch (editorType) {
+        case 'sex_select':
+          return createSelect(['男性', '女性'], value);
+        case 'area_select':
+          return createSelect(['A1', 'A2', 'A3', 'B1', 'B2', 'B3'], value);
+        case 'priority_select':
+          return createSelect(['高', '中', '低'], value);
+        case 'time_type_select':
+          return createSelect(['時間帯', '午前', '午後', '終日', '固定'], value);
+        case 'sex_limit_select':
+          return createSelect(['', '男性のみ', '女性のみ'], value);
+        case 'staff_type_select':
+          return createSelect(['同じ人', 'ローテーション', 'どちらでも'], value);
+        case 'operation_select':
+          return createSelect(['キャンセル', '時間変更', '追加'], value);
+        case 'skill_select':
+          return createSelect(['ベテラン', '中堅', '新人'], value);
+        case 'time_select':
+          var timeVal = value ? String(value).substring(0, 5) : '';
+          return createSelect(TIME_OPTIONS, timeVal);
+        case 'date_picker':
+          var dateVal = value ? formatDateForInput(value) : '';
+          return '<input type="date" value="' + dateVal + '" />';
+        case 'weekday_multi':
+          return createWeekdayEditor(value);
+        case 'weekday_single':
+          return createSelect(['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], value);
+        case 'number':
+          return '<input type="number" value="' + (value || '') + '" />';
+        default:
+          return '<input type="text" value="' + escapeHtml(value || '') + '" />';
+      }
+    }
+
+    function createSelect(options, selectedValue) {
+      var html = '<select>';
+      options.forEach(function(opt) {
+        var selected = (String(opt) === String(selectedValue)) ? ' selected' : '';
+        html += '<option value="' + escapeHtml(opt) + '"' + selected + '>' + escapeHtml(opt) + '</option>';
       });
+      html += '</select>';
+      return html;
+    }
+
+    function createWeekdayEditor(value) {
+      var selected = (value || '').split(',').map(function(s) { return s.trim(); });
+      var html = '<div class="weekday-editor">';
+      WEEKDAYS_EN.forEach(function(en, i) {
+        var checked = selected.indexOf(en) >= 0 ? ' checked' : '';
+        html += '<label><input type="checkbox" value="' + en + '"' + checked + '>' + WEEKDAYS_JP[i] + '</label>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    function formatDateForInput(value) {
+      if (!value) return '';
+      try {
+        var d = new Date(value);
+        return d.toISOString().split('T')[0];
+      } catch (e) {
+        return '';
+      }
     }
 
     function finishCellEdit() {
       if (!editingCell) return;
-
       var td = document.querySelector('td[data-row="' + editingCell.rowIdx + '"][data-col="' + editingCell.colIdx + '"]');
-      var input = td ? td.querySelector('input') : null;
+      if (!td) { editingCell = null; return; }
 
-      if (input) {
-        var newValue = input.value;
-        var cellKey = editingCell.rowIdx + '-' + editingCell.colIdx;
-        var originalValue = originalData.rows[editingCell.rowIdx][editingCell.colIdx];
+      var newValue = getEditorValue(td);
+      var cellKey = editingCell.rowIdx + '-' + editingCell.colIdx;
+      var originalValue = originalData.rows[editingCell.rowIdx] ? originalData.rows[editingCell.rowIdx][editingCell.colIdx] : '';
 
-        // 元の値と同じなら変更を削除、違えば変更を記録
-        if (String(newValue) === String(originalValue)) {
-          delete dirtyCells[cellKey];
-        } else {
-          dirtyCells[cellKey] = newValue;
-        }
-
-        // UIを更新
-        td.classList.remove('editing');
-        if (dirtyCells.hasOwnProperty(cellKey)) {
-          td.classList.add('dirty');
-          td.textContent = formatCell(newValue);
-        } else {
-          td.classList.remove('dirty');
-          td.textContent = formatCell(originalValue);
-        }
-
-        // 内部データも更新
-        tableData.rows[editingCell.rowIdx][editingCell.colIdx] = newValue;
+      // 値の正規化
+      var editorType = getEditorType(editingCell.headerName);
+      if (editorType === 'time_select' && newValue) {
+        newValue = newValue + ':00'; // HH:MM → HH:MM:SS
       }
+
+      // 変更チェック
+      if (String(newValue) === String(originalValue)) {
+        delete dirtyCells[cellKey];
+      } else {
+        dirtyCells[cellKey] = newValue;
+        rowMeta[editingCell.rowIdx].isDirty = true;
+      }
+
+      // 内部データ更新
+      tableData.rows[editingCell.rowIdx][editingCell.colIdx] = newValue;
+
+      // ID→名前の自動補完
+      autoCompleteNameFromId(editingCell.rowIdx, editingCell.colIdx, newValue);
+
+      td.classList.remove('editing');
+      td.innerHTML = escapeHtml(formatCellDisplay(newValue, editingCell.headerName));
+      if (dirtyCells.hasOwnProperty(cellKey)) td.classList.add('dirty');
+      else td.classList.remove('dirty');
 
       editingCell = null;
       updateDirtyState();
     }
 
+    function getEditorValue(td) {
+      var input = td.querySelector('input[type="text"], input[type="number"], input[type="date"], select');
+      if (input) return input.value;
+
+      // 曜日チェックボックス
+      var checkboxes = td.querySelectorAll('.weekday-editor input[type="checkbox"]');
+      if (checkboxes.length > 0) {
+        var vals = [];
+        checkboxes.forEach(function(cb) { if (cb.checked) vals.push(cb.value); });
+        return vals.join(',');
+      }
+      return '';
+    }
+
     function cancelCellEdit() {
       if (!editingCell) return;
-
       var td = document.querySelector('td[data-row="' + editingCell.rowIdx + '"][data-col="' + editingCell.colIdx + '"]');
       var cellKey = editingCell.rowIdx + '-' + editingCell.colIdx;
       var value = dirtyCells.hasOwnProperty(cellKey) ? dirtyCells[cellKey] : tableData.rows[editingCell.rowIdx][editingCell.colIdx];
-
       td.classList.remove('editing');
-      td.textContent = formatCell(value);
+      td.innerHTML = escapeHtml(formatCellDisplay(value, editingCell.headerName));
       editingCell = null;
     }
 
+    // ============================================================
+    // 自動補完
+    // ============================================================
+    function autoCompleteNameFromId(rowIdx, colIdx, idValue) {
+      var header = tableData.header[colIdx];
+      var nameColIdx = -1;
+      var nameValue = '';
+
+      if (header === 'patient_id') {
+        nameColIdx = tableData.header.indexOf('患者名');
+        nameValue = dictionaries.patients[idValue] || '';
+      } else if (header === 'staff_id') {
+        nameColIdx = tableData.header.indexOf('スタッフ名');
+        nameValue = dictionaries.staff[idValue] || '';
+      }
+
+      if (nameColIdx >= 0 && nameValue) {
+        var nameCellKey = rowIdx + '-' + nameColIdx;
+        dirtyCells[nameCellKey] = nameValue;
+        tableData.rows[rowIdx][nameColIdx] = nameValue;
+        // UIも更新
+        var nameTd = document.querySelector('td[data-row="' + rowIdx + '"][data-col="' + nameColIdx + '"]');
+        if (nameTd) {
+          nameTd.textContent = nameValue;
+          nameTd.classList.add('dirty');
+        }
+      }
+    }
+
+    // ============================================================
+    // 状態管理
+    // ============================================================
     function updateDirtyState() {
-      isDirty = Object.keys(dirtyCells).length > 0;
+      isDirty = Object.keys(dirtyCells).length > 0 || rowMeta.some(function(m) { return m.isNew; });
       document.getElementById('dirtyBadge').classList.toggle('show', isDirty);
       updateButtonStates();
+    }
+
+    function updateButtonStates() {
+      var hasSelection = getSelectedRows().length > 0;
+      var hasDirty = isDirty;
+      document.getElementById('btnDeleteRows').disabled = !hasSelection;
+      document.getElementById('btnCopyRows').disabled = !hasSelection;
+      document.getElementById('btnUndo').disabled = !hasDirty;
+      document.getElementById('btnSave').disabled = !hasDirty;
+      document.getElementById('btnUpdateGeo').disabled = !hasSelection;
     }
 
     // ============================================================
     // 操作ボタン
     // ============================================================
-    function updateButtonStates() {
-      var hasSelection = selectedRows.length > 0;
-      var hasDirty = Object.keys(dirtyCells).length > 0;
-
-      document.getElementById('btnDeleteRows').disabled = !hasSelection;
-      document.getElementById('btnCopyRows').disabled = !hasSelection;
-      document.getElementById('btnEditCell').disabled = selectedRows.length !== 1;
-      document.getElementById('btnUndo').disabled = !hasDirty;
-      document.getElementById('btnSave').disabled = !hasDirty;
-    }
-
-    // 新規行を追加
     function onAddRow() {
+      var selectedRows = getSelectedRows();
+      var baseRowIndex = null;
+      if (selectedRows.length > 0) {
+        var lastSelected = Math.max.apply(null, selectedRows);
+        baseRowIndex = rowMeta[lastSelected].sheetRowIndex;
+      }
+
       setStatus('loading', '行を追加中...');
-
-      var emptyRow = [new Array(tableData.header.length).fill('')];
-
       google.script.run
         .withSuccessHandler(function(result) {
           if (result.success) {
@@ -1029,33 +715,22 @@
             reloadCurrentSheet();
           } else {
             showToast('error', result.message || '追加に失敗しました');
-            setStatus('error', result.message);
           }
         })
         .withFailureHandler(function(e) {
           showToast('error', e.message);
           setStatus('error', 'エラー: ' + e.message);
         })
-        .input_appendRows(currentSheetName, emptyRow);
+        .input_insertRowBelow(currentSheetName, baseRowIndex);
     }
 
-    // 選択行を削除
     function onDeleteSelected() {
-      if (selectedRows.length === 0) {
-        showToast('info', '行を選択してください');
-        return;
-      }
-
-      if (!confirm(selectedRows.length + ' 行を削除しますか？この操作は元に戻せません。')) {
-        return;
-      }
+      var selectedRows = getSelectedRows();
+      if (selectedRows.length === 0) { showToast('info', '行を選択してください'); return; }
+      if (!confirm(selectedRows.length + ' 行を削除しますか？この操作は元に戻せません。')) return;
 
       setStatus('loading', '削除中...');
-
-      // UI上のrowIdxをシートの行番号に変換（+2: ヘッダー行 + 0-based→1-based）
-      var sheetRowNumbers = selectedRows.map(function(rowIdx) {
-        return rowIdx + 2;
-      });
+      var sheetRowNumbers = selectedRows.map(function(rowIdx) { return rowMeta[rowIdx].sheetRowIndex; });
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -1065,7 +740,6 @@
             loadSheet(currentSheetName);
           } else {
             showToast('error', result.message || '削除に失敗しました');
-            setStatus('error', result.message);
           }
         })
         .withFailureHandler(function(e) {
@@ -1075,18 +749,12 @@
         .input_deleteRows(currentSheetName, sheetRowNumbers);
     }
 
-    // 行をコピー
     function onCopySelected() {
-      if (selectedRows.length === 0) {
-        showToast('info', '行を選択してください');
-        return;
-      }
+      var selectedRows = getSelectedRows();
+      if (selectedRows.length === 0) { showToast('info', '行を選択してください'); return; }
 
       setStatus('loading', 'コピー中...');
-
-      var sheetRowNumbers = selectedRows.map(function(rowIdx) {
-        return rowIdx + 2;
-      });
+      var sheetRowNumbers = selectedRows.map(function(rowIdx) { return rowMeta[rowIdx].sheetRowIndex; });
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -1096,7 +764,6 @@
             loadSheet(currentSheetName);
           } else {
             showToast('error', result.message || 'コピーに失敗しました');
-            setStatus('error', result.message);
           }
         })
         .withFailureHandler(function(e) {
@@ -1106,46 +773,28 @@
         .input_copyRows(currentSheetName, sheetRowNumbers);
     }
 
-    // セルを編集（選択行の最初のセルを編集）
-    function onEditSelectedCell() {
-      if (selectedRows.length !== 1) {
-        showToast('info', '1行だけ選択してください');
-        return;
-      }
-      startCellEdit(selectedRows[0], 0);
-    }
-
-    // 変更を元に戻す
     function onDiscardChanges() {
-      if (!confirm('未保存の変更をすべて破棄しますか？')) {
-        return;
-      }
-
+      if (!confirm('未保存の変更をすべて破棄しますか？')) return;
       dirtyCells = {};
       tableData = JSON.parse(JSON.stringify(originalData));
+      rowMeta.forEach(function(m) { m.isDirty = false; m.isNew = false; });
       renderTable(tableData);
       updateDirtyState();
       showToast('info', '変更を破棄しました');
     }
 
-    // 変更を保存
     function onSaveChanges() {
       var dirtyKeys = Object.keys(dirtyCells);
-      if (dirtyKeys.length === 0) {
-        showToast('info', '保存する変更がありません');
-        return;
-      }
+      if (dirtyKeys.length === 0) { showToast('info', '保存する変更がありません'); return; }
 
       setStatus('loading', '保存中...');
-
-      // 更新データを構築（row/colは1-based）
       var updates = dirtyKeys.map(function(key) {
         var parts = key.split('-');
         var rowIdx = parseInt(parts[0]);
         var colIdx = parseInt(parts[1]);
         return {
-          row: rowIdx + 2,  // シートの行番号（ヘッダー+1, 0-based→1-based）
-          col: colIdx + 1,  // シートの列番号（0-based→1-based）
+          row: rowMeta[rowIdx].sheetRowIndex,
+          col: colIdx + 1,
           value: dirtyCells[key]
         };
       });
@@ -1154,15 +803,14 @@
         .withSuccessHandler(function(result) {
           if (result.success) {
             showToast('success', result.message);
-            // 保存成功後、現在の状態を「元の状態」として更新
             originalData = JSON.parse(JSON.stringify(tableData));
             dirtyCells = {};
+            rowMeta.forEach(function(m) { m.isDirty = false; m.isNew = false; });
             updateDirtyState();
             renderTable(tableData);
             setStatus('success', '保存しました');
           } else {
             showToast('error', result.message || '保存に失敗しました');
-            setStatus('error', result.message);
           }
         })
         .withFailureHandler(function(e) {
@@ -1172,33 +820,43 @@
         .input_updateCells(currentSheetName, updates);
     }
 
-    // ============================================================
-    // 画面遷移（同一タブ）
-    // ============================================================
-    function goToOutput() {
-      if (isDirty) {
-        if (!confirm('未保存の変更があります。破棄して移動しますか？')) {
-          return;
-        }
-      }
+    function onUpdateGeo() {
+      var selectedRows = getSelectedRows();
+      if (selectedRows.length === 0) { showToast('info', '行を選択してください'); return; }
 
-      var targetUrl;
-      if (baseUrl) {
-        targetUrl = baseUrl + '?page=output';
-      } else {
-        var currentUrl = window.location.href;
-        targetUrl = currentUrl.split('?')[0] + '?page=output';
-      }
-      // GASはiframe内で動くため、window.topを使用
-      try {
-        window.top.location.href = targetUrl;
-      } catch (e) {
-        window.location.href = targetUrl;
-      }
+      setStatus('loading', '位置情報を更新中...');
+      var sheetRowNumbers = selectedRows.map(function(rowIdx) { return rowMeta[rowIdx].sheetRowIndex; });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showToast('success', result.message);
+            if (result.errors && result.errors.length > 0) {
+              result.errors.forEach(function(err) { showToast('error', err); });
+            }
+            reloadCurrentSheet();
+          } else {
+            showToast('error', result.message || '更新に失敗しました');
+          }
+        })
+        .withFailureHandler(function(e) {
+          showToast('error', e.message);
+          setStatus('error', 'エラー: ' + e.message);
+        })
+        .input_updateGeo(currentSheetName, sheetRowNumbers);
     }
 
     // ============================================================
-    // トースト通知
+    // 画面遷移
+    // ============================================================
+    function goToOutput() {
+      if (isDirty && !confirm('未保存の変更があります。破棄して移動しますか？')) return;
+      var targetUrl = baseUrl ? baseUrl + '?page=output' : window.location.href.split('?')[0] + '?page=output';
+      try { window.top.location.href = targetUrl; } catch (e) { window.location.href = targetUrl; }
+    }
+
+    // ============================================================
+    // ユーティリティ
     // ============================================================
     function showToast(type, message) {
       var container = document.getElementById('toastContainer');
@@ -1206,18 +864,12 @@
       toast.className = 'toast ' + type;
       toast.textContent = message;
       container.appendChild(toast);
-
       setTimeout(function() {
         toast.style.opacity = '0';
-        setTimeout(function() {
-          container.removeChild(toast);
-        }, 300);
+        setTimeout(function() { container.removeChild(toast); }, 300);
       }, 3000);
     }
 
-    // ============================================================
-    // ユーティリティ
-    // ============================================================
     function setStatus(type, msg) {
       var el = document.getElementById('statusText');
       el.className = 'status-text ' + type;
@@ -1230,25 +882,11 @@
       document.getElementById('infoColCount').textContent = colCount;
     }
 
-    function formatCell(cell) {
-      if (cell === null || cell === undefined) return '';
-      if (cell && typeof cell === 'object' && cell._type === 'date') {
-        try {
-          var d = new Date(cell.value);
-          return d.toLocaleDateString('ja-JP');
-        } catch (e) {
-          return String(cell.value);
-        }
-      }
-      return String(cell);
-    }
-
     function escapeHtml(text) {
       var div = document.createElement('div');
       div.textContent = text || '';
       return div.innerHTML;
     }
   </script>
-
 </body>
 </html>

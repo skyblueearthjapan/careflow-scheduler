@@ -502,6 +502,211 @@ function input_copyRows(sheetName, rowNumbers) {
   }
 }
 
+/**
+ * 指定行の下に空行を挿入
+ * @param {string} sheetName - シート名
+ * @param {number} baseRowIndex - 基準行のシート行番号（1-based）。この行の下に挿入
+ * @returns {Object} { success, newRowIndex, newRowData }
+ */
+function input_insertRowBelow(sheetName, baseRowIndex) {
+  requireAdmin_();
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error('シートが見つかりません: ' + sheetName);
+    }
+
+    const numCols = sheet.getLastColumn();
+    const lastRow = sheet.getLastRow();
+
+    // 挿入位置を決定
+    let insertAt;
+    if (!baseRowIndex || baseRowIndex < 2) {
+      // 行選択なし or ヘッダー行 → 末尾に追加
+      insertAt = lastRow + 1;
+    } else if (baseRowIndex >= lastRow) {
+      // 最終行選択 → その下に追加
+      insertAt = lastRow + 1;
+    } else {
+      // 中間行選択 → その下に挿入
+      insertAt = baseRowIndex + 1;
+      sheet.insertRowAfter(baseRowIndex);
+    }
+
+    // 空行データを作成
+    const emptyRow = new Array(numCols).fill('');
+    sheet.getRange(insertAt, 1, 1, numCols).setValues([emptyRow]);
+
+    return {
+      success: true,
+      message: '行を挿入しました',
+      newRowIndex: insertAt,
+      newRowData: emptyRow
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 位置情報を更新（選択行のみ）
+ * @param {string} sheetName - シート名（患者マスタ or スタッフマスタ）
+ * @param {Array<number>} rowIndexes - 更新対象の行番号（1-based）
+ * @returns {Object} { success, updatedCount, errors }
+ */
+function input_updateGeo(sheetName, rowIndexes) {
+  requireAdmin_();
+
+  if (!rowIndexes || rowIndexes.length === 0) {
+    throw new Error('更新する行を選択してください');
+  }
+
+  // 件数制限（Geocoder API制限対策）
+  const MAX_ROWS = 20;
+  if (rowIndexes.length > MAX_ROWS) {
+    throw new Error('一度に更新できるのは' + MAX_ROWS + '件までです。' + rowIndexes.length + '件選択されています。');
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error('シートが見つかりません: ' + sheetName);
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const header = data[0];
+
+    // 住所列を特定
+    let addrHeader = '住所';
+    if (sheetName === SHEETS.STAFF_MASTER) {
+      addrHeader = '拠点住所';
+    }
+
+    const idxAddr = header.indexOf(addrHeader);
+    const idxLat = header.indexOf('緯度');
+    const idxLng = header.indexOf('経度');
+
+    if (idxAddr < 0 || idxLat < 0 || idxLng < 0) {
+      throw new Error('住所/緯度/経度列が見つかりません');
+    }
+
+    const geocoder = Maps.newGeocoder();
+    let updatedCount = 0;
+    const errors = [];
+
+    rowIndexes.forEach(rowIndex => {
+      if (rowIndex < 2 || rowIndex > data.length) return;
+
+      const rowData = data[rowIndex - 1]; // 0-based
+      const addr = rowData[idxAddr];
+
+      if (!addr) {
+        errors.push('行' + rowIndex + ': 住所が空です');
+        return;
+      }
+
+      try {
+        const res = geocoder.geocode(addr);
+        if (res.status === 'OK' && res.results && res.results.length > 0) {
+          const loc = res.results[0].geometry.location;
+          sheet.getRange(rowIndex, idxLat + 1).setValue(loc.lat);
+          sheet.getRange(rowIndex, idxLng + 1).setValue(loc.lng);
+          updatedCount++;
+        } else {
+          errors.push('行' + rowIndex + ': 住所「' + addr + '」の位置情報が取得できませんでした');
+        }
+        Utilities.sleep(200); // API制限対策
+      } catch (e) {
+        errors.push('行' + rowIndex + ': ' + e.message);
+      }
+    });
+
+    return {
+      success: true,
+      message: updatedCount + '件の位置情報を更新しました',
+      updatedCount: updatedCount,
+      errors: errors
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ID→名前の辞書を取得（自動補完用）
+ * @returns {Object} { patients: {id: name}, staff: {id: name} }
+ */
+function input_getDictionaries() {
+  requireAdmin_();
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const result = { patients: {}, staff: {} };
+
+    // 患者マスタ
+    const patientSheet = ss.getSheetByName(SHEETS.PATIENT_MASTER);
+    if (patientSheet) {
+      const pData = patientSheet.getDataRange().getValues();
+      if (pData.length > 1) {
+        const pHeader = pData[0];
+        const idxId = pHeader.indexOf('patient_id');
+        const idxName = pHeader.indexOf('患者名');
+        if (idxId >= 0 && idxName >= 0) {
+          for (let i = 1; i < pData.length; i++) {
+            const id = pData[i][idxId];
+            const name = pData[i][idxName];
+            if (id) result.patients[id] = name || '';
+          }
+        }
+      }
+    }
+
+    // スタッフマスタ
+    const staffSheet = ss.getSheetByName(SHEETS.STAFF_MASTER);
+    if (staffSheet) {
+      const sData = staffSheet.getDataRange().getValues();
+      if (sData.length > 1) {
+        const sHeader = sData[0];
+        const idxId = sHeader.indexOf('staff_id');
+        const idxName = sHeader.indexOf('スタッフ名');
+        if (idxId >= 0 && idxName >= 0) {
+          for (let i = 1; i < sData.length; i++) {
+            const id = sData[i][idxId];
+            const name = sData[i][idxName];
+            if (id) result.staff[id] = name || '';
+          }
+        }
+      }
+    }
+
+    return { success: true, data: result };
+  } catch (e) {
+    console.error('input_getDictionaries error:', e);
+    return { success: false, error: e.message, data: { patients: {}, staff: {} } };
+  }
+}
+
+/**
+ * エリア候補一覧を取得
+ */
+function input_getAreaOptions() {
+  // 固定候補（実運用ではマスタ化も可）
+  return ['A1', 'A2', 'A3', 'B1', 'B2', 'B3'];
+}
+
 // ============================================================
 // 実行API（GAS実行ボタン用）
 // ============================================================
