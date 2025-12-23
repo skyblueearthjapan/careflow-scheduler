@@ -1659,37 +1659,55 @@
     // 登録実行
     function submitWizard() {
       var nextBtn = document.getElementById('wizardNextBtn');
+      var errorEl = document.getElementById('wizardError');
       nextBtn.disabled = true;
       nextBtn.textContent = '登録中...';
+      errorEl.textContent = '';
 
-      // 選択行の下に挿入する場合の行番号を取得
-      var insertAfterRow = null;
-      var selectedRows = getSelectedRows();
-      if (selectedRows.length > 0) {
-        insertAfterRow = rowMeta[Math.max.apply(null, selectedRows)].sheetRowIndex;
-      }
+      // フォームタイプをウィザードで選択したものに固定
+      var formType = wizardState.formType;
+      var answers = wizardState.answers;
 
-      // サーバーに送信
+      // デバッグ用ログ
+      console.log('submitWizard: formType=', formType);
+      console.log('submitWizard: answers=', JSON.stringify(answers));
+
+      // タイムアウト設定（30秒）
+      var timeoutId = setTimeout(function() {
+        nextBtn.disabled = false;
+        nextBtn.textContent = '登録';
+        errorEl.textContent = 'タイムアウト: サーバーからの応答がありませんでした';
+      }, 30000);
+
+      // サーバーに送信（末尾に追加）
       google.script.run
         .withSuccessHandler(function(result) {
+          clearTimeout(timeoutId);
+          console.log('submitWizard success:', result);
           nextBtn.disabled = false;
           nextBtn.textContent = '登録';
-          if (result.success) {
+          if (result && result.success) {
             showToast('success', result.message || '登録しました');
-            closeWizard();
             wizardState.active = false;
             document.getElementById('wizardPanel').classList.remove('active');
-            reloadCurrentSheet();
+            // 登録したフォームタイプに対応するシートに切り替えてリロード
+            if (formType && formType !== currentSheetName) {
+              loadSheet(formType);
+            } else {
+              reloadCurrentSheet();
+            }
           } else {
-            document.getElementById('wizardError').textContent = result.error || '登録に失敗しました';
+            errorEl.textContent = (result && result.error) || '登録に失敗しました';
           }
         })
         .withFailureHandler(function(e) {
+          clearTimeout(timeoutId);
+          console.error('submitWizard error:', e);
           nextBtn.disabled = false;
           nextBtn.textContent = '登録';
-          document.getElementById('wizardError').textContent = 'エラー: ' + e.message;
+          errorEl.textContent = 'エラー: ' + (e.message || String(e));
         })
-        .input_createRowFromWizard(wizardState.formType, wizardState.answers, insertAfterRow);
+        .input_createRowFromWizard(formType, answers, null);
     }
   </script>
 </body>

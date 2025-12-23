@@ -810,15 +810,17 @@ function generateNextId_(sheet, idHeaderName, prefix, padLen) {
  * @returns {Object} { success, message, newRowIndex, newRowData }
  */
 function input_createRowFromWizard(formType, answers, insertAfterRow) {
-  requireAdmin_();
-
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(10000)) {
-    throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
-  }
-
+  var lock = null;
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    // 権限チェック
+    requireAdmin_();
+
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) {
+      return { success: false, error: '別の処理が実行中です。少し待ってから再実行してください。' };
+    }
+
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
 
     // フォームタイプからシート名を決定
     var sheetName;
@@ -829,20 +831,20 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     } else if (formType === '個別変更リクエスト') {
       sheetName = SHEETS.CHANGE_REQUEST;
     } else {
-      throw new Error('不明なフォームタイプ: ' + formType);
+      return { success: false, error: '不明なフォームタイプ: ' + formType };
     }
 
-    const sheet = ss.getSheetByName(sheetName);
+    var sheet = ss.getSheetByName(sheetName);
     if (!sheet) {
-      throw new Error('シートが見つかりません: ' + sheetName);
+      return { success: false, error: 'シートが見つかりません: ' + sheetName };
     }
 
-    const numCols = sheet.getLastColumn();
-    const lastRow = sheet.getLastRow();
-    const header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+    var numCols = sheet.getLastColumn();
+    var lastRow = sheet.getLastRow();
+    var header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
 
     // 挿入位置を決定
-    let insertAt;
+    var insertAt;
     if (!insertAfterRow || insertAfterRow < 2) {
       insertAt = lastRow + 1;
     } else if (insertAfterRow >= lastRow) {
@@ -853,21 +855,21 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     }
 
     // 空行データを作成
-    const rowData = new Array(numCols).fill('');
+    var rowData = new Array(numCols).fill('');
 
     // IDを自動採番（autoIdタイプの場合）
     if (formType === '患者マスタ') {
-      const idxPid = header.indexOf('patient_id');
+      var idxPid = header.indexOf('patient_id');
       if (idxPid >= 0) {
         rowData[idxPid] = generateNextId_(sheet, 'patient_id', 'P', 3);
       }
     } else if (formType === 'スタッフマスタ') {
-      const idxSid = header.indexOf('staff_id');
+      var idxSid = header.indexOf('staff_id');
       if (idxSid >= 0) {
         rowData[idxSid] = generateNextId_(sheet, 'staff_id', 'S', 3);
       }
     } else if (formType === '個別変更リクエスト') {
-      const idxCid = header.indexOf('change_id');
+      var idxCid = header.indexOf('change_id');
       if (idxCid >= 0) {
         rowData[idxCid] = generateNextId_(sheet, 'change_id', 'C', 3);
       }
@@ -967,8 +969,13 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       newRowData: rowData,
       generatedId: generatedId
     };
+  } catch (e) {
+    console.error('input_createRowFromWizard error:', e);
+    return { success: false, error: e.message || String(e) };
   } finally {
-    lock.releaseLock();
+    if (lock) {
+      try { lock.releaseLock(); } catch (ignore) {}
+    }
   }
 }
 
