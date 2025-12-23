@@ -702,6 +702,9 @@
       // ID→名前の自動補完
       autoCompleteNameFromId(editingCell.rowIdx, editingCell.colIdx, newValue);
 
+      // 時間タイプ連動の自動時間設定
+      autoSetTimeFromType(editingCell.rowIdx, editingCell.colIdx, newValue);
+
       td.classList.remove('editing');
       td.innerHTML = escapeHtml(formatCellDisplay(newValue, editingCell.headerName));
       if (dirtyCells.hasOwnProperty(cellKey)) td.classList.add('dirty');
@@ -769,6 +772,130 @@
           nameTd.textContent = nameValue;
           nameTd.classList.add('dirty');
         }
+      }
+    }
+
+    // ============================================================
+    // 時間タイプ連動の自動時間設定
+    // ============================================================
+    function autoSetTimeFromType(rowIdx, colIdx, newValue) {
+      var header = tableData.header[colIdx];
+
+      // 列インデックスを取得
+      var timeTypeColIdx = tableData.header.indexOf('時間タイプ');
+      var startColIdx = tableData.header.indexOf('希望時間帯（開始）');
+      var endColIdx = tableData.header.indexOf('希望時間帯（終了）');
+      var svcColIdx = tableData.header.indexOf('サービス時間');
+
+      // 患者マスタ以外では動作しない
+      if (currentSheetName !== '患者マスタ') return;
+      if (startColIdx < 0 || endColIdx < 0) return;
+
+      // 時間タイプが変更された場合
+      if (header === '時間タイプ') {
+        var timeType = newValue;
+        var startValue = '', endValue = '';
+
+        if (timeType === '午前') {
+          startValue = '09:00:00';
+          endValue = '12:00:00';
+        } else if (timeType === '午後') {
+          startValue = '13:00:00';
+          endValue = '17:00:00';
+        } else if (timeType === '終日') {
+          startValue = '09:00:00';
+          endValue = '18:00:00';
+        }
+
+        // 時間帯/固定の場合はクリアしない（ユーザーが自由に設定）
+        if (startValue && endValue) {
+          setCellValue(rowIdx, startColIdx, startValue);
+          setCellValue(rowIdx, endColIdx, endValue);
+        }
+      }
+
+      // サービス時間が変更された場合（固定タイプ時）
+      if (header === 'サービス時間' && timeTypeColIdx >= 0) {
+        var timeType = tableData.rows[rowIdx][timeTypeColIdx];
+        if (timeType === '固定') {
+          var svcMin = parseInt(newValue, 10) || 0;
+          if (svcMin > 0) {
+            var startVal = tableData.rows[rowIdx][startColIdx];
+            var endVal = tableData.rows[rowIdx][endColIdx];
+
+            if (startVal && !endVal) {
+              // 開始あり、終了なし → 終了を計算
+              var endTime = addMinutesToTime(startVal, svcMin);
+              if (endTime) setCellValue(rowIdx, endColIdx, endTime);
+            } else if (!startVal && endVal) {
+              // 開始なし、終了あり → 開始を計算
+              var startTime = addMinutesToTime(endVal, -svcMin);
+              if (startTime) setCellValue(rowIdx, startColIdx, startTime);
+            }
+          }
+        }
+      }
+
+      // 開始時刻が変更された場合（固定タイプ時）
+      if ((header === '希望時間帯（開始）' || header.includes('開始')) && timeTypeColIdx >= 0 && svcColIdx >= 0) {
+        var timeType = tableData.rows[rowIdx][timeTypeColIdx];
+        if (timeType === '固定') {
+          var svcMin = parseInt(tableData.rows[rowIdx][svcColIdx], 10) || 0;
+          if (svcMin > 0 && newValue) {
+            var endTime = addMinutesToTime(newValue, svcMin);
+            if (endTime) setCellValue(rowIdx, endColIdx, endTime);
+          }
+        }
+      }
+
+      // 終了時刻が変更された場合（固定タイプ時）
+      if ((header === '希望時間帯（終了）' || header.includes('終了')) && timeTypeColIdx >= 0 && svcColIdx >= 0) {
+        var timeType = tableData.rows[rowIdx][timeTypeColIdx];
+        if (timeType === '固定') {
+          var svcMin = parseInt(tableData.rows[rowIdx][svcColIdx], 10) || 0;
+          if (svcMin > 0 && newValue) {
+            var startTime = addMinutesToTime(newValue, -svcMin);
+            if (startTime) setCellValue(rowIdx, startColIdx, startTime);
+          }
+        }
+      }
+    }
+
+    // 時間に分を加算/減算
+    function addMinutesToTime(timeStr, minutes) {
+      if (!timeStr) return null;
+      var parts = String(timeStr).split(':');
+      var h = parseInt(parts[0], 10) || 0;
+      var m = parseInt(parts[1], 10) || 0;
+      var totalMin = h * 60 + m + minutes;
+      if (totalMin < 0) totalMin = 0;
+      if (totalMin >= 24 * 60) totalMin = 24 * 60 - 1;
+      var newH = Math.floor(totalMin / 60);
+      var newM = totalMin % 60;
+      return String(newH).padStart(2, '0') + ':' + String(newM).padStart(2, '0') + ':00';
+    }
+
+    // セルに値を設定（UI更新含む）
+    function setCellValue(rowIdx, colIdx, value) {
+      var cellKey = rowIdx + '-' + colIdx;
+      var originalValue = originalData.rows[rowIdx] ? originalData.rows[rowIdx][colIdx] : '';
+
+      if (String(value) === String(originalValue)) {
+        delete dirtyCells[cellKey];
+      } else {
+        dirtyCells[cellKey] = value;
+        rowMeta[rowIdx].isDirty = true;
+      }
+
+      tableData.rows[rowIdx][colIdx] = value;
+
+      // UI更新
+      var td = document.querySelector('td[data-row="' + rowIdx + '"][data-col="' + colIdx + '"]');
+      if (td) {
+        var headerName = tableData.header[colIdx];
+        td.innerHTML = escapeHtml(formatCellDisplay(value, headerName));
+        if (dirtyCells.hasOwnProperty(cellKey)) td.classList.add('dirty');
+        else td.classList.remove('dirty');
       }
     }
 
