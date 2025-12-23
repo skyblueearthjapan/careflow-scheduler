@@ -160,6 +160,126 @@
     /* 未使用列のスタイル */
     .unused-column { background: #f5f5f0 !important; color: #888; }
     .unused-mark { color: #e67e22; font-weight: bold; font-size: 10px; vertical-align: super; cursor: help; }
+    /* ============================================================
+       チャットウィザード
+       ============================================================ */
+    .wizard-panel {
+      background: var(--color-white);
+      border-bottom: 2px solid var(--color-green);
+      padding: 0;
+      display: none;
+    }
+    .wizard-panel.active { display: block; }
+    .wizard-header {
+      background: linear-gradient(135deg, var(--color-blue-light) 0%, var(--color-blue) 100%);
+      color: var(--color-white);
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .wizard-header h3 { margin: 0; font-size: 14px; }
+    .wizard-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 4px 8px; }
+    .wizard-close:hover { background: rgba(255,255,255,0.2); border-radius: 4px; }
+    .wizard-body { display: flex; height: 280px; }
+    .wizard-chat { flex: 1; padding: 12px; overflow-y: auto; background: #f8f9fa; }
+    .wizard-input-area { width: 320px; border-left: 1px solid var(--color-border); padding: 12px; display: flex; flex-direction: column; }
+    /* チャットメッセージ */
+    .chat-message { margin-bottom: 12px; display: flex; flex-direction: column; }
+    .chat-message.bot { align-items: flex-start; }
+    .chat-message.user { align-items: flex-end; }
+    .chat-bubble {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .chat-message.bot .chat-bubble {
+      background: var(--color-white);
+      border: 1px solid var(--color-border);
+      border-bottom-left-radius: 4px;
+    }
+    .chat-message.user .chat-bubble {
+      background: var(--color-blue);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-label { font-size: 10px; color: #999; margin-bottom: 4px; }
+    /* 入力エリア */
+    .wizard-question { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--color-text); }
+    .wizard-hint { font-size: 11px; color: #888; margin-bottom: 8px; }
+    .wizard-input-container { flex: 1; overflow-y: auto; }
+    .wizard-input-container input[type="text"],
+    .wizard-input-container input[type="number"],
+    .wizard-input-container input[type="date"],
+    .wizard-input-container input[type="time"],
+    .wizard-input-container textarea,
+    .wizard-input-container select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .wizard-input-container textarea { height: 60px; resize: vertical; }
+    .wizard-input-container input:focus,
+    .wizard-input-container textarea:focus,
+    .wizard-input-container select:focus { outline: none; border-color: var(--color-blue); }
+    .wizard-checkboxes { display: flex; flex-wrap: wrap; gap: 6px; }
+    .wizard-checkboxes label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      padding: 4px 8px;
+      background: #f0f0f0;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .wizard-checkboxes label:hover { background: var(--color-blue-light); }
+    .wizard-checkboxes input { width: 14px; height: 14px; }
+    .wizard-error { color: var(--color-error); font-size: 11px; margin-top: 4px; }
+    /* ウィザードボタン */
+    .wizard-buttons { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+    .wizard-btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .wizard-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .wizard-btn.secondary { background: #e0e0e0; color: var(--color-text); }
+    .wizard-btn.secondary:hover:not(:disabled) { background: #d0d0d0; }
+    .wizard-btn.primary { background: var(--color-blue); color: white; }
+    .wizard-btn.primary:hover:not(:disabled) { background: var(--color-blue-dark); }
+    .wizard-btn.success { background: var(--color-green); color: white; }
+    .wizard-btn.success:hover:not(:disabled) { background: var(--color-green-dark); }
+    /* プレビュー */
+    .wizard-preview { background: #fff; border: 1px solid var(--color-border); border-radius: 6px; padding: 8px; margin-bottom: 8px; max-height: 150px; overflow-y: auto; }
+    .wizard-preview table { width: 100%; font-size: 11px; border-collapse: collapse; }
+    .wizard-preview th, .wizard-preview td { padding: 4px 6px; text-align: left; border-bottom: 1px solid #eee; }
+    .wizard-preview th { background: #f5f5f5; font-weight: 600; }
+    /* 開始ボタン */
+    .wizard-start-btn {
+      background: var(--color-blue);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+    .wizard-start-btn:hover { background: var(--color-blue-dark); }
+    /* 進捗バー */
+    .wizard-progress { height: 4px; background: #e0e0e0; margin-bottom: 8px; border-radius: 2px; }
+    .wizard-progress-bar { height: 100%; background: var(--color-green); border-radius: 2px; transition: width 0.3s; }
     @media (max-width: 900px) { .right-panel { display: none; } }
   </style>
 </head>
@@ -170,6 +290,35 @@
       <span class="header-badge">管理者専用</span>
     </div>
     <span class="header-status">入力管理画面</span>
+  </div>
+
+  <!-- チャットウィザード -->
+  <div class="wizard-panel" id="wizardPanel">
+    <div class="wizard-header">
+      <h3 id="wizardTitle">新規登録ウィザード</h3>
+      <button class="wizard-close" onclick="closeWizard()">×</button>
+    </div>
+    <div class="wizard-body">
+      <div class="wizard-chat" id="wizardChat">
+        <!-- チャットメッセージがここに表示される -->
+      </div>
+      <div class="wizard-input-area">
+        <div class="wizard-progress">
+          <div class="wizard-progress-bar" id="wizardProgressBar" style="width: 0%"></div>
+        </div>
+        <div class="wizard-question" id="wizardQuestion">登録タイプを選択</div>
+        <div class="wizard-hint" id="wizardHint"></div>
+        <div class="wizard-input-container" id="wizardInputContainer">
+          <!-- 入力UIがここに表示される -->
+        </div>
+        <div class="wizard-error" id="wizardError"></div>
+        <div class="wizard-buttons">
+          <button class="wizard-btn secondary" id="wizardBackBtn" onclick="wizardBack()" disabled>戻る</button>
+          <button class="wizard-btn secondary" id="wizardSkipBtn" onclick="wizardSkip()" style="display:none;">スキップ</button>
+          <button class="wizard-btn primary" id="wizardNextBtn" onclick="wizardNext()">次へ</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="main-container">
@@ -191,8 +340,12 @@
     <div class="right-panel">
       <div class="panel-title">操作メニュー<span class="dirty-badge" id="dirtyBadge">未保存</span></div>
       <div class="operation-group">
+        <div class="operation-group-title">新規登録</div>
+        <button class="operation-btn primary" onclick="openWizard()"><span class="icon">💬</span>ウィザードで登録</button>
+      </div>
+      <div class="operation-group">
         <div class="operation-group-title">行操作</div>
-        <button class="operation-btn" id="btnAddRow" onclick="onAddRow()"><span class="icon">+</span>新規行を追加（選択行の下）</button>
+        <button class="operation-btn" id="btnAddRow" onclick="onAddRow()"><span class="icon">+</span>空行を追加（選択行の下）</button>
         <button class="operation-btn danger" id="btnDeleteRows" onclick="onDeleteSelected()" disabled><span class="icon">-</span>選択行を削除</button>
         <button class="operation-btn" id="btnCopyRows" onclick="onCopySelected()" disabled><span class="icon">C</span>行をコピー</button>
       </div>
@@ -1138,6 +1291,405 @@
       var div = document.createElement('div');
       div.textContent = text || '';
       return div.innerHTML;
+    }
+
+    // ============================================================
+    // チャットウィザード
+    // ============================================================
+
+    // フォームスキーマ定義
+    var FORM_SCHEMA = {
+      '患者マスタ': [
+        { key: 'patient_id', header: 'patient_id', label: '患者IDを発行します', type: 'autoId', prefix: 'P', required: true },
+        { key: 'name', header: '患者名', label: '患者さんの「氏名」は？', type: 'text', required: true },
+        { key: 'sex', header: '性別', label: '性別は？', type: 'select', options: ['', '男性', '女性'] },
+        { key: 'address', header: '住所', label: '住所は？', type: 'textarea', required: true },
+        { key: 'lat', header: '緯度', label: '緯度は？（後で住所から自動取得も可）', type: 'number', hint: '空欄で後から位置情報更新' },
+        { key: 'lng', header: '経度', label: '経度は？', type: 'number', hint: '空欄で後から位置情報更新' },
+        { key: 'area', header: 'エリア', label: 'エリアは？', type: 'select', options: ['', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3'], hint: '※現在スケジューリング計算に未使用' },
+        { key: 'weeklyCount', header: '週訪問回数', label: '週の訪問回数は？', type: 'number', required: true, min: 1 },
+        { key: 'preferDays', header: '希望曜日（複数可）', label: '希望する曜日は？（複数選択）', type: 'multiSelect', options: ['月','火','水','木','金','土','日'], required: true },
+        { key: 'ngDays', header: '曜日NG', label: 'NGの曜日は？', type: 'select', options: ['', '月', '火', '水', '木', '金', '土', '日'] },
+        { key: 'timeType', header: '時間タイプ', label: '時間タイプは？', type: 'select', options: ['時間帯', '午前', '午後', '終日', '固定'] },
+        { key: 'timeStart', header: '希望時間帯（開始）', label: '希望時間（開始）は？', type: 'time', required: true },
+        { key: 'timeEnd', header: '希望時間帯（終了）', label: '希望時間（終了）は？', type: 'time', required: true },
+        { key: 'serviceMin', header: 'サービス時間', label: 'サービス時間（分）は？', type: 'number', required: true, min: 5 },
+        { key: 'sexLimit', header: '性別制限', label: '性別制限がありますか？', type: 'select', options: ['', '男性のみ', '女性のみ'] },
+        { key: 'needStaff', header: '必要スタッフ数', label: '必要スタッフ数は？', type: 'number', defaultValue: 1, min: 1 },
+        { key: 'fixedStaff', header: '指定スタッフID', label: '指定スタッフは？（複数可）', type: 'staffMultiSelect' },
+        { key: 'staffType', header: '指定タイプ', label: '指定タイプは？', type: 'select', options: ['', '必須', '優先'] },
+        { key: 'ngStaff', header: 'NGスタッフID', label: 'NGスタッフは？（複数可）', type: 'staffMultiSelect' },
+        { key: 'contPref', header: '継続希望', label: '継続希望は？', type: 'select', options: ['どちらでも', '同じ人希望', 'ローテーション優先'] },
+        { key: 'note', header: '備考', label: '備考（任意）', type: 'textarea' }
+      ],
+      'スタッフマスタ': [
+        { key: 'staff_id', header: 'staff_id', label: 'スタッフIDを発行します', type: 'autoId', prefix: 'S', required: true },
+        { key: 'staffName', header: 'スタッフ名', label: 'スタッフ名は？', type: 'text', required: true },
+        { key: 'sex', header: '性別', label: '性別は？', type: 'select', options: ['', '男性', '女性'] },
+        { key: 'baseAddress', header: '拠点住所', label: '拠点住所は？', type: 'textarea' },
+        { key: 'lat', header: '緯度', label: '緯度は？（後で住所から自動取得も可）', type: 'number' },
+        { key: 'lng', header: '経度', label: '経度は？', type: 'number' },
+        { key: 'shiftStart', header: 'シフト開始', label: 'シフト開始時刻は？', type: 'time', required: true },
+        { key: 'shiftEnd', header: 'シフト終了', label: 'シフト終了時刻は？', type: 'time', required: true },
+        { key: 'workDays', header: '勤務曜日', label: '勤務可能な曜日は？（複数選択）', type: 'multiSelect', options: ['月','火','水','木','金','土','日'], required: true },
+        { key: 'areas', header: '得意エリア', label: '得意エリアは？', type: 'text', hint: '※現在スケジューリング計算に未使用' },
+        { key: 'maxPerDay', header: '最大訪問件数/日', label: '1日の最大訪問件数は？', type: 'number', required: true, min: 1 },
+        { key: 'skill', header: 'スキル', label: 'スキルは？', type: 'select', options: ['', 'ベテラン', '中堅', '新人'], hint: '※現在スケジューリング計算に未使用' },
+        { key: 'note', header: '備考', label: '備考（任意）', type: 'textarea' }
+      ],
+      '個別変更リクエスト': [
+        { key: 'change_id', header: 'change_id', label: '変更IDを発行します', type: 'autoId', prefix: 'C', required: true },
+        { key: 'patient_id', header: 'patient_id', label: '対象の患者は？', type: 'patientSelect', required: true },
+        { key: 'date', header: '日付', label: '変更日（訪問日）は？', type: 'date', required: true },
+        { key: 'operation', header: '操作', label: '操作内容は？', type: 'select', options: ['時間変更', 'キャンセル', '追加'], required: true },
+        { key: 'start', header: '新開始時刻', label: '新しい開始時刻は？', type: 'time', hint: 'キャンセル時は空欄可' },
+        { key: 'end', header: '新終了時刻', label: '新しい終了時刻は？', type: 'time', hint: 'キャンセル時は空欄可' },
+        { key: 'note', header: '備考', label: '備考（任意）', type: 'textarea' }
+      ]
+    };
+
+    // ウィザード状態
+    var wizardState = {
+      active: false,
+      formType: null,
+      schema: [],
+      currentStep: -1,  // -1 = フォーム選択, 0~ = 質問
+      answers: {},
+      chatHistory: []
+    };
+
+    // ウィザードを開く
+    function openWizard() {
+      wizardState = {
+        active: true,
+        formType: null,
+        schema: [],
+        currentStep: -1,
+        answers: {},
+        chatHistory: []
+      };
+      document.getElementById('wizardPanel').classList.add('active');
+      document.getElementById('wizardTitle').textContent = '新規登録ウィザード';
+      renderWizardStep();
+    }
+
+    // ウィザードを閉じる
+    function closeWizard() {
+      if (wizardState.currentStep > 0 && !confirm('入力内容を破棄してウィザードを閉じますか？')) return;
+      wizardState.active = false;
+      document.getElementById('wizardPanel').classList.remove('active');
+    }
+
+    // 現在のステップを描画
+    function renderWizardStep() {
+      var chatEl = document.getElementById('wizardChat');
+      var questionEl = document.getElementById('wizardQuestion');
+      var hintEl = document.getElementById('wizardHint');
+      var inputEl = document.getElementById('wizardInputContainer');
+      var errorEl = document.getElementById('wizardError');
+      var backBtn = document.getElementById('wizardBackBtn');
+      var skipBtn = document.getElementById('wizardSkipBtn');
+      var nextBtn = document.getElementById('wizardNextBtn');
+      var progressBar = document.getElementById('wizardProgressBar');
+
+      errorEl.textContent = '';
+
+      // フォーム選択ステップ
+      if (wizardState.currentStep === -1) {
+        questionEl.textContent = 'どの登録をしますか？';
+        hintEl.textContent = '';
+        inputEl.innerHTML = '<select id="wizardFormSelect">' +
+          '<option value="">-- 選択してください --</option>' +
+          '<option value="患者マスタ">患者マスタ</option>' +
+          '<option value="スタッフマスタ">スタッフマスタ</option>' +
+          '<option value="個別変更リクエスト">個別変更リクエスト</option>' +
+          '</select>';
+        backBtn.disabled = true;
+        skipBtn.style.display = 'none';
+        nextBtn.textContent = '開始';
+        progressBar.style.width = '0%';
+        chatEl.innerHTML = '<div class="chat-message bot"><div class="chat-label">システム</div><div class="chat-bubble">こんにちは！新規登録を対話形式でお手伝いします。どのデータを登録しますか？</div></div>';
+        return;
+      }
+
+      var schema = wizardState.schema;
+      var step = schema[wizardState.currentStep];
+      var progress = ((wizardState.currentStep + 1) / schema.length) * 100;
+      progressBar.style.width = progress + '%';
+
+      // 確認ステップ（最後）
+      if (wizardState.currentStep >= schema.length) {
+        questionEl.textContent = '入力内容の確認';
+        hintEl.textContent = '内容を確認して「登録」ボタンを押してください';
+        inputEl.innerHTML = renderPreview();
+        backBtn.disabled = false;
+        skipBtn.style.display = 'none';
+        nextBtn.textContent = '登録';
+        nextBtn.className = 'wizard-btn success';
+        progressBar.style.width = '100%';
+        return;
+      }
+
+      // 通常の質問ステップ
+      questionEl.textContent = step.label;
+      hintEl.textContent = step.hint || '';
+      inputEl.innerHTML = renderWizardInput(step);
+      backBtn.disabled = wizardState.currentStep === 0;
+      skipBtn.style.display = step.required ? 'none' : 'inline-block';
+      nextBtn.textContent = '次へ';
+      nextBtn.className = 'wizard-btn primary';
+
+      // 入力フィールドにフォーカス
+      var firstInput = inputEl.querySelector('input, select, textarea');
+      if (firstInput) firstInput.focus();
+
+      // チャット履歴を表示
+      renderChatHistory();
+    }
+
+    // 入力UIを生成
+    function renderWizardInput(step) {
+      var currentVal = wizardState.answers[step.key] || step.defaultValue || '';
+
+      switch (step.type) {
+        case 'autoId':
+          return '<div style="padding:10px; background:#f0f0f0; border-radius:6px; text-align:center; color:#666;">自動発行（' + step.prefix + '連番）</div>';
+        case 'text':
+          return '<input type="text" id="wizardInput" value="' + escapeHtml(currentVal) + '" placeholder="入力してください" />';
+        case 'textarea':
+          return '<textarea id="wizardInput" placeholder="入力してください">' + escapeHtml(currentVal) + '</textarea>';
+        case 'number':
+          return '<input type="number" id="wizardInput" value="' + escapeHtml(currentVal) + '" ' + (step.min !== undefined ? 'min="' + step.min + '"' : '') + ' placeholder="数値を入力" />';
+        case 'date':
+          return '<input type="date" id="wizardInput" value="' + escapeHtml(currentVal) + '" />';
+        case 'time':
+          var timeVal = currentVal ? String(currentVal).substring(0, 5) : '';
+          return '<select id="wizardInput"><option value="">-- 選択 --</option>' + TIME_OPTIONS.map(function(t) {
+            return '<option value="' + t + '"' + (t === timeVal ? ' selected' : '') + '>' + t + '</option>';
+          }).join('') + '</select>';
+        case 'select':
+          return '<select id="wizardInput">' + step.options.map(function(opt) {
+            return '<option value="' + escapeHtml(opt) + '"' + (opt === currentVal ? ' selected' : '') + '>' + (opt || '-- 選択 --') + '</option>';
+          }).join('') + '</select>';
+        case 'multiSelect':
+          var selected = currentVal ? currentVal.split(',') : [];
+          return '<div class="wizard-checkboxes">' + step.options.map(function(opt) {
+            var checked = selected.indexOf(opt) >= 0 ? ' checked' : '';
+            return '<label><input type="checkbox" value="' + escapeHtml(opt) + '"' + checked + '>' + escapeHtml(opt) + '</label>';
+          }).join('') + '</div>';
+        case 'staffMultiSelect':
+          var selectedStaff = currentVal ? currentVal.split(',') : [];
+          if (staffOptions.length === 0) return '<div style="color:#999;">スタッフデータがありません</div>';
+          return '<div class="wizard-checkboxes" style="max-height:120px; overflow-y:auto;">' + staffOptions.map(function(s) {
+            var checked = selectedStaff.indexOf(s.id) >= 0 ? ' checked' : '';
+            return '<label><input type="checkbox" value="' + escapeHtml(s.id) + '"' + checked + '>' + escapeHtml(s.label) + '</label>';
+          }).join('') + '</div>';
+        case 'patientSelect':
+          if (patientOptions.length === 0) return '<div style="color:#999;">患者データがありません</div>';
+          return '<select id="wizardInput"><option value="">-- 選択 --</option>' + patientOptions.map(function(p) {
+            return '<option value="' + escapeHtml(p.id) + '"' + (p.id === currentVal ? ' selected' : '') + '>' + escapeHtml(p.label) + '</option>';
+          }).join('') + '</select>';
+        default:
+          return '<input type="text" id="wizardInput" value="' + escapeHtml(currentVal) + '" />';
+      }
+    }
+
+    // 入力値を取得
+    function getWizardInputValue() {
+      var input = document.getElementById('wizardInput');
+      if (input) return input.value;
+
+      // チェックボックス（複数選択）
+      var checkboxes = document.querySelectorAll('#wizardInputContainer input[type="checkbox"]');
+      if (checkboxes.length > 0) {
+        var vals = [];
+        checkboxes.forEach(function(cb) { if (cb.checked) vals.push(cb.value); });
+        return vals.join(',');
+      }
+      return '';
+    }
+
+    // バリデーション
+    function validateWizardInput(step, value) {
+      if (step.type === 'autoId') return null; // 自動なのでOK
+      if (step.required && (!value || value.trim() === '')) return '必須項目です';
+      if (step.type === 'number' && value) {
+        var num = parseFloat(value);
+        if (isNaN(num)) return '数値を入力してください';
+        if (step.min !== undefined && num < step.min) return step.min + '以上を入力してください';
+      }
+      if (step.type === 'multiSelect' && step.required && (!value || value.trim() === '')) return '1つ以上選択してください';
+      return null;
+    }
+
+    // 次へ
+    function wizardNext() {
+      var errorEl = document.getElementById('wizardError');
+
+      // フォーム選択
+      if (wizardState.currentStep === -1) {
+        var formSelect = document.getElementById('wizardFormSelect');
+        var formType = formSelect ? formSelect.value : '';
+        if (!formType) {
+          errorEl.textContent = '登録タイプを選択してください';
+          return;
+        }
+        wizardState.formType = formType;
+        wizardState.schema = FORM_SCHEMA[formType] || [];
+        wizardState.currentStep = 0;
+        document.getElementById('wizardTitle').textContent = formType + ' - 新規登録';
+        addChatMessage('user', formType);
+        addChatMessage('bot', 'では、' + formType + 'の登録を始めます。順番に質問していきますね。');
+        renderWizardStep();
+        return;
+      }
+
+      var schema = wizardState.schema;
+
+      // 確認ステップ → 登録実行
+      if (wizardState.currentStep >= schema.length) {
+        submitWizard();
+        return;
+      }
+
+      // 通常ステップ
+      var step = schema[wizardState.currentStep];
+      var value = getWizardInputValue();
+
+      // バリデーション
+      var error = validateWizardInput(step, value);
+      if (error) {
+        errorEl.textContent = error;
+        return;
+      }
+
+      // 値を正規化して保存
+      if (step.type === 'time' && value) {
+        value = value + ':00'; // HH:MM → HH:MM:SS
+      }
+      wizardState.answers[step.key] = value;
+
+      // チャットに追加
+      var displayValue = formatAnswerForDisplay(step, value);
+      if (step.type !== 'autoId') {
+        addChatMessage('user', displayValue || '（未入力）');
+      }
+
+      // 次のステップへ
+      wizardState.currentStep++;
+      if (wizardState.currentStep < schema.length) {
+        var nextStep = schema[wizardState.currentStep];
+        addChatMessage('bot', nextStep.label);
+      } else {
+        addChatMessage('bot', '全ての質問が完了しました。内容を確認してください。');
+      }
+      renderWizardStep();
+    }
+
+    // 戻る
+    function wizardBack() {
+      if (wizardState.currentStep <= 0) return;
+      wizardState.currentStep--;
+      renderWizardStep();
+    }
+
+    // スキップ
+    function wizardSkip() {
+      var schema = wizardState.schema;
+      var step = schema[wizardState.currentStep];
+      if (step.required) return;
+      wizardState.answers[step.key] = '';
+      addChatMessage('user', '（スキップ）');
+      wizardState.currentStep++;
+      if (wizardState.currentStep < schema.length) {
+        addChatMessage('bot', schema[wizardState.currentStep].label);
+      }
+      renderWizardStep();
+    }
+
+    // 回答を表示用にフォーマット
+    function formatAnswerForDisplay(step, value) {
+      if (!value) return '';
+      if (step.type === 'staffMultiSelect') {
+        return value.split(',').map(function(id) {
+          var s = staffOptions.find(function(x) { return x.id === id; });
+          return s ? s.label : id;
+        }).join(', ');
+      }
+      if (step.type === 'patientSelect') {
+        var p = patientOptions.find(function(x) { return x.id === value; });
+        return p ? p.label : value;
+      }
+      if (step.type === 'time') {
+        return value.substring(0, 5);
+      }
+      return value;
+    }
+
+    // チャットメッセージを追加
+    function addChatMessage(role, text) {
+      wizardState.chatHistory.push({ role: role, text: text });
+    }
+
+    // チャット履歴を描画
+    function renderChatHistory() {
+      var chatEl = document.getElementById('wizardChat');
+      var html = wizardState.chatHistory.map(function(msg) {
+        var labelText = msg.role === 'bot' ? 'システム' : 'あなた';
+        return '<div class="chat-message ' + msg.role + '"><div class="chat-label">' + labelText + '</div><div class="chat-bubble">' + escapeHtml(msg.text) + '</div></div>';
+      }).join('');
+      chatEl.innerHTML = html;
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    // プレビューを生成
+    function renderPreview() {
+      var schema = wizardState.schema;
+      var html = '<div class="wizard-preview"><table>';
+      schema.forEach(function(step) {
+        var value = wizardState.answers[step.key] || '';
+        var displayValue = formatAnswerForDisplay(step, value);
+        if (step.type === 'autoId') displayValue = '（自動発行）';
+        html += '<tr><th>' + escapeHtml(step.header) + '</th><td>' + escapeHtml(displayValue || '-') + '</td></tr>';
+      });
+      html += '</table></div>';
+      return html;
+    }
+
+    // 登録実行
+    function submitWizard() {
+      var nextBtn = document.getElementById('wizardNextBtn');
+      nextBtn.disabled = true;
+      nextBtn.textContent = '登録中...';
+
+      // 選択行の下に挿入する場合の行番号を取得
+      var insertAfterRow = null;
+      var selectedRows = getSelectedRows();
+      if (selectedRows.length > 0) {
+        insertAfterRow = rowMeta[Math.max.apply(null, selectedRows)].sheetRowIndex;
+      }
+
+      // サーバーに送信
+      google.script.run
+        .withSuccessHandler(function(result) {
+          nextBtn.disabled = false;
+          nextBtn.textContent = '登録';
+          if (result.success) {
+            showToast('success', result.message || '登録しました');
+            closeWizard();
+            wizardState.active = false;
+            document.getElementById('wizardPanel').classList.remove('active');
+            reloadCurrentSheet();
+          } else {
+            document.getElementById('wizardError').textContent = result.error || '登録に失敗しました';
+          }
+        })
+        .withFailureHandler(function(e) {
+          nextBtn.disabled = false;
+          nextBtn.textContent = '登録';
+          document.getElementById('wizardError').textContent = 'エラー: ' + e.message;
+        })
+        .input_createRowFromWizard(wizardState.formType, wizardState.answers, insertAfterRow);
     }
   </script>
 </body>

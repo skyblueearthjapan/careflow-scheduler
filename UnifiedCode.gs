@@ -802,6 +802,176 @@ function generateNextId_(sheet, idHeaderName, prefix, padLen) {
   return prefix + String(nextNum).padStart(padLen, '0');
 }
 
+/**
+ * ウィザードから行を作成
+ * @param {string} formType - フォームタイプ（患者マスタ, スタッフマスタ, 個別変更リクエスト）
+ * @param {Object} answers - 回答オブジェクト { key: value, ... }
+ * @param {number} insertAfterRow - 挿入位置（1-based、省略時は末尾）
+ * @returns {Object} { success, message, newRowIndex, newRowData }
+ */
+function input_createRowFromWizard(formType, answers, insertAfterRow) {
+  requireAdmin_();
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+    // フォームタイプからシート名を決定
+    var sheetName;
+    if (formType === '患者マスタ') {
+      sheetName = SHEETS.PATIENT_MASTER;
+    } else if (formType === 'スタッフマスタ') {
+      sheetName = SHEETS.STAFF_MASTER;
+    } else if (formType === '個別変更リクエスト') {
+      sheetName = SHEETS.CHANGE_REQUEST;
+    } else {
+      throw new Error('不明なフォームタイプ: ' + formType);
+    }
+
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error('シートが見つかりません: ' + sheetName);
+    }
+
+    const numCols = sheet.getLastColumn();
+    const lastRow = sheet.getLastRow();
+    const header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+
+    // 挿入位置を決定
+    let insertAt;
+    if (!insertAfterRow || insertAfterRow < 2) {
+      insertAt = lastRow + 1;
+    } else if (insertAfterRow >= lastRow) {
+      insertAt = lastRow + 1;
+    } else {
+      insertAt = insertAfterRow + 1;
+      sheet.insertRowAfter(insertAfterRow);
+    }
+
+    // 空行データを作成
+    const rowData = new Array(numCols).fill('');
+
+    // IDを自動採番（autoIdタイプの場合）
+    if (formType === '患者マスタ') {
+      const idxPid = header.indexOf('patient_id');
+      if (idxPid >= 0) {
+        rowData[idxPid] = generateNextId_(sheet, 'patient_id', 'P', 3);
+      }
+    } else if (formType === 'スタッフマスタ') {
+      const idxSid = header.indexOf('staff_id');
+      if (idxSid >= 0) {
+        rowData[idxSid] = generateNextId_(sheet, 'staff_id', 'S', 3);
+      }
+    } else if (formType === '個別変更リクエスト') {
+      const idxCid = header.indexOf('change_id');
+      if (idxCid >= 0) {
+        rowData[idxCid] = generateNextId_(sheet, 'change_id', 'C', 3);
+      }
+    }
+
+    // ヘッダー名とキーのマッピング定義
+    var headerMapping = {
+      // 患者マスタ用
+      'name': '患者名',
+      'sex': '性別',
+      'address': '住所',
+      'lat': '緯度',
+      'lng': '経度',
+      'area': 'エリア',
+      'weeklyCount': '週訪問回数',
+      'preferDays': '希望曜日（複数可）',
+      'ngDays': '曜日NG',
+      'timeType': '時間タイプ',
+      'timeStart': '希望時間帯（開始）',
+      'timeEnd': '希望時間帯（終了）',
+      'serviceMin': 'サービス時間',
+      'sexLimit': '性別制限',
+      'needStaff': '必要スタッフ数',
+      'fixedStaff': '指定スタッフID',
+      'staffType': '指定タイプ',
+      'ngStaff': 'NGスタッフID',
+      'contPref': '継続希望',
+      'note': '備考',
+      // スタッフマスタ用
+      'staffName': 'スタッフ名',
+      'baseAddress': '拠点住所',
+      'shiftStart': 'シフト開始',
+      'shiftEnd': 'シフト終了',
+      'workDays': '勤務曜日',
+      'areas': '得意エリア',
+      'maxPerDay': '最大訪問件数/日',
+      'skill': 'スキル',
+      // 個別変更リクエスト用
+      'date': '日付',
+      'operation': '操作',
+      'start': '新開始時刻',
+      'end': '新終了時刻'
+    };
+
+    // 曜日の日本語→英語変換マップ
+    var youbiJpToEn = {
+      '日': 'Sun', '月': 'Mon', '火': 'Tue', '水': 'Wed',
+      '木': 'Thu', '金': 'Fri', '土': 'Sat'
+    };
+
+    // answersをrowDataにマッピング
+    for (var key in answers) {
+      if (!answers.hasOwnProperty(key)) continue;
+      var value = answers[key];
+      if (value === undefined || value === null) continue;
+
+      // ヘッダー名を取得
+      var headerName = headerMapping[key] || key;
+      var idx = header.indexOf(headerName);
+      if (idx < 0) continue;
+
+      // 配列の場合（multiSelect）はCSVに変換
+      if (Array.isArray(value)) {
+        // 曜日フィールドの場合は日本語→英語変換
+        if (key === 'preferDays' || key === 'workDays') {
+          value = value.map(function(d) {
+            return youbiJpToEn[d] || d;
+          });
+        }
+        rowData[idx] = value.join(',');
+      } else {
+        // 曜日NGフィールドの場合は日本語→英語変換
+        if (key === 'ngDays' && value) {
+          value = youbiJpToEn[value] || value;
+        }
+        rowData[idx] = value;
+      }
+    }
+
+    // 行を挿入
+    sheet.getRange(insertAt, 1, 1, numCols).setValues([rowData]);
+
+    // 生成されたIDを取得
+    var generatedId = '';
+    if (formType === '患者マスタ') {
+      generatedId = rowData[header.indexOf('patient_id')] || '';
+    } else if (formType === 'スタッフマスタ') {
+      generatedId = rowData[header.indexOf('staff_id')] || '';
+    } else if (formType === '個別変更リクエスト') {
+      generatedId = rowData[header.indexOf('change_id')] || '';
+    }
+
+    return {
+      success: true,
+      message: formType + 'に新しいレコードを追加しました（ID: ' + generatedId + '）',
+      newRowIndex: insertAt,
+      newRowData: rowData,
+      generatedId: generatedId
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // ============================================================
 // 実行API（GAS実行ボタン用）
 // ============================================================
