@@ -1354,6 +1354,52 @@
       chatHistory: []
     };
 
+    // データを再読み込み（ウィザード用）
+    function reloadWizardData(callback) {
+      var loadCount = 0;
+      var totalLoads = 2;
+
+      function checkComplete() {
+        loadCount++;
+        if (loadCount >= totalLoads && callback) callback();
+      }
+
+      // 患者データを読み込み
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success && result.data) {
+            dictionaries = result.data;
+            patientOptions = [];
+            for (var pid in dictionaries.patients) {
+              patientOptions.push({
+                id: pid,
+                name: dictionaries.patients[pid],
+                label: pid + ' ' + dictionaries.patients[pid]
+              });
+            }
+            patientOptions.sort(function(a, b) { return a.id.localeCompare(b.id); });
+          }
+          checkComplete();
+        })
+        .withFailureHandler(function(e) {
+          console.error('Failed to load dictionaries:', e);
+          checkComplete();
+        })
+        .input_getDictionaries();
+
+      // スタッフデータを読み込み
+      google.script.run
+        .withSuccessHandler(function(options) {
+          staffOptions = options || [];
+          checkComplete();
+        })
+        .withFailureHandler(function(e) {
+          console.error('Failed to load staff options:', e);
+          checkComplete();
+        })
+        .input_getStaffOptions();
+    }
+
     // ウィザードを開く
     function openWizard() {
       wizardState = {
@@ -1366,7 +1412,16 @@
       };
       document.getElementById('wizardPanel').classList.add('active');
       document.getElementById('wizardTitle').textContent = '新規登録ウィザード';
-      renderWizardStep();
+
+      // データが空の場合は再読み込み
+      if (patientOptions.length === 0 || staffOptions.length === 0) {
+        document.getElementById('wizardInputContainer').innerHTML = '<div style="text-align:center; color:#666;">データを読み込み中...</div>';
+        reloadWizardData(function() {
+          renderWizardStep();
+        });
+      } else {
+        renderWizardStep();
+      }
     }
 
     // ウィザードを閉じる
