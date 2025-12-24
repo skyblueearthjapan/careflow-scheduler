@@ -1575,6 +1575,42 @@
         addChatMessage('user', displayValue || '（未入力）');
       }
 
+      // 時間タイプに基づく自動時間設定
+      var autoTimeSet = null;
+      if (step.key === 'timeType') {
+        if (value === '午前') {
+          autoTimeSet = { start: '09:00:00', end: '12:00:00', label: '午前（09:00〜12:00）' };
+        } else if (value === '午後') {
+          autoTimeSet = { start: '13:00:00', end: '17:00:00', label: '午後（13:00〜17:00）' };
+        } else if (value === '終日') {
+          autoTimeSet = { start: '09:00:00', end: '18:00:00', label: '終日（09:00〜18:00）' };
+        }
+        // 午前/午後/終日の場合、時間を自動設定し質問をスキップ
+        if (autoTimeSet) {
+          wizardState.answers['timeStart'] = autoTimeSet.start;
+          wizardState.answers['timeEnd'] = autoTimeSet.end;
+          addChatMessage('bot', '時間を自動設定しました: ' + autoTimeSet.label);
+          // timeStart と timeEnd のステップをスキップ
+          wizardState.currentStep++; // 現在のtimeTypeから次へ
+          // timeStart をスキップ
+          if (wizardState.currentStep < schema.length && schema[wizardState.currentStep].key === 'timeStart') {
+            wizardState.currentStep++;
+          }
+          // timeEnd をスキップ
+          if (wizardState.currentStep < schema.length && schema[wizardState.currentStep].key === 'timeEnd') {
+            wizardState.currentStep++;
+          }
+          // 次の質問を表示
+          if (wizardState.currentStep < schema.length) {
+            addChatMessage('bot', schema[wizardState.currentStep].label);
+          } else {
+            addChatMessage('bot', '全ての質問が完了しました。内容を確認してください。');
+          }
+          renderWizardStep();
+          return;
+        }
+      }
+
       // 次のステップへ
       wizardState.currentStep++;
       if (wizardState.currentStep < schema.length) {

@@ -920,16 +920,24 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       '木': 'Thu', '金': 'Fri', '土': 'Sat'
     };
 
+    // 自動生成されたIDフィールドのリスト（上書き禁止）
+    var autoIdFields = ['patient_id', 'staff_id', 'change_id'];
+
     // answersをrowDataにマッピング
     for (var key in answers) {
       if (!answers.hasOwnProperty(key)) continue;
       var value = answers[key];
-      if (value === undefined || value === null) continue;
+
+      // 空値はスキップ
+      if (value === undefined || value === null || value === '') continue;
 
       // ヘッダー名を取得
       var headerName = headerMapping[key] || key;
       var idx = header.indexOf(headerName);
       if (idx < 0) continue;
+
+      // 自動生成IDフィールドで既に値がある場合はスキップ（上書き防止）
+      if (autoIdFields.indexOf(headerName) >= 0 && rowData[idx]) continue;
 
       // 配列の場合（multiSelect）はCSVに変換
       if (Array.isArray(value)) {
@@ -946,6 +954,32 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
           value = youbiJpToEn[value] || value;
         }
         rowData[idx] = value;
+      }
+    }
+
+    // 個別変更リクエストの場合、患者IDから患者名を自動取得
+    if (formType === '個別変更リクエスト') {
+      var idxPatientId = header.indexOf('patient_id');
+      var idxPatientName = header.indexOf('患者名');
+      if (idxPatientId >= 0 && idxPatientName >= 0 && rowData[idxPatientId] && !rowData[idxPatientName]) {
+        var patientSheet = ss.getSheetByName(SHEETS.PATIENT_MASTER);
+        if (patientSheet) {
+          var patientData = patientSheet.getDataRange().getValues();
+          if (patientData.length > 1) {
+            var pHeader = patientData[0];
+            var pIdIdx = pHeader.indexOf('patient_id');
+            var pNameIdx = pHeader.indexOf('患者名');
+            if (pIdIdx >= 0 && pNameIdx >= 0) {
+              var targetPid = rowData[idxPatientId];
+              for (var p = 1; p < patientData.length; p++) {
+                if (String(patientData[p][pIdIdx]).trim() === String(targetPid).trim()) {
+                  rowData[idxPatientName] = patientData[p][pNameIdx] || '';
+                  break;
+                }
+              }
+            }
+          }
+        }
       }
     }
 
