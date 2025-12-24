@@ -1308,10 +1308,11 @@
         { key: 'weeklyCount', header: '週訪問回数', label: '週の訪問回数は？', type: 'number', required: true, min: 1 },
         { key: 'preferDays', header: '希望曜日（複数可）', label: '希望する曜日は？（複数選択）', type: 'multiSelect', options: ['月','火','水','木','金','土','日'], required: true },
         { key: 'ngDays', header: '曜日NG', label: 'NGの曜日は？', type: 'select', options: ['', '月', '火', '水', '木', '金', '土', '日'] },
+        { key: 'serviceMin', header: 'サービス時間', label: 'サービス時間（分）は？', type: 'number', required: true, min: 5 },
         { key: 'timeType', header: '時間タイプ', label: '時間タイプは？', type: 'select', options: ['時間帯', '午前', '午後', '終日', '固定'] },
+        { key: 'fixedTarget', header: null, label: '開始・終了どちらを固定しますか？', type: 'select', options: ['開始', '終了'], conditionalOn: { key: 'timeType', value: '固定' } },
         { key: 'timeStart', header: '希望時間帯（開始）', label: '希望時間（開始）は？', type: 'time', required: true },
         { key: 'timeEnd', header: '希望時間帯（終了）', label: '希望時間（終了）は？', type: 'time', required: true },
-        { key: 'serviceMin', header: 'サービス時間', label: 'サービス時間（分）は？', type: 'number', required: true, min: 5 },
         { key: 'sexLimit', header: '性別制限', label: '性別制限がありますか？', type: 'select', options: ['', '男性のみ', '女性のみ'] },
         { key: 'needStaff', header: '必要スタッフ数', label: '必要スタッフ数は？', type: 'number', defaultValue: 1, min: 1 },
         { key: 'fixedStaff', header: '指定スタッフID', label: '指定スタッフは？（複数可）', type: 'staffMultiSelect' },
@@ -1573,6 +1574,39 @@
       return null;
     }
 
+    // 時間計算ヘルパー関数
+    function addMinutesToTimeStr(timeStr, minutes) {
+      var parts = timeStr.split(':');
+      var h = parseInt(parts[0], 10);
+      var m = parseInt(parts[1], 10);
+      var totalMin = h * 60 + m + minutes;
+      var newH = Math.floor(totalMin / 60) % 24;
+      var newM = totalMin % 60;
+      return String(newH).padStart(2, '0') + ':' + String(newM).padStart(2, '0') + ':00';
+    }
+
+    function subtractMinutesFromTimeStr(timeStr, minutes) {
+      return addMinutesToTimeStr(timeStr, -minutes);
+    }
+
+    // 条件付きステップをスキップすべきか判定
+    function shouldSkipStep(step) {
+      if (!step.conditionalOn) return false;
+      var condKey = step.conditionalOn.key;
+      var condValue = step.conditionalOn.value;
+      return wizardState.answers[condKey] !== condValue;
+    }
+
+    // 次の有効なステップへ進む
+    function advanceToNextValidStep() {
+      var schema = wizardState.schema;
+      wizardState.currentStep++;
+      // 条件付きステップをスキップ
+      while (wizardState.currentStep < schema.length && shouldSkipStep(schema[wizardState.currentStep])) {
+        wizardState.currentStep++;
+      }
+    }
+
     // 次へ
     function wizardNext() {
       var errorEl = document.getElementById('wizardError');
@@ -1627,8 +1661,8 @@
       }
 
       // 時間タイプに基づく自動時間設定
-      var autoTimeSet = null;
       if (step.key === 'timeType') {
+        var autoTimeSet = null;
         if (value === '午前') {
           autoTimeSet = { start: '09:00:00', end: '12:00:00', label: '午前（09:00〜12:00）' };
         } else if (value === '午後') {
@@ -1641,15 +1675,15 @@
           wizardState.answers['timeStart'] = autoTimeSet.start;
           wizardState.answers['timeEnd'] = autoTimeSet.end;
           addChatMessage('bot', '時間を自動設定しました: ' + autoTimeSet.label);
-          // timeStart と timeEnd のステップをスキップ
-          wizardState.currentStep++; // 現在のtimeTypeから次へ
-          // timeStart をスキップ
-          if (wizardState.currentStep < schema.length && schema[wizardState.currentStep].key === 'timeStart') {
-            wizardState.currentStep++;
-          }
-          // timeEnd をスキップ
-          if (wizardState.currentStep < schema.length && schema[wizardState.currentStep].key === 'timeEnd') {
-            wizardState.currentStep++;
+          // fixedTarget, timeStart, timeEnd をスキップ
+          wizardState.currentStep++;
+          while (wizardState.currentStep < schema.length) {
+            var nextKey = schema[wizardState.currentStep].key;
+            if (nextKey === 'fixedTarget' || nextKey === 'timeStart' || nextKey === 'timeEnd') {
+              wizardState.currentStep++;
+            } else {
+              break;
+            }
           }
           // 次の質問を表示
           if (wizardState.currentStep < schema.length) {
@@ -1660,10 +1694,73 @@
           renderWizardStep();
           return;
         }
+        // 固定タイプの場合は、fixedTargetの質問へ進む
+        if (value === '固定') {
+          advanceToNextValidStep();
+          if (wizardState.currentStep < schema.length) {
+            addChatMessage('bot', schema[wizardState.currentStep].label);
+          }
+          renderWizardStep();
+          return;
+        }
+      }
+
+      // 固定タイプで開始/終了選択後の処理
+      if (step.key === 'fixedTarget') {
+        var fixedTarget = value; // '開始' or '終了'
+        advanceToNextValidStep();
+        // fixedTargetに応じてラベルを変更
+        if (fixedTarget === '開始') {
+          addChatMessage('bot', '固定する開始時刻は？');
+        } else {
+          // 終了固定の場合、timeStartをスキップしてtimeEndへ
+          if (wizardState.currentStep < schema.length && schema[wizardState.currentStep].key === 'timeStart') {
+            wizardState.currentStep++;
+          }
+          addChatMessage('bot', '固定する終了時刻は？');
+        }
+        renderWizardStep();
+        return;
+      }
+
+      // 固定タイプでtimeStart入力後、timeEndを自動計算
+      if (step.key === 'timeStart' && wizardState.answers['timeType'] === '固定' && wizardState.answers['fixedTarget'] === '開始') {
+        var serviceMin = parseInt(wizardState.answers['serviceMin'], 10) || 0;
+        var calcEnd = addMinutesToTimeStr(value, serviceMin);
+        wizardState.answers['timeEnd'] = calcEnd;
+        addChatMessage('bot', '終了時刻を自動計算しました: ' + calcEnd.substring(0, 5));
+        // timeEnd をスキップ
+        wizardState.currentStep++;
+        if (wizardState.currentStep < schema.length && schema[wizardState.currentStep].key === 'timeEnd') {
+          wizardState.currentStep++;
+        }
+        if (wizardState.currentStep < schema.length) {
+          addChatMessage('bot', schema[wizardState.currentStep].label);
+        } else {
+          addChatMessage('bot', '全ての質問が完了しました。内容を確認してください。');
+        }
+        renderWizardStep();
+        return;
+      }
+
+      // 固定タイプでtimeEnd入力後、timeStartを自動計算
+      if (step.key === 'timeEnd' && wizardState.answers['timeType'] === '固定' && wizardState.answers['fixedTarget'] === '終了') {
+        var serviceMin = parseInt(wizardState.answers['serviceMin'], 10) || 0;
+        var calcStart = subtractMinutesFromTimeStr(value, serviceMin);
+        wizardState.answers['timeStart'] = calcStart;
+        addChatMessage('bot', '開始時刻を自動計算しました: ' + calcStart.substring(0, 5));
+        advanceToNextValidStep();
+        if (wizardState.currentStep < schema.length) {
+          addChatMessage('bot', schema[wizardState.currentStep].label);
+        } else {
+          addChatMessage('bot', '全ての質問が完了しました。内容を確認してください。');
+        }
+        renderWizardStep();
+        return;
       }
 
       // 次のステップへ
-      wizardState.currentStep++;
+      advanceToNextValidStep();
       if (wizardState.currentStep < schema.length) {
         var nextStep = schema[wizardState.currentStep];
         addChatMessage('bot', nextStep.label);
