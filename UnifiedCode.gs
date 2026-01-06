@@ -21,6 +21,7 @@ const SHEETS = {
   PATIENT_MASTER: '患者マスタ',
   STAFF_MASTER: 'スタッフマスタ',
   CHANGE_REQUEST: '個別変更リクエスト',
+  STAFF_CHANGE_REQUEST: 'スタッフ個別変更リクエスト',
   // 権限
   ADMIN: '管理者',
   // その他
@@ -40,7 +41,8 @@ const OUTPUT_TABS = [
 const INPUT_TABS = [
   { key: 'patient', name: '患者マスタ', sheetName: SHEETS.PATIENT_MASTER },
   { key: 'staff', name: 'スタッフマスタ', sheetName: SHEETS.STAFF_MASTER },
-  { key: 'change', name: '個別変更リクエスト', sheetName: SHEETS.CHANGE_REQUEST }
+  { key: 'change', name: '個別変更リクエスト', sheetName: SHEETS.CHANGE_REQUEST },
+  { key: 'staffChange', name: 'スタッフ個別変更', sheetName: SHEETS.STAFF_CHANGE_REQUEST }
 ];
 
 // 実行ボタン→関数名のマッピング（ホワイトリスト）
@@ -560,6 +562,11 @@ function input_insertRowBelow(sheetName, baseRowIndex) {
       if (idxCid >= 0) {
         emptyRow[idxCid] = generateNextId_(sheet, 'change_id', 'C', 3);
       }
+    } else if (sheetName === SHEETS.STAFF_CHANGE_REQUEST) {
+      const idxScid = header.indexOf('staff_change_id');
+      if (idxScid >= 0) {
+        emptyRow[idxScid] = generateNextId_(sheet, 'staff_change_id', 'SC', 3);
+      }
     }
 
     sheet.getRange(insertAt, 1, 1, numCols).setValues([emptyRow]);
@@ -830,6 +837,8 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       sheetName = SHEETS.STAFF_MASTER;
     } else if (formType === '個別変更リクエスト') {
       sheetName = SHEETS.CHANGE_REQUEST;
+    } else if (formType === 'スタッフ個別変更') {
+      sheetName = SHEETS.STAFF_CHANGE_REQUEST;
     } else {
       return { success: false, error: '不明なフォームタイプ: ' + formType };
     }
@@ -873,6 +882,11 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       if (idxCid >= 0) {
         rowData[idxCid] = generateNextId_(sheet, 'change_id', 'C', 3);
       }
+    } else if (formType === 'スタッフ個別変更') {
+      var idxScid = header.indexOf('staff_change_id');
+      if (idxScid >= 0) {
+        rowData[idxScid] = generateNextId_(sheet, 'staff_change_id', 'SC', 3);
+      }
     }
 
     // ヘッダー名とキーのマッピング定義
@@ -911,7 +925,12 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       'date': '日付',
       'operation': '操作',
       'start': '新開始時刻',
-      'end': '新終了時刻'
+      'end': '新終了時刻',
+      // スタッフ個別変更リクエスト用
+      'restrictionType': '制限タイプ',
+      'startTime': '開始時刻',
+      'endTime': '終了時刻',
+      'reason': '理由'
     };
 
     // 曜日の日本語→英語変換マップ
@@ -921,7 +940,7 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     };
 
     // 自動生成されたIDフィールドのリスト（上書き禁止）
-    var autoIdFields = ['patient_id', 'staff_id', 'change_id'];
+    var autoIdFields = ['patient_id', 'staff_id', 'change_id', 'staff_change_id'];
 
     // answersをrowDataにマッピング
     for (var key in answers) {
@@ -983,6 +1002,50 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       }
     }
 
+    // スタッフ個別変更の場合、スタッフIDからスタッフ名を自動取得 + 曜日を自動計算
+    if (formType === 'スタッフ個別変更') {
+      // スタッフ名の自動取得
+      var idxStaffId = header.indexOf('staff_id');
+      var idxStaffName = header.indexOf('スタッフ名');
+      if (idxStaffId >= 0 && idxStaffName >= 0 && rowData[idxStaffId] && !rowData[idxStaffName]) {
+        var staffSheet = ss.getSheetByName(SHEETS.STAFF_MASTER);
+        if (staffSheet) {
+          var staffData = staffSheet.getDataRange().getValues();
+          if (staffData.length > 1) {
+            var sHeader = staffData[0];
+            var sIdIdx = sHeader.indexOf('staff_id');
+            var sNameIdx = sHeader.indexOf('スタッフ名');
+            if (sIdIdx >= 0 && sNameIdx >= 0) {
+              var targetSid = rowData[idxStaffId];
+              for (var s = 1; s < staffData.length; s++) {
+                if (String(staffData[s][sIdIdx]).trim() === String(targetSid).trim()) {
+                  rowData[idxStaffName] = staffData[s][sNameIdx] || '';
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 曜日の自動計算（日付から）
+      var idxDate = header.indexOf('日付');
+      var idxYoubi = header.indexOf('曜日');
+      if (idxDate >= 0 && idxYoubi >= 0 && rowData[idxDate] && !rowData[idxYoubi]) {
+        var dateVal = rowData[idxDate];
+        var dateObj;
+        if (dateVal instanceof Date) {
+          dateObj = dateVal;
+        } else {
+          dateObj = new Date(dateVal);
+        }
+        if (!isNaN(dateObj.getTime())) {
+          var youbiNames = ['日', '月', '火', '水', '木', '金', '土'];
+          rowData[idxYoubi] = youbiNames[dateObj.getDay()];
+        }
+      }
+    }
+
     // 行を挿入
     sheet.getRange(insertAt, 1, 1, numCols).setValues([rowData]);
 
@@ -994,6 +1057,8 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       generatedId = rowData[header.indexOf('staff_id')] || '';
     } else if (formType === '個別変更リクエスト') {
       generatedId = rowData[header.indexOf('change_id')] || '';
+    } else if (formType === 'スタッフ個別変更') {
+      generatedId = rowData[header.indexOf('staff_change_id')] || '';
     }
 
     return {
