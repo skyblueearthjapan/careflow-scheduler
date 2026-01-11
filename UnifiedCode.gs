@@ -1370,25 +1370,69 @@ function 週ビューを更新_(ss) {
       timeMode: evHeader.indexOf('時間指定方法'),
       startTime: evHeader.indexOf('開始時刻'),
       endTime: evHeader.indexOf('終了時刻'),
+      durationMin: evHeader.indexOf('所要時間(分)'),
+      fixedSlot: evHeader.indexOf('固定枠'),
       patientLinked: evHeader.indexOf('患者紐づき'),
       patientId: evHeader.indexOf('patient_id'),
       returnAfter: evHeader.indexOf('事後事務所戻り')
     };
+
+    // 時間値を分に変換するヘルパー
+    function evToMinutes(v) {
+      if (typeof v === 'number') return Math.round(v * 24 * 60);
+      else if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
+      else return null;
+    }
 
     for (var evi = 1; evi < evValues.length; evi++) {
       var evRow = evValues[evi];
       var evDate = evRow[evIdx.date];
       if (!evDate || !(evDate instanceof Date)) continue;
 
+      var evStaffId = evRow[evIdx.staffId] || '';
+      var evTimeMode = String(evRow[evIdx.timeMode] || '').trim();
+      var evStartMin = evToMinutes(evRow[evIdx.startTime]);
+      var evEndMin = evToMinutes(evRow[evIdx.endTime]);
+      var evDuration = evRow[evIdx.durationMin] ? parseInt(evRow[evIdx.durationMin], 10) : 60;
+      var evFixed = evRow[evIdx.fixedSlot] === true || evRow[evIdx.fixedSlot] === 'TRUE';
+
+      // スタッフのシフト情報を取得
+      var staffShift = staffGenderMap[evStaffId] || {};
+      var shiftStart = 540;  // デフォルト09:00
+      var shiftEnd = 1080;   // デフォルト18:00
+
+      // イベントの実際の時間を計算
+      var resolvedStart = null, resolvedEnd = null;
+
+      if (evTimeMode === '時間指定' && evStartMin != null && evEndMin != null) {
+        // 時間指定: 開始・終了時刻をそのまま使用
+        resolvedStart = evStartMin;
+        resolvedEnd = evEndMin;
+      } else if (evTimeMode === '午前') {
+        // 午前: 09:00からduration分
+        resolvedStart = shiftStart;
+        resolvedEnd = Math.min(shiftStart + evDuration, 720);
+      } else if (evTimeMode === '午後') {
+        // 午後: 12:00からduration分
+        resolvedStart = 720;
+        resolvedEnd = Math.min(720 + evDuration, shiftEnd);
+      } else if (evTimeMode === '終日') {
+        // 終日: シフト全体
+        resolvedStart = shiftStart;
+        resolvedEnd = shiftEnd;
+      }
+
       eventList.push({
-        staffId: evRow[evIdx.staffId] || '',
+        staffId: evStaffId,
         date: evDate,
         dateStr: Utilities.formatDate(evDate, tz, 'yyyy/MM/dd'),
         eventType: evRow[evIdx.eventType] || '',
         title: evRow[evIdx.title] || '',
-        timeMode: evRow[evIdx.timeMode] || '',
-        startTime: evRow[evIdx.startTime],
-        endTime: evRow[evIdx.endTime],
+        timeMode: evTimeMode,
+        startMin: resolvedStart,
+        endMin: resolvedEnd,
+        durationMin: evDuration,
+        fixedSlot: evFixed,
         patientLinked: evRow[evIdx.patientLinked] === true || evRow[evIdx.patientLinked] === 'TRUE',
         patientId: evRow[evIdx.patientId] || '',
         returnAfter: evRow[evIdx.returnAfter] === true || evRow[evIdx.returnAfter] === 'TRUE'
@@ -1582,12 +1626,23 @@ function 週ビューを更新_(ss) {
 
       // イベントをアイテム化
       dayEvents.forEach(ev => {
-        const stime = formatTimeVal(ev.startTime);
-        const etime = formatTimeVal(ev.endTime);
+        // 分から HH:mm 形式に変換
+        function minToTimeStr(min) {
+          if (min == null) return '';
+          var h = Math.floor(min / 60);
+          var m = min % 60;
+          return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+        }
+
+        const stime = minToTimeStr(ev.startMin);
+        const etime = minToTimeStr(ev.endMin);
 
         let evText = '';
         if (stime && etime) {
           evText = stime + '〜' + etime + ' ';
+        } else if (ev.durationMin) {
+          // 時間が確定できない場合は所要時間を表示
+          evText = '未配置(' + ev.durationMin + '分) ';
         }
         evText += '[EV] ' + (ev.eventType || '') + (ev.title ? ':' + ev.title : '');
 
@@ -1604,7 +1659,7 @@ function 週ビューを更新_(ss) {
         }
 
         displayItems.push({
-          sortKey: toSortMinutes(ev.startTime),
+          sortKey: ev.startMin != null ? ev.startMin : 9999,
           text: evText,
           isEvent: true
         });
