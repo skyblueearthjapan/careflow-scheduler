@@ -280,6 +280,28 @@
     /* 進捗バー */
     .wizard-progress { height: 4px; background: #e0e0e0; margin-bottom: 8px; border-radius: 2px; }
     .wizard-progress-bar { height: 100%; background: var(--color-green); border-radius: 2px; transition: width 0.3s; }
+    /* 同行割付ウィザード */
+    .mentor-wizard-body { display: flex; padding: 16px; gap: 16px; }
+    .mentor-wizard-left { width: 260px; display: flex; flex-direction: column; gap: 12px; }
+    .mentor-wizard-right { flex: 1; overflow-x: auto; }
+    .mentor-wizard-section { display: flex; flex-direction: column; gap: 6px; }
+    .mentor-wizard-label { font-size: 12px; font-weight: 600; color: var(--color-text); }
+    .mentor-week-nav { display: flex; align-items: center; gap: 8px; }
+    .mentor-week-nav button { padding: 6px 10px; border: 1px solid var(--color-border); background: var(--color-white); border-radius: 4px; cursor: pointer; }
+    .mentor-week-nav button:hover { background: var(--color-orange-light); }
+    .mentor-week-nav span { flex: 1; text-align: center; font-size: 13px; font-weight: 500; }
+    .mentor-quick-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mentor-quick-btns button { padding: 6px 10px; font-size: 11px; border: 1px solid var(--color-border); background: var(--color-white); border-radius: 4px; cursor: pointer; }
+    .mentor-quick-btns button:hover { background: var(--color-blue-light); }
+    .mentor-grid-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .mentor-grid-table th { background: var(--color-orange); color: var(--color-white); padding: 8px 10px; text-align: left; white-space: nowrap; }
+    .mentor-grid-table td { border: 1px solid var(--color-border); padding: 6px 8px; background: var(--color-white); }
+    .mentor-grid-table select { width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 12px; }
+    .mentor-grid-table .status-ok { color: var(--color-green-dark); font-size: 11px; }
+    .mentor-grid-table .status-warn { color: var(--color-orange-dark); font-size: 11px; }
+    .mentor-grid-table .status-empty { color: var(--color-disabled); font-size: 11px; }
+    .mentor-wizard-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--color-border); background: #f9f9f9; }
+    #wizardTraineeSelect { width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 12px; }
     @media (max-width: 900px) { .right-panel { display: none; } }
   </style>
 </head>
@@ -321,6 +343,61 @@
     </div>
   </div>
 
+  <!-- 同行割付ウィザード -->
+  <div class="wizard-panel" id="mentorWizardPanel">
+    <div class="wizard-header" style="background: linear-gradient(135deg, var(--color-orange-light) 0%, var(--color-orange) 100%);">
+      <h3>同行割付ウィザード</h3>
+      <button class="wizard-close" onclick="closeMentorWizard()">×</button>
+    </div>
+    <div class="mentor-wizard-body">
+      <div class="mentor-wizard-left">
+        <div class="mentor-wizard-section">
+          <label class="mentor-wizard-label">対象週</label>
+          <div class="mentor-week-nav">
+            <button type="button" onclick="mentorWeekPrev()">◀</button>
+            <span id="mentorWeekDisplay">2026/01/05 〜 2026/01/11</span>
+            <button type="button" onclick="mentorWeekNext()">▶</button>
+          </div>
+        </div>
+        <div class="mentor-wizard-section">
+          <label class="mentor-wizard-label">新人（trainee）を選択</label>
+          <select id="wizardTraineeSelect" onchange="onTraineeChange()">
+            <option value="">-- 新人を選択 --</option>
+          </select>
+        </div>
+        <div class="mentor-wizard-section">
+          <label class="mentor-wizard-label">便利ボタン</label>
+          <div class="mentor-quick-btns">
+            <button type="button" onclick="applyAllDaysSameMentor()">全日同じメンター</button>
+            <button type="button" onclick="applyWeekdayMentor()">平日同じ</button>
+            <button type="button" onclick="clearMentorGrid()">全クリア</button>
+          </div>
+        </div>
+        <div id="mentorWizardError" class="wizard-error"></div>
+      </div>
+      <div class="mentor-wizard-right">
+        <table class="mentor-grid-table">
+          <thead>
+            <tr>
+              <th>曜日</th>
+              <th>日付</th>
+              <th>メンター</th>
+              <th>時間帯</th>
+              <th>状態</th>
+            </tr>
+          </thead>
+          <tbody id="mentorGridBody">
+            <!-- JS で生成 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mentor-wizard-footer">
+      <button class="wizard-btn secondary" onclick="closeMentorWizard()">キャンセル</button>
+      <button class="wizard-btn success" id="btnSaveMentorWizard" onclick="saveMentorWizard()">保存</button>
+    </div>
+  </div>
+
   <div class="main-container">
     <div class="left-panel">
       <div class="status-bar">
@@ -342,6 +419,7 @@
       <div class="operation-group">
         <div class="operation-group-title">新規登録</div>
         <button class="operation-btn primary" onclick="openWizard()"><span class="icon">💬</span>ウィザードで登録</button>
+        <button class="operation-btn" onclick="openMentorWizard()"><span class="icon">👥</span>同行割付ウィザード</button>
       </div>
       <div class="operation-group">
         <div class="operation-group-title">行操作</div>
@@ -2017,6 +2095,283 @@
           errorEl.textContent = 'エラー: ' + (e.message || String(e));
         })
         .input_createRowFromWizard(formType, answers, null);
+    }
+
+    // ============================================================
+    // 同行割付ウィザード
+    // ============================================================
+    var mentorWizardState = {
+      weekStart: null,  // Date
+      traineeId: '',
+      dayOffMap: {},    // "staffId|yyyy/MM/dd": true
+      rows: []          // [{date, mentor, band, priority, status}]
+    };
+    var WEEKDAYS_LABEL = ['月', '火', '水', '木', '金', '土', '日'];
+
+    function getMonday(d) {
+      var date = new Date(d);
+      var day = date.getDay();
+      var diff = date.getDate() - day + (day === 0 ? -6 : 1);
+      date.setDate(diff);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    }
+
+    function formatDateJP(d) {
+      return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function openMentorWizard() {
+      var panel = document.getElementById('mentorWizardPanel');
+      panel.classList.add('active');
+
+      // 今週の月曜を初期値
+      mentorWizardState.weekStart = getMonday(new Date());
+      updateMentorWeekDisplay();
+
+      // 新人リストを設定
+      var traineeSelect = document.getElementById('wizardTraineeSelect');
+      traineeSelect.innerHTML = '<option value="">-- 新人を選択 --</option>';
+      staffOptions.forEach(function(s) {
+        // スキル=新人を優先表示（全員表示）
+        var label = s.label + (s.skill === '新人' ? ' ★新人' : '');
+        traineeSelect.innerHTML += '<option value="' + s.id + '">' + label + '</option>';
+      });
+
+      // グリッド初期化
+      mentorWizardState.traineeId = '';
+      mentorWizardState.rows = [];
+      renderMentorGrid();
+    }
+
+    function closeMentorWizard() {
+      document.getElementById('mentorWizardPanel').classList.remove('active');
+    }
+
+    function updateMentorWeekDisplay() {
+      var start = mentorWizardState.weekStart;
+      var end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      document.getElementById('mentorWeekDisplay').textContent = formatDateJP(start) + ' 〜 ' + formatDateJP(end);
+      if (mentorWizardState.traineeId) {
+        loadMentorPairsForWeek();
+      }
+    }
+
+    function mentorWeekPrev() {
+      mentorWizardState.weekStart.setDate(mentorWizardState.weekStart.getDate() - 7);
+      updateMentorWeekDisplay();
+      renderMentorGrid();
+    }
+
+    function mentorWeekNext() {
+      mentorWizardState.weekStart.setDate(mentorWizardState.weekStart.getDate() + 7);
+      updateMentorWeekDisplay();
+      renderMentorGrid();
+    }
+
+    function onTraineeChange() {
+      mentorWizardState.traineeId = document.getElementById('wizardTraineeSelect').value;
+      if (mentorWizardState.traineeId) {
+        loadMentorPairsForWeek();
+      } else {
+        mentorWizardState.rows = [];
+        renderMentorGrid();
+      }
+    }
+
+    function loadMentorPairsForWeek() {
+      var start = mentorWizardState.weekStart;
+      var end = new Date(start);
+      end.setDate(end.getDate() + 6);
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          // result: { pairs: [{date, mentor, band, priority}], dayOffMap: {...} }
+          mentorWizardState.dayOffMap = result.dayOffMap || {};
+          var existingPairs = result.pairs || [];
+
+          // 7日分の行を初期化
+          mentorWizardState.rows = [];
+          for (var i = 0; i < 7; i++) {
+            var d = new Date(start);
+            d.setDate(d.getDate() + i);
+            var dateStr = formatDateJP(d);
+
+            // 既存データがあれば反映
+            var existing = existingPairs.find(function(p) { return p.date === dateStr; });
+            mentorWizardState.rows.push({
+              date: dateStr,
+              weekday: WEEKDAYS_LABEL[i],
+              mentor: existing ? existing.mentor : '',
+              band: existing ? existing.band : '終日',
+              priority: existing ? existing.priority : 1
+            });
+          }
+          renderMentorGrid();
+        })
+        .withFailureHandler(function(e) {
+          console.error('loadMentorPairsForWeek error:', e);
+          // エラー時は空で初期化
+          mentorWizardState.rows = [];
+          for (var i = 0; i < 7; i++) {
+            var d = new Date(start);
+            d.setDate(d.getDate() + i);
+            mentorWizardState.rows.push({
+              date: formatDateJP(d),
+              weekday: WEEKDAYS_LABEL[i],
+              mentor: '',
+              band: '終日',
+              priority: 1
+            });
+          }
+          renderMentorGrid();
+        })
+        .input_getMentorPairsForWeek(mentorWizardState.traineeId, formatDateJP(start), formatDateJP(end));
+    }
+
+    function renderMentorGrid() {
+      var tbody = document.getElementById('mentorGridBody');
+      var traineeId = mentorWizardState.traineeId;
+
+      if (!traineeId || mentorWizardState.rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#999;">新人を選択してください</td></tr>';
+        return;
+      }
+
+      var html = '';
+      mentorWizardState.rows.forEach(function(row, i) {
+        var mentorOptions = '<option value="">-- 未設定 --</option>';
+        staffOptions.forEach(function(s) {
+          if (s.id === traineeId) return; // trainee自身は除外
+          var selected = (s.id === row.mentor) ? ' selected' : '';
+          mentorOptions += '<option value="' + s.id + '"' + selected + '>' + s.label + '</option>';
+        });
+
+        var bandOptions = ['終日', '午前', '午後'].map(function(b) {
+          return '<option value="' + b + '"' + (b === row.band ? ' selected' : '') + '>' + b + '</option>';
+        }).join('');
+
+        // 状態チェック
+        var status = '';
+        var statusClass = 'status-empty';
+        if (row.mentor) {
+          var traineeOff = mentorWizardState.dayOffMap[traineeId + '|' + row.date];
+          var mentorOff = mentorWizardState.dayOffMap[row.mentor + '|' + row.date];
+          if (traineeOff) {
+            status = '⚠ 新人休み';
+            statusClass = 'status-warn';
+          } else if (mentorOff) {
+            status = '⚠ メンター休み';
+            statusClass = 'status-warn';
+          } else {
+            status = '✓ OK';
+            statusClass = 'status-ok';
+          }
+        } else {
+          status = '未設定';
+        }
+
+        html += '<tr>' +
+          '<td>' + row.weekday + '</td>' +
+          '<td>' + row.date + '</td>' +
+          '<td><select id="mentorSelect_' + i + '" onchange="onMentorGridChange(' + i + ')">' + mentorOptions + '</select></td>' +
+          '<td><select id="bandSelect_' + i + '" onchange="onMentorGridChange(' + i + ')">' + bandOptions + '</select></td>' +
+          '<td class="' + statusClass + '">' + status + '</td>' +
+          '</tr>';
+      });
+      tbody.innerHTML = html;
+    }
+
+    function onMentorGridChange(idx) {
+      var mentor = document.getElementById('mentorSelect_' + idx).value;
+      var band = document.getElementById('bandSelect_' + idx).value;
+      mentorWizardState.rows[idx].mentor = mentor;
+      mentorWizardState.rows[idx].band = band;
+      renderMentorGrid();
+    }
+
+    function applyAllDaysSameMentor() {
+      var mentor = prompt('全日に設定するメンターのスタッフIDを入力:\n（例: S001）');
+      if (!mentor) return;
+      mentorWizardState.rows.forEach(function(row) {
+        row.mentor = mentor;
+      });
+      renderMentorGrid();
+    }
+
+    function applyWeekdayMentor() {
+      var mentor = prompt('平日（月〜金）に設定するメンターのスタッフIDを入力:\n（例: S001）');
+      if (!mentor) return;
+      mentorWizardState.rows.forEach(function(row, i) {
+        if (i < 5) row.mentor = mentor; // 月〜金
+      });
+      renderMentorGrid();
+    }
+
+    function clearMentorGrid() {
+      mentorWizardState.rows.forEach(function(row) {
+        row.mentor = '';
+        row.band = '終日';
+      });
+      renderMentorGrid();
+    }
+
+    function saveMentorWizard() {
+      var errorEl = document.getElementById('mentorWizardError');
+      errorEl.textContent = '';
+
+      if (!mentorWizardState.traineeId) {
+        errorEl.textContent = '新人を選択してください';
+        return;
+      }
+
+      var start = mentorWizardState.weekStart;
+      var end = new Date(start);
+      end.setDate(end.getDate() + 6);
+
+      // mentor が設定されている行のみ保存
+      var rowsToSave = mentorWizardState.rows.filter(function(row) {
+        return row.mentor && row.mentor.trim() !== '';
+      }).map(function(row) {
+        return {
+          date: row.date,
+          mentor: row.mentor,
+          band: row.band,
+          priority: row.priority || 1
+        };
+      });
+
+      var saveBtn = document.getElementById('btnSaveMentorWizard');
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '保存';
+          if (result && result.success) {
+            showToast('success', '同行割付を保存しました（' + result.savedCount + '件）');
+            closeMentorWizard();
+            // スタッフ同行割付タブにいる場合は再読み込み
+            if (currentSheetName === 'スタッフ同行割付') {
+              reloadCurrentSheet();
+            }
+          } else {
+            errorEl.textContent = (result && result.error) || '保存に失敗しました';
+          }
+        })
+        .withFailureHandler(function(e) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '保存';
+          errorEl.textContent = 'エラー: ' + (e.message || String(e));
+        })
+        .input_saveMentorPairsWizard({
+          traineeId: mentorWizardState.traineeId,
+          from: formatDateJP(start),
+          to: formatDateJP(end),
+          rows: rowsToSave
+        });
     }
   </script>
 </body>

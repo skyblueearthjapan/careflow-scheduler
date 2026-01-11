@@ -1102,6 +1102,209 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
 }
 
 // ============================================================
+// 同行割付ウィザード用API
+// ============================================================
+
+/**
+ * 同行割付の既存データと休みマップを取得
+ * @param {string} traineeId - 新人スタッフID
+ * @param {string} from - 開始日 (yyyy/MM/dd)
+ * @param {string} to - 終了日 (yyyy/MM/dd)
+ */
+function input_getMentorPairsForWeek(traineeId, from, to) {
+  requireAdmin_();
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var tz = ss.getSpreadsheetTimeZone();
+
+  var result = { pairs: [], dayOffMap: {} };
+
+  // 日付パース
+  function parseDate_(v) {
+    if (!v) return null;
+    if (v instanceof Date) return v;
+    var m = String(v).match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return null;
+  }
+
+  var fromDate = parseDate_(from);
+  var toDate = parseDate_(to);
+  if (!fromDate || !toDate) return result;
+
+  // 1) スタッフ同行割付シートから既存データを取得
+  var pairSheet = ss.getSheetByName('スタッフ同行割付');
+  if (pairSheet && pairSheet.getLastRow() > 1) {
+    var pValues = pairSheet.getDataRange().getValues();
+    var pHeader = pValues[0];
+    var pData = pValues.slice(1);
+
+    var idxTrainee = pHeader.indexOf('trainee_staff_id');
+    var idxMentor = pHeader.indexOf('mentor_staff_id');
+    var idxStartD = pHeader.indexOf('開始日');
+    var idxEndD = pHeader.indexOf('終了日');
+    var idxBand = pHeader.indexOf('時間帯');
+    var idxPrio = pHeader.indexOf('優先度');
+
+    pData.forEach(function(r) {
+      if (r[idxTrainee] !== traineeId) return;
+      var sd = parseDate_(r[idxStartD]);
+      var ed = parseDate_(r[idxEndD]) || sd;
+      if (!sd) return;
+
+      // 日別に展開して対象週に含まれるものを抽出
+      for (var d = new Date(sd); d <= ed; d.setDate(d.getDate() + 1)) {
+        if (d >= fromDate && d <= toDate) {
+          result.pairs.push({
+            date: Utilities.formatDate(d, tz, 'yyyy/MM/dd'),
+            mentor: r[idxMentor] || '',
+            band: r[idxBand] || '終日',
+            priority: r[idxPrio] || 1
+          });
+        }
+      }
+    });
+  }
+
+  // 2) スタッフ個別変更リクエストから休みマップを作成
+  var staffChangeSheet = ss.getSheetByName('スタッフ個別変更リクエスト');
+  if (staffChangeSheet && staffChangeSheet.getLastRow() > 1) {
+    var scValues = staffChangeSheet.getDataRange().getValues();
+    var scHeader = scValues[0];
+    var scData = scValues.slice(1);
+
+    var idxSid = scHeader.indexOf('staff_id');
+    var idxDate = scHeader.indexOf('日付');
+    var idxType = scHeader.indexOf('制限タイプ');
+
+    scData.forEach(function(r) {
+      var staffId = r[idxSid];
+      var dateVal = parseDate_(r[idxDate]);
+      var rType = String(r[idxType] || '').trim();
+      if (!staffId || !dateVal) return;
+
+      // 対象週かつ終日休みの場合
+      if (dateVal >= fromDate && dateVal <= toDate) {
+        if (rType === '休み' || rType === '終日不可' || rType === '終日') {
+          var key = staffId + '|' + Utilities.formatDate(dateVal, tz, 'yyyy/MM/dd');
+          result.dayOffMap[key] = true;
+        }
+      }
+    });
+  }
+
+  return result;
+}
+
+/**
+ * 同行割付をウィザードから保存（週単位で上書き）
+ * @param {Object} payload - { traineeId, from, to, rows: [{date, mentor, band, priority}] }
+ */
+function input_saveMentorPairsWizard(payload) {
+  var lock = null;
+  try {
+    requireAdmin_();
+
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) {
+      return { success: false, error: '別の処理が実行中です。少し待ってから再実行してください。' };
+    }
+
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var tz = ss.getSpreadsheetTimeZone();
+
+    var traineeId = payload.traineeId;
+    var from = payload.from;
+    var to = payload.to;
+    var rows = payload.rows || [];
+
+    if (!traineeId) {
+      return { success: false, error: 'traineeIdが指定されていません' };
+    }
+
+    // 日付パース
+    function parseDate_(v) {
+      if (!v) return null;
+      if (v instanceof Date) return v;
+      var m = String(v).match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return null;
+    }
+
+    var fromDate = parseDate_(from);
+    var toDate = parseDate_(to);
+    if (!fromDate || !toDate) {
+      return { success: false, error: '日付の形式が不正です' };
+    }
+
+    // シートを取得（なければ作成）
+    var sheet = ss.getSheetByName('スタッフ同行割付');
+    if (!sheet) {
+      sheet = ss.insertSheet('スタッフ同行割付');
+      var headers = ['trainee_staff_id', 'mentor_staff_id', '開始日', '終了日', '時間帯', '開始時刻', '終了時刻', '曜日条件', '優先度'];
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.setFrozenRows(1);
+    }
+
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var idxTrainee = header.indexOf('trainee_staff_id');
+    var idxMentor = header.indexOf('mentor_staff_id');
+    var idxStartD = header.indexOf('開始日');
+    var idxEndD = header.indexOf('終了日');
+    var idxBand = header.indexOf('時間帯');
+    var idxPrio = header.indexOf('優先度');
+
+    // 1) 既存の同一trainee & 対象週に重なる行を削除（後ろから）
+    var lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      var allData = sheet.getRange(2, 1, lastRow - 1, header.length).getValues();
+
+      for (var i = allData.length - 1; i >= 0; i--) {
+        var r = allData[i];
+        if (r[idxTrainee] !== traineeId) continue;
+
+        var sd = parseDate_(r[idxStartD]);
+        var ed = parseDate_(r[idxEndD]) || sd;
+        if (!sd) continue;
+
+        // 期間が重なるかチェック
+        if (sd <= toDate && ed >= fromDate) {
+          sheet.deleteRow(i + 2); // +2 because of header and 0-based index
+        }
+      }
+    }
+
+    // 2) 新しい行を追加
+    var savedCount = 0;
+    rows.forEach(function(row) {
+      if (!row.mentor || !row.date) return;
+
+      var rowDate = parseDate_(row.date);
+      if (!rowDate) return;
+
+      var newRow = new Array(header.length).fill('');
+      newRow[idxTrainee] = traineeId;
+      newRow[idxMentor] = row.mentor;
+      newRow[idxStartD] = rowDate;
+      newRow[idxEndD] = rowDate; // 日別なので開始=終了
+      if (idxBand >= 0) newRow[idxBand] = row.band || '終日';
+      if (idxPrio >= 0) newRow[idxPrio] = row.priority || 1;
+
+      sheet.appendRow(newRow);
+      savedCount++;
+    });
+
+    return { success: true, savedCount: savedCount };
+  } catch (e) {
+    console.error('input_saveMentorPairsWizard error:', e);
+    return { success: false, error: e.message || String(e) };
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (ignore) {}
+    }
+  }
+}
+
+// ============================================================
 // 実行API（GAS実行ボタン用）
 // ============================================================
 
