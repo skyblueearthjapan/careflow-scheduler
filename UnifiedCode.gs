@@ -1362,19 +1362,40 @@ function 週ビューを更新_(ss) {
   if (eventSheet && eventSheet.getLastRow() > 1) {
     const evValues = eventSheet.getDataRange().getValues();
     const evHeader = evValues[0];
+
+    // ヘッダー検索ヘルパー（空白や文字の違いに対応）
+    function findHeaderIndex(headers, targetName) {
+      // 完全一致を試す
+      var idx = headers.indexOf(targetName);
+      if (idx >= 0) return idx;
+
+      // trim して一致を試す
+      for (var i = 0; i < headers.length; i++) {
+        if (String(headers[i]).trim() === targetName) return i;
+      }
+
+      // 部分一致を試す（開始時刻 vs 開始時刻 など）
+      for (var j = 0; j < headers.length; j++) {
+        var h = String(headers[j]).trim();
+        if (h.indexOf(targetName) >= 0 || targetName.indexOf(h) >= 0) return j;
+      }
+
+      return -1;
+    }
+
     const evIdx = {
-      staffId: evHeader.indexOf('staff_id'),
-      date: evHeader.indexOf('日付'),
-      eventType: evHeader.indexOf('イベント種別'),
-      title: evHeader.indexOf('タイトル'),
-      timeMode: evHeader.indexOf('時間指定方法'),
-      startTime: evHeader.indexOf('開始時刻'),
-      endTime: evHeader.indexOf('終了時刻'),
-      durationMin: evHeader.indexOf('所要時間(分)'),
-      fixedSlot: evHeader.indexOf('固定枠'),
-      patientLinked: evHeader.indexOf('患者紐づき'),
-      patientId: evHeader.indexOf('patient_id'),
-      returnAfter: evHeader.indexOf('事後事務所戻り')
+      staffId: findHeaderIndex(evHeader, 'staff_id'),
+      date: findHeaderIndex(evHeader, '日付'),
+      eventType: findHeaderIndex(evHeader, 'イベント種別'),
+      title: findHeaderIndex(evHeader, 'タイトル'),
+      timeMode: findHeaderIndex(evHeader, '時間指定方法'),
+      startTime: findHeaderIndex(evHeader, '開始時刻'),
+      endTime: findHeaderIndex(evHeader, '終了時刻'),
+      durationMin: findHeaderIndex(evHeader, '所要時間'),
+      fixedSlot: findHeaderIndex(evHeader, '固定枠'),
+      patientLinked: findHeaderIndex(evHeader, '患者紐づき'),
+      patientId: findHeaderIndex(evHeader, 'patient_id'),
+      returnAfter: findHeaderIndex(evHeader, '事後事務所戻り')
     };
 
     // 文字列日付もDate化するパーサ
@@ -1394,12 +1415,51 @@ function 週ビューを更新_(ss) {
     // 時間値を分に変換するヘルパー（文字列 "10:00" にも対応）
     function evToMinutes(v) {
       if (v === null || v === undefined || v === '') return null;
-      if (typeof v === 'number') return Math.round(v * 24 * 60);
-      if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
 
+      // 数値（シリアル値）の場合
+      if (typeof v === 'number') {
+        // 0〜1の範囲ならシリアル時刻として扱う
+        if (v >= 0 && v < 1) {
+          return Math.round(v * 24 * 60);
+        }
+        // 1以上なら分として解釈（誤入力対応）
+        if (v >= 1 && v < 1440) {
+          return Math.round(v);
+        }
+        // それ以外はシリアル値として扱う
+        return Math.round(v * 24 * 60) % 1440;
+      }
+
+      // Date オブジェクトの場合
+      if (v instanceof Date) {
+        return v.getHours() * 60 + v.getMinutes();
+      }
+
+      // 文字列の場合
       var s = String(v).trim();
+
+      // "14:00" や "9:30" 形式
       var m = s.match(/^(\d{1,2}):(\d{2})$/);
       if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+      // "14:00:00" 形式（秒付き）
+      m = s.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+      if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+      // "午前10時30分" や "10時30分" 形式
+      m = s.match(/(\d{1,2})時(\d{1,2})分/);
+      if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+      // "14時" 形式（分なし）
+      m = s.match(/^(\d{1,2})時$/);
+      if (m) return Number(m[1]) * 60;
+
+      // 数字だけの場合（分として解釈）
+      m = s.match(/^(\d+)$/);
+      if (m) {
+        var num = Number(m[1]);
+        if (num < 1440) return num; // 分として
+      }
 
       // "HH:mm〜HH:mm" などにも保険で対応（先頭だけ）
       m = s.match(/(\d{1,2}):(\d{2})/);
@@ -1438,15 +1498,19 @@ function 週ビューを更新_(ss) {
       // イベントの実際の時間を計算
       var resolvedStart = null, resolvedEnd = null;
 
-      // 開始/終了時刻が指定されている場合は優先的に使用（時間指定/固定時間の場合）
-      if ((evTimeMode === '時間指定' || evTimeMode === '固定時間') && evStartMin != null && evEndMin != null) {
-        // 時間指定/固定時間: 開始・終了時刻をそのまま使用
+      // 開始/終了時刻が指定されている場合は優先的に使用
+      if (evStartMin != null && evEndMin != null && evEndMin > evStartMin) {
+        // 開始・終了時刻がある場合は最優先で使用
         resolvedStart = evStartMin;
         resolvedEnd = evEndMin;
-      } else if (evStartMin != null && evEndMin != null) {
-        // timeModeに関係なく、開始/終了が両方あれば使用
+      } else if (evStartMin != null && evEndMin == null) {
+        // 開始だけある場合はdurationで終了を計算
         resolvedStart = evStartMin;
+        resolvedEnd = evStartMin + evDuration;
+      } else if (evStartMin == null && evEndMin != null) {
+        // 終了だけある場合はdurationで開始を計算
         resolvedEnd = evEndMin;
+        resolvedStart = Math.max(evEndMin - evDuration, 0);
       } else if (evTimeMode === '午前') {
         // 午前: 09:00からduration分
         resolvedStart = shiftStart;
@@ -1459,6 +1523,10 @@ function 週ビューを更新_(ss) {
         // 終日: シフト全体
         resolvedStart = shiftStart;
         resolvedEnd = shiftEnd;
+      } else if (evTimeMode === '所要時間' || evTimeMode === '時間指定' || evTimeMode === '固定時間') {
+        // 所要時間モードでも開始/終了がない場合はシフト開始から仮配置
+        resolvedStart = shiftStart;
+        resolvedEnd = shiftStart + evDuration;
       }
 
       eventList.push({
@@ -1844,12 +1912,44 @@ function 割当結果を作成_(ss) {
   // "10:00" / シリアル / Date すべて分にするパーサ
   function parseTimeToMinutes_(v) {
     if (v === null || v === undefined || v === '') return null;
-    if (typeof v === 'number') return Math.round(v * 24 * 60);
-    if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
 
+    // 数値（シリアル値）の場合
+    if (typeof v === 'number') {
+      // 0〜1の範囲ならシリアル時刻として扱う
+      if (v >= 0 && v < 1) {
+        return Math.round(v * 24 * 60);
+      }
+      // 1以上なら分として解釈（誤入力対応）
+      if (v >= 1 && v < 1440) {
+        return Math.round(v);
+      }
+      // それ以外はシリアル値として扱う
+      return Math.round(v * 24 * 60) % 1440;
+    }
+
+    // Date オブジェクトの場合
+    if (v instanceof Date) {
+      return v.getHours() * 60 + v.getMinutes();
+    }
+
+    // 文字列の場合
     var s = String(v).trim();
+
+    // "14:00" や "9:30" 形式
     var m = s.match(/^(\d{1,2}):(\d{2})$/);
     if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+    // "14:00:00" 形式（秒付き）
+    m = s.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+    // "午前10時30分" や "10時30分" 形式
+    m = s.match(/(\d{1,2})時(\d{1,2})分/);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+    // "14時" 形式（分なし）
+    m = s.match(/^(\d{1,2})時$/);
+    if (m) return Number(m[1]) * 60;
 
     // "HH:mm〜HH:mm" などにも保険で対応（先頭だけ）
     m = s.match(/(\d{1,2}):(\d{2})/);
@@ -1940,22 +2040,37 @@ function 割当結果を作成_(ss) {
   if (eventSheet && eventSheet.getLastRow() > 1) {
     var evValues = eventSheet.getDataRange().getValues();
     var evHeader = evValues[0];
+
+    // ヘッダー検索ヘルパー（空白や文字の違いに対応）
+    function findEvHeaderIndex(headers, targetName) {
+      var idx = headers.indexOf(targetName);
+      if (idx >= 0) return idx;
+      for (var i = 0; i < headers.length; i++) {
+        if (String(headers[i]).trim() === targetName) return i;
+      }
+      for (var j = 0; j < headers.length; j++) {
+        var h = String(headers[j]).trim();
+        if (h.indexOf(targetName) >= 0 || targetName.indexOf(h) >= 0) return j;
+      }
+      return -1;
+    }
+
     var evIdx = {
-      eventId: evHeader.indexOf('event_id'),
-      staffId: evHeader.indexOf('staff_id'),
-      date: evHeader.indexOf('日付'),
-      eventType: evHeader.indexOf('イベント種別'),
-      title: evHeader.indexOf('タイトル'),
-      timeMode: evHeader.indexOf('時間指定方法'),
-      startTime: evHeader.indexOf('開始時刻'),
-      endTime: evHeader.indexOf('終了時刻'),
-      durationMin: evHeader.indexOf('所要時間(分)'),
-      fixedSlot: evHeader.indexOf('固定枠'),
-      patientLinked: evHeader.indexOf('患者紐づき'),
-      patientId: evHeader.indexOf('patient_id'),
-      patientAffect: evHeader.indexOf('患者影響'),
-      lat: evHeader.indexOf('緯度'),
-      lng: evHeader.indexOf('経度')
+      eventId: findEvHeaderIndex(evHeader, 'event_id'),
+      staffId: findEvHeaderIndex(evHeader, 'staff_id'),
+      date: findEvHeaderIndex(evHeader, '日付'),
+      eventType: findEvHeaderIndex(evHeader, 'イベント種別'),
+      title: findEvHeaderIndex(evHeader, 'タイトル'),
+      timeMode: findEvHeaderIndex(evHeader, '時間指定方法'),
+      startTime: findEvHeaderIndex(evHeader, '開始時刻'),
+      endTime: findEvHeaderIndex(evHeader, '終了時刻'),
+      durationMin: findEvHeaderIndex(evHeader, '所要時間'),
+      fixedSlot: findEvHeaderIndex(evHeader, '固定枠'),
+      patientLinked: findEvHeaderIndex(evHeader, '患者紐づき'),
+      patientId: findEvHeaderIndex(evHeader, 'patient_id'),
+      patientAffect: findEvHeaderIndex(evHeader, '患者影響'),
+      lat: findEvHeaderIndex(evHeader, '緯度'),
+      lng: findEvHeaderIndex(evHeader, '経度')
     };
 
     for (var evi = 1; evi < evValues.length; evi++) {
