@@ -2060,36 +2060,9 @@ function 割当結果を作成_(ss) {
       });
     }
 
-    // イベントリクエストからの不可時間帯
-    var events = eventMap[staffId + '|' + dateStr];
-    if (events && events.length > 0) {
-      events.forEach(function(ev) {
-        var evStart, evEnd;
-
-        // 開始/終了時刻が両方ある場合は優先的に使用
-        if (ev.startMin != null && ev.endMin != null) {
-          // 時間指定/固定時間: 開始・終了時刻から直接取得
-          evStart = ev.startMin;
-          evEnd = ev.endMin;
-        } else if (ev.timeMode === '午前') {
-          // 午前: シフト開始〜12:00の範囲内でdurationMin分確保
-          evStart = shift.shiftStartMin != null ? shift.shiftStartMin : 540;
-          evEnd = Math.min(evStart + ev.durationMin, 720);
-        } else if (ev.timeMode === '午後') {
-          // 午後: 12:00〜シフト終了の範囲内でdurationMin分確保
-          evStart = 720;
-          evEnd = Math.min(720 + ev.durationMin, shift.shiftEndMin || 1080);
-        } else if (ev.timeMode === '終日') {
-          // 終日: 終日不可
-          evStart = 0;
-          evEnd = 1440;
-        }
-
-        if (evStart != null && evEnd != null && evStart < evEnd) {
-          intervals.push({ start: evStart, end: evEnd, isEvent: true });
-        }
-      });
-    }
+    // ※イベントは不可区間に入れない（アンカー方式の後段で処理するため）
+    // イベントがあるスタッフでも、その前後に訪問を詰められる可能性があるため
+    // 割当段階で候補を潰さず、時刻自動調整フェーズでイベントを避けて配置する
 
     // 区間がなければ空配列
     if (intervals.length === 0) return [];
@@ -2616,6 +2589,34 @@ function 割当結果を作成_(ss) {
   // 2区間が重なるか
   function overlap_(s1,e1,s2,e2) {
     return s1 < e2 && s2 < e1;
+  }
+
+  // 固定区間を避けて次の開始時刻を見つける
+  function findNextNonOverlappingStart_(candidateStart, durationMin, fixedIntervals, latestMin) {
+    var s = candidateStart;
+    var e = s + durationMin;
+
+    // ガード: latestMin制約チェック
+    if (latestMin != null && s > latestMin) return null;
+
+    // 固定区間と重なる限り、固定区間の end までジャンプ
+    var safety = 0;
+    while (safety < 200) {
+      safety++;
+
+      var hit = null;
+      for (var i = 0; i < fixedIntervals.length; i++) {
+        var f = fixedIntervals[i];
+        if (overlap_(s, e, f.start, f.end)) { hit = f; break; }
+      }
+      if (!hit) return s; // 重ならない → この開始時刻でOK
+
+      s = hit.end; // 固定区間の終了後に移動
+      e = s + durationMin;
+
+      if (latestMin != null && e > latestMin) return null; // 時間切れ
+    }
+    return null; // ループ防止（見つからない）
   }
 
   Object.keys(staffDateMap).forEach(function(key){
