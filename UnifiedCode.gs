@@ -3194,181 +3194,9 @@ function 割当結果を作成_(ss) {
     r[13] = normalizeTimeCellToSerial_(r[13]);
   }
 
-  // ============================================================
-  // 同行（シャドー）割付：新人に親の予定をコピー
-  // ============================================================
-
-  // 同行割付シートを読み込んで日別マップに展開
-  function readShadowMap_() {
-    var sh = ss.getSheetByName('スタッフ同行割付');
-    var map = {}; // key: traineeId|yyyy/MM/dd => { mentorId, window:{s,e}|null, priority }
-
-    if (!sh || sh.getLastRow() <= 1) return map;
-
-    var values = sh.getDataRange().getValues();
-    var h = values[0];
-
-    var idx = {
-      trainee: h.indexOf('trainee_staff_id'),
-      mentor:  h.indexOf('mentor_staff_id'),
-      startD:  h.indexOf('開始日'),
-      endD:    h.indexOf('終了日'),
-      band:    h.indexOf('時間帯'),
-      st:      h.indexOf('開始時刻'),
-      et:      h.indexOf('終了時刻'),
-      youbi:   h.indexOf('曜日条件'),
-      prio:    h.indexOf('優先度')
-    };
-
-    function parseDays_(v) {
-      if (!v) return null; // null = 全曜日
-      return String(v).split(/[,\u3001\/・\s]+/).map(function(s){ return s.trim(); }).filter(Boolean);
-    }
-
-    function bandToWindow_(band, stVal, etVal) {
-      var b = String(band || '').trim();
-      if (!b || b === '終日') return null; // null=終日
-      if (b === '午前') return { s: 9*60,  e: 12*60 };
-      if (b === '午後') return { s: 12*60, e: 18*60 };
-      if (b === '時間指定') {
-        var s = parseTimeToMinutes_(stVal);
-        var e = parseTimeToMinutes_(etVal);
-        if (s != null && e != null && e > s) return { s: s, e: e };
-        return null; // 変なデータは終日に倒す（安全）
-      }
-      return null;
-    }
-
-    for (var i = 1; i < values.length; i++) {
-      var r = values[i];
-      var trainee = r[idx.trainee];
-      var mentor  = r[idx.mentor];
-      var sd = parseDate_(r[idx.startD]);
-      if (!trainee || !mentor || !sd) continue;
-
-      var ed = parseDate_(r[idx.endD]) || sd;
-      var daysCond = parseDays_(r[idx.youbi]); // ["月","火"]など or null
-      var window = bandToWindow_(r[idx.band], r[idx.st], r[idx.et]);
-      var prio = (idx.prio >= 0 && r[idx.prio] !== '' && r[idx.prio] != null) ? Number(r[idx.prio]) : 9999;
-
-      // 日別に展開
-      var d0 = new Date(sd); d0.setHours(0,0,0,0);
-      var d1 = new Date(ed); d1.setHours(0,0,0,0);
-
-      for (var d = new Date(d0); d <= d1; d.setDate(d.getDate()+1)) {
-        var dateStr = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
-
-        // 曜日条件
-        if (daysCond) {
-          var youbi = ['日','月','火','水','木','金','土'][d.getDay()];
-          if (daysCond.indexOf(youbi) < 0) continue;
-        }
-
-        var key = trainee + '|' + dateStr;
-        var prev = map[key];
-
-        // 優先度が小さい方を採用（同じなら後勝ち）
-        if (!prev || prio < prev.priority || (prio === prev.priority)) {
-          map[key] = { mentorId: mentor, window: window, priority: prio };
-        }
-      }
-    }
-
-    return map;
-  }
-
-  // 終日休み判定
-  function isDayOffByBlocked_(blockedIntervals) {
-    for (var i = 0; i < blockedIntervals.length; i++) {
-      if (blockedIntervals[i].start === 0 && blockedIntervals[i].end >= 1440) return true;
-    }
-    return false;
-  }
-
-  // 同行適用（親の予定を新人にコピー）
-  function applyShadowAssignments_() {
-    var shadowMap = readShadowMap_();
-    if (!shadowMap || Object.keys(shadowMap).length === 0) return;
-
-    // staff_id -> name
-    var staffNameMap = {};
-    staffList.forEach(function(s){ staffNameMap[s.id] = s.name; });
-
-    // 親の行を引く index
-    var byStaffDate = {};
-    for (var i = 0; i < resultRows.length; i++) {
-      var r = resultRows[i];
-      var d = r[1], sid = r[3];
-      if (!sid || !(d instanceof Date)) continue;
-      var ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
-      var k = sid + '|' + ds;
-      if (!byStaffDate[k]) byStaffDate[k] = [];
-      byStaffDate[k].push(i);
-    }
-
-    function rowOverlapsWindow_(row, window) {
-      if (!window) return true;
-      var s = parseTimeToMinutes_(row[8]);
-      var e = parseTimeToMinutes_(row[9]);
-      if (s == null || e == null || e <= s) return false;
-      return (s < window.e && window.s < e);
-    }
-
-    function makeShadowVisitId_(baseVisitId, traineeId) {
-      return String(baseVisitId || '') + '_SH_' + traineeId;
-    }
-
-    // 追加分を溜めて最後にpush
-    var addRows = [];
-
-    Object.keys(shadowMap).forEach(function(k){
-      var sp = k.split('|');
-      var traineeId = sp[0];
-      var dateStr = sp[1];
-      var conf = shadowMap[k];
-      var mentorId = conf.mentorId;
-      var window = conf.window;
-
-      // trainee 終日休みならスキップ（休み優先）
-      var blocked = getStaffBlockedIntervals_(traineeId, dateStr);
-      if (isDayOffByBlocked_(blocked)) return;
-
-      // 親の行を抽出
-      var mentorKey = mentorId + '|' + dateStr;
-      var idxs = byStaffDate[mentorKey] || [];
-      if (idxs.length === 0) return;
-
-      for (var ii = 0; ii < idxs.length; ii++) {
-        var row = resultRows[idxs[ii]];
-
-        // window があるなら、その時間帯にかかるものだけコピー
-        if (!rowOverlapsWindow_(row, window)) continue;
-
-        // コピー（配列複製）
-        var nr = row.slice();
-
-        // staff差し替え
-        nr[3] = traineeId;
-        nr[4] = staffNameMap[traineeId] || ('T:' + traineeId);
-
-        // visit_idユニーク化
-        nr[0] = makeShadowVisitId_(row[0], traineeId);
-
-        // 備考に同行マーク
-        nr[14] = (nr[14] || '') + ' / 同行(' + traineeId + '←' + mentorId + ')';
-
-        addRows.push(nr);
-      }
-    });
-
-    // 追加
-    if (addRows.length > 0) {
-      Array.prototype.push.apply(resultRows, addRows);
-    }
-  }
-
-  // 同行適用を実行
-  applyShadowAssignments_();
+  // ★同行展開（新人がmentorと同じ動き）
+  var res同行 = applyStaff同行_(ss, resultRows);
+  console.log(res同行.message);
 
   // 割当結果シートに書き込み
   resultSheet.clear();
@@ -3400,6 +3228,267 @@ function 割当結果を作成_(ss) {
   }
 
   return { message: '割当結果を ' + resultRows.length + ' 件作成しました。割当不可: ' + unassignedList.length + ' 件' };
+}
+
+// ============================================================
+// 同行展開（割当結果の後処理）
+// - mentorの予定を trainee にコピーして同行を実現
+// - 休み優先：mentor側にその日の予定が無ければ同行生成しない
+// - 終日/午前/午後（将来拡張用）を最小限サポート
+// ============================================================
+function applyStaff同行_(ss, resultRows, opts) {
+  opts = opts || {};
+  var tz = ss.getSpreadsheetTimeZone();
+
+  var staffSheet = ss.getSheetByName('スタッフマスタ');
+  var pairSheet  = ss.getSheetByName('スタッフ同行割付'); // ←シート名はこれで固定想定
+
+  if (!pairSheet) {
+    // 同行設定が無いなら何もしない
+    return { added: 0, removed: 0, message: 'スタッフ同行割付シートが無いので同行展開をスキップしました。' };
+  }
+
+  // ----------------------------------------------------------
+  // staff_id -> {name, gender} map
+  // ----------------------------------------------------------
+  var staffMap = {};
+  if (staffSheet && staffSheet.getLastRow() > 1) {
+    var sValues = staffSheet.getDataRange().getValues();
+    var sHeader = sValues[0];
+    var sData   = sValues.slice(1);
+    var idxId   = sHeader.indexOf('staff_id');
+    var idxName = sHeader.indexOf('スタッフ名');
+    var idxGen  = sHeader.indexOf('性別');
+    sData.forEach(function(r) {
+      var id = r[idxId];
+      if (!id) return;
+      staffMap[id] = {
+        name: idxName >= 0 ? (r[idxName] || '') : '',
+        gender: idxGen >= 0 ? (r[idxGen] || '') : ''
+      };
+    });
+  }
+
+  // ----------------------------------------------------------
+  // helper: parse date (string/date)
+  // ----------------------------------------------------------
+  function parseDate_(v) {
+    if (!v) return null;
+    if (v instanceof Date) return v;
+    var s = String(v).trim();
+    var m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (m) {
+      var dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+    var dt2 = new Date(s);
+    return isNaN(dt2.getTime()) ? null : dt2;
+  }
+
+  function dateStr_(d) {
+    return Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+  }
+
+  // 時刻→分（resultRowsはシリアル or Date or 文字が混じる可能性があるので最小限対応）
+  function toMinutes_(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'number') {
+      // 0〜1はシリアル時刻
+      if (v >= 0 && v < 1) return Math.round(v * 24 * 60);
+      // それ以外は分扱いの可能性があるが安全に %1440
+      return Math.round(v * 24 * 60) % 1440;
+    }
+    if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
+    var s = String(v).trim();
+    var m = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+    m = s.match(/(\d{1,2}):(\d{2})/);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+    return null;
+  }
+
+  // 時間帯フィルタ（終日/午前/午後）
+  function isInTimeBand_(row, band) {
+    band = String(band || '').trim();
+    if (!band || band === '終日') return true;
+
+    var s = toMinutes_(row[8]);
+    var e = toMinutes_(row[9]);
+    if (s == null || e == null) {
+      // 時刻未確定は「終日以外」では扱いづらいので含めない（必要なら後で拡張）
+      return false;
+    }
+
+    // 午前: ～12:00開始まで / 午後: 12:00以降開始
+    if (band === '午前') return s < 12 * 60;
+    if (band === '午後') return s >= 12 * 60;
+
+    // 将来拡張（時間帯 等）を入れるならここ
+    return true;
+  }
+
+  // ----------------------------------------------------------
+  // 既存visit_id集合（重複防止）
+  // ----------------------------------------------------------
+  var existingVid = {};
+  resultRows.forEach(function(r) {
+    if (r && r[0]) existingVid[String(r[0])] = true;
+  });
+
+  function newVisitId_(baseVid, traineeId) {
+    // 例: V012 -> V012_T_S006, EV_E003 -> EV_E003_T_S006
+    var cand = String(baseVid) + '_T_' + traineeId;
+    if (!existingVid[cand]) { existingVid[cand] = true; return cand; }
+
+    // 念のため連番回避
+    var k = 2;
+    while (k < 9999) {
+      var c2 = String(baseVid) + '_T_' + traineeId + '_' + k;
+      if (!existingVid[c2]) { existingVid[c2] = true; return c2; }
+      k++;
+    }
+    // 最悪
+    cand = 'T_' + traineeId + '_' + Utilities.getUuid().slice(0, 8);
+    existingVid[cand] = true;
+    return cand;
+  }
+
+  // ----------------------------------------------------------
+  // スタッフ同行割付シートを読み、(trainee|date)-> {mentor, band, priority} に展開
+  // 期間指定（開始日〜終了日）を日別にばらす
+  // ----------------------------------------------------------
+  var pValues = pairSheet.getDataRange().getValues();
+  if (pValues.length <= 1) {
+    return { added: 0, removed: 0, message: 'スタッフ同行割付にデータが無いので同行展開をスキップしました。' };
+  }
+  var pHeader = pValues[0].map(function(x) { return String(x).trim(); });
+  var pData   = pValues.slice(1);
+
+  var idxTrainee = pHeader.indexOf('trainee_staff_id');
+  var idxMentor  = pHeader.indexOf('mentor_staff_id');
+  var idxStartD  = pHeader.indexOf('開始日');
+  var idxEndD    = pHeader.indexOf('終了日');
+  var idxBand    = pHeader.indexOf('時間帯');
+  var idxPrio    = pHeader.indexOf('優先度');
+
+  if (idxTrainee < 0 || idxMentor < 0 || idxStartD < 0 || idxEndD < 0) {
+    throw new Error('スタッフ同行割付のヘッダーが不足しています（trainee_staff_id / mentor_staff_id / 開始日 / 終了日 は必須）');
+  }
+
+  // key: trainee|yyyy/MM/dd -> {mentorId, band, prio}
+  var pairByDay = {};
+
+  pData.forEach(function(r) {
+    var traineeId = r[idxTrainee];
+    var mentorId  = r[idxMentor];
+    var sd = parseDate_(r[idxStartD]);
+    var ed = parseDate_(r[idxEndD]);
+    if (!traineeId || !mentorId || !sd || !ed) return;
+
+    var band = idxBand >= 0 ? String(r[idxBand] || '').trim() : '終日';
+    var prio = idxPrio >= 0 ? Number(r[idxPrio] || 1) : 1;
+
+    // 日別に展開
+    var d0 = new Date(sd); d0.setHours(0,0,0,0);
+    var d1 = new Date(ed); d1.setHours(0,0,0,0);
+
+    for (var d = new Date(d0); d <= d1; d.setDate(d.getDate() + 1)) {
+      var key = traineeId + '|' + dateStr_(d);
+
+      // 同一日に複数指定がある場合は「優先度が小さい方（1が最優先）」を採用
+      if (!pairByDay[key] || prio < pairByDay[key].prio) {
+        pairByDay[key] = { mentorId: mentorId, band: band || '終日', prio: prio };
+      }
+    }
+  });
+
+  // ----------------------------------------------------------
+  // まず trainee の「その日」の既存行を削除（重複防止）
+  // ※同行指定がある日のみ対象
+  // ----------------------------------------------------------
+  var targetKeys = {};
+  Object.keys(pairByDay).forEach(function(k) { targetKeys[k] = true; }); // trainee|date
+  var removed = 0;
+
+  // 後ろから消す
+  for (var i = resultRows.length - 1; i >= 0; i--) {
+    var r = resultRows[i];
+    if (!r) continue;
+    var staffId = r[3];
+    var d = r[1];
+    if (!staffId || !(d instanceof Date)) continue;
+    var k = staffId + '|' + dateStr_(d);
+    if (targetKeys[k]) {
+      // 同行指定がある日の trainee 行は全部いったん消す
+      resultRows.splice(i, 1);
+      removed++;
+    }
+  }
+
+  // ----------------------------------------------------------
+  // mentor行をコピーして trainee行を追加
+  // 条件：mentor がその日に1件も無ければ「休み優先」なので追加しない
+  // ----------------------------------------------------------
+  var added = 0;
+
+  Object.keys(pairByDay).forEach(function(k) {
+    var sp = k.split('|');
+    var traineeId = sp[0];
+    var dStr = sp[1];
+    var mentorId = pairByDay[k].mentorId;
+    var band     = pairByDay[k].band;
+
+    // mentor のその日の行を抽出
+    var mentorRows = resultRows.filter(function(r) {
+      if (!r) return false;
+      if (r[3] !== mentorId) return false;
+      if (!(r[1] instanceof Date)) return false;
+      if (dateStr_(r[1]) !== dStr) return false;
+      // 時間帯フィルタ
+      return isInTimeBand_(r, band);
+    });
+
+    if (mentorRows.length === 0) {
+      // mentorが休み/終日不可等で結果が無い → 同行生成しない（休み優先）
+      return;
+    }
+
+    var tInfo = staffMap[traineeId] || { name: '', gender: '' };
+
+    mentorRows.forEach(function(src) {
+      // src = [visit_id, 日付, 曜日, staff_id, スタッフ名, patient_id, 患者名, エリア,
+      //        開始時刻, 終了時刻, サービス時間, 時間タイプ, 希望最早時刻, 希望最遅時刻, 備考]
+      var row = src.slice(); // shallow copy
+
+      row[0] = newVisitId_(src[0], traineeId);
+      row[3] = traineeId;
+      row[4] = tInfo.name || ('(trainee)' + traineeId);
+
+      // 備考に同行情報を追記（EVも含む）
+      var mentorName = (staffMap[mentorId] && staffMap[mentorId].name) ? staffMap[mentorId].name : mentorId;
+      var tag = ' / 同行(' + mentorId + ' ' + mentorName + ')';
+      row[14] = (row[14] || '') + tag;
+
+      resultRows.push(row);
+      added++;
+    });
+  });
+
+  // 仕上げ：日付→時刻→staff_id順に軽くソート（見た目安定）
+  resultRows.sort(function(a,b) {
+    var ad = (a[1] instanceof Date) ? a[1].getTime() : 0;
+    var bd = (b[1] instanceof Date) ? b[1].getTime() : 0;
+    if (ad !== bd) return ad - bd;
+    var as = String(a[3] || '').localeCompare(String(b[3] || ''), 'ja');
+    if (as !== 0) return as;
+    var am = toMinutes_(a[8]);
+    if (am == null) am = 9999;
+    var bm = toMinutes_(b[8]);
+    if (bm == null) bm = 9999;
+    return am - bm;
+  });
+
+  return { added: added, removed: removed, message: '同行展開完了: 追加=' + added + ', 削除=' + removed };
 }
 
 // ============================================================
