@@ -1680,7 +1680,7 @@ function 割当結果を作成_(ss) {
     records.forEach(function(rec) {
       var rType = rec.restrictionType;
 
-      if (rType === '休み') {
+      if (rType === '休み' || rType === '終日不可' || rType === '終日') {
         // 終日不可: [0, 1440)
         intervals.push({ start: 0, end: 1440 });
       } else if (rType === '遅刻') {
