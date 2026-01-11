@@ -577,7 +577,7 @@
         updateInfo('-', 0, 0);
         return;
       }
-      setStatus('success', (data.sheetName || currentSheetName) + '（' + data.rowCount + '行）');
+      setStatus('success', getDisplaySheetName(data.sheetName || currentSheetName) + '（' + data.rowCount + '行）');
       updateInfo(data.sheetName || currentSheetName, data.rowCount, data.header.length);
 
       var headerHtml = '<tr><th class="row-handle"></th><th>#</th>' + data.header.map(function(h) {
@@ -1308,9 +1308,18 @@
     }
 
     function updateInfo(sheetName, rowCount, colCount) {
-      document.getElementById('infoSheetName').textContent = sheetName;
+      document.getElementById('infoSheetName').textContent = getDisplaySheetName(sheetName);
       document.getElementById('infoRowCount').textContent = rowCount;
       document.getElementById('infoColCount').textContent = colCount;
+    }
+
+    // シート名から表示名への変換
+    function getDisplaySheetName(sheetName) {
+      var displayNames = {
+        '個別変更リクエスト': '患者個別変更リクエスト',
+        'スタッフ個別変更リクエスト': 'スタッフ個別変更リクエスト'
+      };
+      return displayNames[sheetName] || sheetName;
     }
 
     function escapeHtml(text) {
