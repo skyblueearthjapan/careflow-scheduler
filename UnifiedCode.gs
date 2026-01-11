@@ -1304,6 +1304,34 @@ function input_saveMentorPairsWizard(payload) {
   }
 }
 
+/**
+ * 特別訪問週間ウィザード用データ取得（Web UI用）
+ * @param {string} weekStartStr - 週開始日（yyyy/MM/dd）
+ * @param {string} patientId - 患者ID
+ */
+function input_getSpecialWeekWizardData(weekStartStr, patientId) {
+  try {
+    return getSpecialWeekWizardData_(weekStartStr, patientId);
+  } catch (e) {
+    console.error('input_getSpecialWeekWizardData error:', e);
+    return { error: e.message || String(e) };
+  }
+}
+
+/**
+ * 特別訪問週間ウィザード保存（Web UI用）
+ * @param {Object} payload - { weekStart, patientId, patientName, mode, reason, conflictPolicy, details }
+ */
+function input_saveSpecialWeekWizard(payload) {
+  try {
+    requireAdmin_();
+    return saveSpecialWeekWizard_(payload);
+  } catch (e) {
+    console.error('input_saveSpecialWeekWizard error:', e);
+    return { success: false, error: e.message || String(e) };
+  }
+}
+
 // ============================================================
 // 実行API（GAS実行ボタン用）
 // ============================================================
@@ -3979,6 +4007,85 @@ function 週間リクエストを生成_(ss) {
       if (last) { req.prevStaffId = last.staffId || ''; req.prevStaffName = last.staffName || ''; req.prevDate = last.date || null; }
     });
 
+    // 特別訪問週間を適用
+    try {
+      // 日付ごとにグルーピング
+      const requestsByDate = {};
+      weeklyRequests.forEach(req => {
+        const dateKey = req.dateStr;
+        if (!requestsByDate[dateKey]) requestsByDate[dateKey] = [];
+        requestsByDate[dateKey].push(req);
+      });
+
+      // 日付ごとに特別訪問週間を適用
+      let processedRequests = [];
+      Object.keys(requestsByDate).sort().forEach(dateKey => {
+        const dateReqs = requestsByDate[dateKey];
+        if (dateReqs.length === 0) return;
+        const targetDate = dateReqs[0].date;
+
+        // リクエストオブジェクトを適用関数用に変換
+        const convertedReqs = dateReqs.map(r => ({
+          patient_id: r.patient_id,
+          patient_name: r.patient_name,
+          request_type: r.changeType === 'キャンセル' ? 'cancel' : 'add',
+          target_date: r.date,
+          time: r.start,
+          duration: r.svcMin,
+          address: '',
+          latitude: '',
+          longitude: '',
+          // 元のデータを保持
+          _original: r
+        }));
+
+        const applied = applySpecialWeeksToWeeklyRequests_(ss, convertedReqs, targetDate, tz);
+
+        // 結果を元の形式に戻す
+        applied.forEach(a => {
+          if (a._original) {
+            // 元のリクエスト（変更なし or ADD モードで通常も残す）
+            processedRequests.push(a._original);
+          } else if (a.source && a.source.startsWith('special_week')) {
+            // 特別訪問週間由来の新規リクエスト
+            const baseInfo = patientInfoMap[a.patient_id] || {};
+            const win = makeTimeWindow(baseInfo.timeType, a.time, null, a.duration);
+            processedRequests.push({
+              date: a.target_date,
+              dateStr: Utilities.formatDate(a.target_date, tz, 'yyyy/MM/dd'),
+              weekdayStr: Utilities.formatDate(a.target_date, tz, 'EEE'),
+              patient_id: a.patient_id,
+              patient_name: a.patient_name || baseInfo.name || '',
+              area: baseInfo.area || '',
+              start: a.time,
+              end: calcEndTime(a.time, a.duration),
+              svcMin: a.duration,
+              needStaff: baseInfo.needStaff || 1,
+              specifiedIds: baseInfo.staffIds || '',
+              specifiedType: baseInfo.staffType || '',
+              ngStaffIds: baseInfo.ngStaffIds || '',
+              sexLimit: baseInfo.sexLimit || '',
+              contPref: baseInfo.contPref || '',
+              changeType: '特別週間',
+              prevStaffId: '',
+              prevStaffName: '',
+              prevDate: null,
+              timeType: win.timeType,
+              earliest: win.earliest,
+              latest: win.latest,
+              note: '特別訪問週間'
+            });
+          }
+        });
+      });
+
+      // 処理後のリクエストで置き換え
+      weeklyRequests.length = 0;
+      processedRequests.forEach(r => weeklyRequests.push(r));
+    } catch (swErr) {
+      console.warn('特別訪問週間の適用でエラー（スキップ）:', swErr);
+    }
+
     if (weeklyRequests.length === 0) {
       throw new Error('週間リクエスト候補が0件でした。\n・「週訪問回数」が0または空ではないか\n・「希望曜日」と「曜日NG」の組み合わせで候補が消えていないか\n・今週の範囲（' + weekStartStr + '〜' + weekEndStr + '）でよいか\nなどを確認してください。');
     }
@@ -4213,5 +4320,608 @@ function createEventRequestSheet() {
   
   Logger.log("シート「" + sheetName + "」を作成しました");
   return "シート「" + sheetName + "」を作成しました";
+}
+
+// ============================================================
+// 特別訪問週間：シート生成/初期化
+// ============================================================
+
+function ensureSpecialWeekSheets_(ss) {
+  var headerName = '特別訪問週間_ヘッダ';
+  var detailName = '特別訪問週間_明細';
+
+  var shH = ss.getSheetByName(headerName);
+  if (!shH) shH = ss.insertSheet(headerName);
+  if (shH.getLastRow() === 0) {
+    shH.getRange(1, 1, 1, 9).setValues([[
+      'special_week_id', 'patient_id', '患者名', '週開始日', '週終了日',
+      '適用モード(ADD/REPLACE)', '理由', '状態', '登録日時'
+    ]]);
+    shH.setFrozenRows(1);
+  }
+
+  var shD = ss.getSheetByName(detailName);
+  if (!shD) shD = ss.insertSheet(detailName);
+  if (shD.getLastRow() === 0) {
+    shD.getRange(1, 1, 1, 12).setValues([[
+      'special_week_id', 'patient_id', '日付', '曜日',
+      '時間タイプ', '開始時刻', '終了時刻', 'サービス時間', '必要スタッフ数', '備考',
+      '個別変更の扱い', '更新日時'
+    ]]);
+    shD.setFrozenRows(1);
+  }
+}
+
+function _weekStartMonday_(baseDate) {
+  var d = new Date(baseDate);
+  d.setHours(0,0,0,0);
+  var day = d.getDay();
+  var diffToMonday = (day + 6) % 7;
+  d.setDate(d.getDate() - diffToMonday);
+  return d;
+}
+
+function _weekRange_(weekStart) {
+  var s = new Date(weekStart);
+  s.setHours(0,0,0,0);
+  var e = new Date(s);
+  e.setDate(s.getDate() + 6);
+  return { start: s, end: e };
+}
+
+// ============================================================
+// 特別訪問週間：UI用 API
+// ============================================================
+
+function getSpecialWeekWizardData_(weekStartStr, patientId) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var tz = ss.getSpreadsheetTimeZone();
+  ensureSpecialWeekSheets_(ss);
+
+  var weekStart = parseDate_(weekStartStr) || _weekStartMonday_(new Date());
+  var range = _weekRange_(weekStart);
+  var weekEnd = range.end;
+
+  // 患者一覧
+  var patientSheet = ss.getSheetByName('患者マスタ');
+  if (!patientSheet) throw new Error('患者マスタがありません。');
+  var pValues = patientSheet.getDataRange().getValues();
+  var pHeader = pValues[0] || [];
+  var pData = pValues.slice(1);
+
+  var pIdxId   = pHeader.indexOf('patient_id');
+  var pIdxName = pHeader.indexOf('患者名');
+  var idx = {
+    startPref: pHeader.indexOf('希望時間帯（開始）'),
+    endPref:   pHeader.indexOf('希望時間帯（終了）'),
+    svcMin:    pHeader.indexOf('サービス時間'),
+    timeType:  pHeader.indexOf('時間タイプ'),
+    needStaff: pHeader.indexOf('必要スタッフ数'),
+    note:      pHeader.indexOf('備考')
+  };
+
+  var patients = [];
+  var selectedPatientRow = null;
+
+  pData.forEach(function(r) {
+    var pid = r[pIdxId];
+    if (!pid) return;
+    var name = r[pIdxName] || '';
+    patients.push({ patient_id: String(pid), patient_name: String(name) });
+    if (patientId && String(pid) === String(patientId)) selectedPatientRow = r;
+  });
+
+  if (!patientId) {
+    if (patients.length > 0) patientId = patients[0].patient_id;
+    selectedPatientRow = pData.find(function(r) { return String(r[pIdxId]) === String(patientId); }) || null;
+  } else if (!selectedPatientRow) {
+    selectedPatientRow = pData.find(function(r) { return String(r[pIdxId]) === String(patientId); }) || null;
+  }
+
+  var patientName = selectedPatientRow ? (selectedPatientRow[pIdxName] || '') : '';
+
+  // 7日分の通常予定
+  var basePlan = buildPatientMasterWeekPlan_(selectedPatientRow, weekStart, tz, idx);
+
+  // 個別変更
+  var changesByDate = getChangeRequestsByDate_(ss, tz, patientId, range.start, range.end);
+
+  // 既存の特別訪問週間
+  var specialExisting = getSpecialWeekExisting_(ss, tz, patientId, range.start, range.end);
+
+  return {
+    tz: tz,
+    weekStart: Utilities.formatDate(range.start, tz, 'yyyy/MM/dd'),
+    weekEnd: Utilities.formatDate(range.end, tz, 'yyyy/MM/dd'),
+    patientId: String(patientId || ''),
+    patientName: String(patientName || ''),
+    patients: patients,
+    basePlan: basePlan,
+    changesByDate: changesByDate,
+    specialExisting: specialExisting
+  };
+}
+
+function buildPatientMasterWeekPlan_(patientRow, weekStart, tz, idx) {
+  var days = [];
+  for (var i = 0; i < 7; i++) {
+    var d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    days.push({
+      dateStr: Utilities.formatDate(d, tz, 'yyyy/MM/dd'),
+      youbi: Utilities.formatDate(d, tz, 'EEE'),
+      timeType: '',
+      start: '',
+      end: '',
+      svcMin: '',
+      needStaff: 1,
+      note: ''
+    });
+  }
+
+  if (!patientRow) return days;
+
+  var startPref = idx.startPref >= 0 ? patientRow[idx.startPref] : '';
+  var endPref   = idx.endPref   >= 0 ? patientRow[idx.endPref]   : '';
+  var svcMin    = idx.svcMin    >= 0 ? patientRow[idx.svcMin]    : '';
+  var timeType  = idx.timeType  >= 0 ? patientRow[idx.timeType]  : '';
+  var needStaff = idx.needStaff >= 0 ? patientRow[idx.needStaff] : 1;
+  var note      = idx.note      >= 0 ? patientRow[idx.note]      : '';
+
+  days.forEach(function(x) {
+    x.timeType = (timeType || '').toString().trim();
+    x.start = startPref || '';
+    x.end = endPref || '';
+    x.svcMin = svcMin || '';
+    x.needStaff = Number(needStaff || 1) || 1;
+    x.note = note || '';
+  });
+
+  return days;
+}
+
+function getChangeRequestsByDate_(ss, tz, patientId, weekStart, weekEnd) {
+  var sheet = ss.getSheetByName('個別変更リクエスト');
+  var out = {};
+  if (!sheet || sheet.getLastRow() <= 1) return out;
+
+  var values = sheet.getDataRange().getValues();
+  var header = values[0] || [];
+  var data = values.slice(1);
+
+  var cIdx = {
+    pid: header.indexOf('patient_id'),
+    date: header.indexOf('日付'),
+    op: header.indexOf('操作（キャンセル/時間変更/追加）'),
+    newStart: header.indexOf('新開始時刻'),
+    newEnd: header.indexOf('新終了時刻'),
+    note: header.indexOf('備考'),
+    regAt: header.indexOf('登録日時')
+  };
+
+  data.forEach(function(r, i) {
+    var pid = r[cIdx.pid];
+    var d = r[cIdx.date];
+    if (!pid || String(pid) !== String(patientId)) return;
+    if (!(d instanceof Date)) return;
+    if (d < weekStart || d > weekEnd) return;
+
+    var ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+    if (!out[ds]) out[ds] = [];
+
+    out[ds].push({
+      op: r[cIdx.op] || '',
+      newStart: r[cIdx.newStart] || '',
+      newEnd: r[cIdx.newEnd] || '',
+      note: r[cIdx.note] || '',
+      regAt: (cIdx.regAt >= 0 && r[cIdx.regAt] instanceof Date) ? r[cIdx.regAt] : null,
+      sortKey: (cIdx.regAt >= 0 && r[cIdx.regAt] instanceof Date) ? r[cIdx.regAt].getTime() : i
+    });
+  });
+
+  Object.keys(out).forEach(function(ds) {
+    out[ds].sort(function(a,b) { return b.sortKey - a.sortKey; });
+  });
+
+  return out;
+}
+
+function getSpecialWeekExisting_(ss, tz, patientId, weekStart, weekEnd) {
+  var shH = ss.getSheetByName('特別訪問週間_ヘッダ');
+  var shD = ss.getSheetByName('特別訪問週間_明細');
+  if (!shH || shH.getLastRow() <= 1) return null;
+
+  var hv = shH.getDataRange().getValues();
+  var hh = hv[0] || [];
+  var hd = hv.slice(1);
+
+  var hIdx = {
+    id: hh.indexOf('special_week_id'),
+    pid: hh.indexOf('patient_id'),
+    ws: hh.indexOf('週開始日'),
+    we: hh.indexOf('週終了日'),
+    mode: hh.indexOf('適用モード(ADD/REPLACE)'),
+    reason: hh.indexOf('理由'),
+    status: hh.indexOf('状態')
+  };
+
+  var wsStr = Utilities.formatDate(weekStart, tz, 'yyyy/MM/dd');
+
+  var found = hd.find(function(r) {
+    return String(r[hIdx.pid]) === String(patientId) &&
+           r[hIdx.ws] instanceof Date &&
+           Utilities.formatDate(r[hIdx.ws], tz, 'yyyy/MM/dd') === wsStr;
+  });
+
+  if (!found) return null;
+
+  var special_week_id = found[hIdx.id];
+  var header = {
+    special_week_id: String(special_week_id),
+    mode: String(found[hIdx.mode] || 'ADD'),
+    reason: String(found[hIdx.reason] || ''),
+    status: String(found[hIdx.status] || '')
+  };
+
+  var details = [];
+  if (shD && shD.getLastRow() > 1) {
+    var dv = shD.getDataRange().getValues();
+    var dh = dv[0] || [];
+    var dd = dv.slice(1);
+
+    var dIdx = {
+      id: dh.indexOf('special_week_id'),
+      date: dh.indexOf('日付'),
+      youbi: dh.indexOf('曜日'),
+      timeType: dh.indexOf('時間タイプ'),
+      start: dh.indexOf('開始時刻'),
+      end: dh.indexOf('終了時刻'),
+      svc: dh.indexOf('サービス時間'),
+      need: dh.indexOf('必要スタッフ数'),
+      note: dh.indexOf('備考'),
+      policy: dh.indexOf('個別変更の扱い')
+    };
+
+    dd.forEach(function(r) {
+      if (String(r[dIdx.id]) !== String(special_week_id)) return;
+      var d = r[dIdx.date];
+      if (!(d instanceof Date)) return;
+      var ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+      var weStr = Utilities.formatDate(weekEnd, tz, 'yyyy/MM/dd');
+      if (ds < wsStr || ds > weStr) return;
+
+      details.push({
+        dateStr: ds,
+        youbi: r[dIdx.youbi] || '',
+        timeType: r[dIdx.timeType] || '',
+        start: r[dIdx.start] || '',
+        end: r[dIdx.end] || '',
+        svcMin: r[dIdx.svc] || '',
+        needStaff: r[dIdx.need] || 1,
+        note: r[dIdx.note] || '',
+        policy: r[dIdx.policy] || 'そのまま'
+      });
+    });
+  }
+
+  return { header: header, details: details };
+}
+
+function saveSpecialWeekWizard_(payload) {
+  var lock = null;
+  try {
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) {
+      return { ok: false, error: '別の処理が実行中です。' };
+    }
+
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var tz = ss.getSpreadsheetTimeZone();
+    ensureSpecialWeekSheets_(ss);
+
+    var shH = ss.getSheetByName('特別訪問週間_ヘッダ');
+    var shD = ss.getSheetByName('特別訪問週間_明細');
+
+    var weekStart = parseDate_(payload.weekStart);
+    if (!weekStart) throw new Error('weekStartが不正です。');
+    var range = _weekRange_(weekStart);
+    var weekEnd = range.end;
+
+    var patientId = String(payload.patientId || '').trim();
+    if (!patientId) throw new Error('patient_idが空です。');
+
+    var patientName = String(payload.patientName || '');
+    var mode = String(payload.mode || 'ADD').trim();
+    var reason = String(payload.reason || '');
+    var status = '有効';
+
+    // ヘッダ upsert
+    var hv = shH.getDataRange().getValues();
+    var hh = hv[0] || [];
+    var hd = hv.slice(1);
+
+    var hIdx = {
+      id: hh.indexOf('special_week_id'),
+      pid: hh.indexOf('patient_id'),
+      pname: hh.indexOf('患者名'),
+      ws: hh.indexOf('週開始日'),
+      we: hh.indexOf('週終了日'),
+      mode: hh.indexOf('適用モード(ADD/REPLACE)'),
+      reason: hh.indexOf('理由'),
+      status: hh.indexOf('状態'),
+      created: hh.indexOf('登録日時')
+    };
+
+    var wsStr = Utilities.formatDate(range.start, tz, 'yyyy/MM/dd');
+    var targetRowNum = -1;
+    var specialWeekId = '';
+
+    for (var i = 0; i < hd.length; i++) {
+      var r = hd[i];
+      if (String(r[hIdx.pid]) !== patientId) continue;
+      if (!(r[hIdx.ws] instanceof Date)) continue;
+      if (Utilities.formatDate(r[hIdx.ws], tz, 'yyyy/MM/dd') === wsStr) {
+        targetRowNum = i + 2;
+        specialWeekId = String(r[hIdx.id] || '');
+        break;
+      }
+    }
+
+    if (!specialWeekId) {
+      specialWeekId = 'SW_' + wsStr.replace(/\//g, '') + '_' + patientId + '_' + Utilities.getUuid().slice(0,8);
+    }
+
+    var headerRow = [
+      specialWeekId, patientId, patientName,
+      range.start, weekEnd,
+      mode, reason, status, new Date()
+    ];
+
+    if (targetRowNum > 0) {
+      shH.getRange(targetRowNum, 1, 1, headerRow.length).setValues([headerRow]);
+    } else {
+      shH.appendRow(headerRow);
+    }
+
+    // 明細：この special_week_id の週範囲分を削除して入れ直し
+    var dv = shD.getDataRange().getValues();
+    var dh = dv[0] || [];
+    var dd = dv.slice(1);
+    var dIdxId = dh.indexOf('special_week_id');
+
+    var keep = [dh];
+    dd.forEach(function(r) {
+      if (String(r[dIdxId]) === specialWeekId) return;
+      keep.push(r);
+    });
+    shD.clear();
+    if (keep.length > 0) {
+      shD.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
+    }
+
+    // 入力明細を追加
+    var details = Array.isArray(payload.details) ? payload.details : [];
+    var rowsToAdd = [];
+    details.forEach(function(item) {
+      var dateObj = parseDate_(item.dateStr);
+      if (!dateObj) return;
+
+      rowsToAdd.push([
+        specialWeekId,
+        patientId,
+        dateObj,
+        String(item.youbi || ''),
+        String(item.timeType || ''),
+        item.start || '',
+        item.end || '',
+        item.svcMin || '',
+        Number(item.needStaff || 1) || 1,
+        String(item.note || ''),
+        String(item.policy || 'そのまま'),
+        new Date()
+      ]);
+    });
+
+    if (rowsToAdd.length > 0) {
+      shD.getRange(shD.getLastRow() + 1, 1, rowsToAdd.length, dh.length).setValues(rowsToAdd);
+    }
+
+    return { ok: true, special_week_id: specialWeekId };
+  } catch (e) {
+    console.error('saveSpecialWeekWizard_ error:', e);
+    return { ok: false, error: e.message || String(e) };
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (ignore) {}
+    }
+  }
+}
+
+// ============================================================
+// 特別訪問週間を週間リクエストに適用
+// ============================================================
+
+/**
+ * 週間リクエストに特別訪問週間を適用
+ * @param {SpreadsheetApp.Spreadsheet} ss - スプレッドシート
+ * @param {Array<Object>} requests - 週間リクエスト配列
+ * @param {Date} targetDate - 対象日
+ * @param {string} tz - タイムゾーン
+ * @returns {Array<Object>} - 適用後のリクエスト配列
+ */
+function applySpecialWeeksToWeeklyRequests_(ss, requests, targetDate, tz) {
+  // 特別訪問週間_ヘッダと明細シートを取得
+  var headerSheet = ss.getSheetByName('特別訪問週間_ヘッダ');
+  var detailSheet = ss.getSheetByName('特別訪問週間_明細');
+  if (!headerSheet || !detailSheet) return requests;
+
+  var headerLastRow = headerSheet.getLastRow();
+  var detailLastRow = detailSheet.getLastRow();
+  if (headerLastRow < 2 || detailLastRow < 2) return requests;
+
+  // ヘッダーデータ読み込み
+  var headerData = headerSheet.getRange(1, 1, headerLastRow, headerSheet.getLastColumn()).getValues();
+  var headerRow = headerData[0];
+  var hIdx = {
+    id: headerRow.indexOf('special_week_id'),
+    patientId: headerRow.indexOf('patient_id'),
+    weekStart: headerRow.indexOf('week_start'),
+    mode: headerRow.indexOf('mode'),
+    conflictPolicy: headerRow.indexOf('conflict_policy')
+  };
+
+  // 対象日の週開始日を計算
+  var weekStart = _weekStartMonday_(targetDate);
+  var weekStartStr = Utilities.formatDate(weekStart, tz, 'yyyy/MM/dd');
+
+  // 対象週のヘッダーを収集
+  var activeHeaders = {}; // { patientId: headerRow }
+  for (var i = 1; i < headerData.length; i++) {
+    var row = headerData[i];
+    var rowWeekStart = row[hIdx.weekStart];
+    if (rowWeekStart instanceof Date) {
+      rowWeekStart = Utilities.formatDate(rowWeekStart, tz, 'yyyy/MM/dd');
+    }
+    if (rowWeekStart === weekStartStr) {
+      activeHeaders[String(row[hIdx.patientId])] = {
+        id: row[hIdx.id],
+        mode: row[hIdx.mode] || 'ADD',
+        conflictPolicy: row[hIdx.conflictPolicy] || 'keep_individual'
+      };
+    }
+  }
+
+  if (Object.keys(activeHeaders).length === 0) return requests;
+
+  // 明細データ読み込み
+  var detailData = detailSheet.getRange(1, 1, detailLastRow, detailSheet.getLastColumn()).getValues();
+  var detailRow = detailData[0];
+  var dIdx = {
+    headerId: detailRow.indexOf('special_week_id'),
+    date: detailRow.indexOf('date'),
+    time: detailRow.indexOf('time'),
+    duration: detailRow.indexOf('duration')
+  };
+
+  // 対象日の文字列
+  var targetDateStr = Utilities.formatDate(targetDate, tz, 'yyyy/MM/dd');
+
+  // 対象日の明細を収集（patient_id別）
+  var detailsByPatient = {}; // { patientId: [{ time, duration }] }
+  for (var j = 1; j < detailData.length; j++) {
+    var dRow = detailData[j];
+    var headerId = dRow[dIdx.headerId];
+
+    // ヘッダーからpatientIdを逆引き
+    var patientId = null;
+    for (var pid in activeHeaders) {
+      if (activeHeaders[pid].id === headerId) {
+        patientId = pid;
+        break;
+      }
+    }
+    if (!patientId) continue;
+
+    var detailDate = dRow[dIdx.date];
+    if (detailDate instanceof Date) {
+      detailDate = Utilities.formatDate(detailDate, tz, 'yyyy/MM/dd');
+    }
+    if (detailDate !== targetDateStr) continue;
+
+    if (!detailsByPatient[patientId]) {
+      detailsByPatient[patientId] = [];
+    }
+    detailsByPatient[patientId].push({
+      time: dRow[dIdx.time],
+      duration: dRow[dIdx.duration]
+    });
+  }
+
+  // リクエストを処理
+  var result = [];
+  var processedPatients = {};
+
+  for (var k = 0; k < requests.length; k++) {
+    var req = requests[k];
+    var pid = String(req.patient_id || '');
+    var header = activeHeaders[pid];
+
+    if (!header) {
+      // 特別訪問週間対象外 → そのまま追加
+      result.push(req);
+      continue;
+    }
+
+    var mode = header.mode;
+
+    if (mode === 'REPLACE') {
+      // REPLACE: 通常リクエストを除外（後で特別訪問のみ追加）
+      // 特別訪問週間_明細に訪問があれば追加、なければ何も追加しない
+      if (!processedPatients[pid]) {
+        processedPatients[pid] = true;
+        var details = detailsByPatient[pid] || [];
+        details.forEach(function(d) {
+          result.push({
+            patient_id: pid,
+            patient_name: req.patient_name,
+            request_type: 'add',
+            target_date: targetDate,
+            time: d.time,
+            duration: d.duration,
+            source: 'special_week_replace',
+            address: req.address,
+            latitude: req.latitude,
+            longitude: req.longitude
+          });
+        });
+      }
+    } else {
+      // ADD: 通常リクエストをそのまま追加
+      result.push(req);
+
+      // 特別訪問も追加（初回のみ）
+      if (!processedPatients[pid]) {
+        processedPatients[pid] = true;
+        var addDetails = detailsByPatient[pid] || [];
+        addDetails.forEach(function(d) {
+          result.push({
+            patient_id: pid,
+            patient_name: req.patient_name,
+            request_type: 'add',
+            target_date: targetDate,
+            time: d.time,
+            duration: d.duration,
+            source: 'special_week_add',
+            address: req.address,
+            latitude: req.latitude,
+            longitude: req.longitude
+          });
+        });
+      }
+    }
+  }
+
+  // REPLACE モードで通常リクエストがなかった患者の特別訪問を追加
+  // （患者マスタに存在しないがspecial_weekで追加された場合）
+  for (var patientId in detailsByPatient) {
+    if (processedPatients[patientId]) continue;
+    var hdr = activeHeaders[patientId];
+    if (!hdr) continue;
+
+    var specDetails = detailsByPatient[patientId];
+    specDetails.forEach(function(d) {
+      result.push({
+        patient_id: patientId,
+        patient_name: '',
+        request_type: 'add',
+        target_date: targetDate,
+        time: d.time,
+        duration: d.duration,
+        source: 'special_week_new'
+      });
+    });
+  }
+
+  return result;
 }
 

@@ -301,6 +301,34 @@
     .mentor-grid-table .status-warn { color: var(--color-orange-dark); font-size: 11px; }
     .mentor-grid-table .status-empty { color: var(--color-disabled); font-size: 11px; }
     .mentor-wizard-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--color-border); background: #f9f9f9; }
+
+    /* 特別訪問週間ウィザード */
+    .special-week-body { display: flex; padding: 16px; gap: 16px; }
+    .special-week-left { width: 280px; display: flex; flex-direction: column; gap: 12px; }
+    .special-week-right { flex: 1; overflow-x: auto; }
+    .special-week-section { display: flex; flex-direction: column; gap: 6px; }
+    .special-week-label { font-size: 12px; font-weight: 600; color: var(--color-text); }
+    .special-week-nav { display: flex; align-items: center; gap: 8px; }
+    .special-week-nav button { padding: 6px 10px; border: 1px solid var(--color-border); background: var(--color-white); border-radius: 4px; cursor: pointer; }
+    .special-week-nav button:hover { background: var(--color-purple-light, #f3e5f5); }
+    .special-week-nav span { flex: 1; text-align: center; font-size: 13px; font-weight: 500; }
+    .special-week-grid { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .special-week-grid th { background: var(--color-purple, #7b1fa2); color: var(--color-white); padding: 8px 10px; text-align: center; white-space: nowrap; }
+    .special-week-grid td { border: 1px solid var(--color-border); padding: 6px 8px; background: var(--color-white); vertical-align: top; }
+    .special-week-grid td.row-header { background: #fafafa; font-weight: 500; white-space: nowrap; }
+    .special-week-grid .cell-muted { color: #999; font-size: 11px; background: #f5f5f5; }
+    .special-week-grid .cell-change { color: var(--color-orange-dark); font-size: 11px; background: #fff8e1; }
+    .special-week-grid .cell-special { font-weight: 500; }
+    .special-week-grid input[type="time"] { width: 90px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 11px; }
+    .special-week-grid select { width: 100%; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 11px; }
+    .special-week-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--color-border); background: #f9f9f9; }
+    .special-week-mode { display: flex; gap: 12px; }
+    .special-week-mode label { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; }
+    .special-week-mode input[type="radio"] { margin: 0; }
+    .special-week-hint { font-size: 11px; color: #666; margin-top: 4px; }
+    .special-week-conflict { margin-top: 8px; padding: 8px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 4px; }
+    .special-week-conflict-title { font-size: 12px; font-weight: 600; color: var(--color-orange-dark); margin-bottom: 4px; }
+    .special-week-conflict select { width: 100%; margin-top: 4px; }
     #wizardTraineeSelect { width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 12px; }
     @media (max-width: 900px) { .right-panel { display: none; } }
   </style>
@@ -398,6 +426,76 @@
     </div>
   </div>
 
+  <!-- 特別訪問週間ウィザード -->
+  <div class="wizard-panel" id="specialWeekWizardPanel">
+    <div class="wizard-header" style="background: linear-gradient(135deg, #ce93d8 0%, #7b1fa2 100%);">
+      <h3>特別訪問週間ウィザード</h3>
+      <button class="wizard-close" onclick="closeSpecialWeekWizard()">×</button>
+    </div>
+    <div class="special-week-body">
+      <div class="special-week-left">
+        <div class="special-week-section">
+          <label class="special-week-label">対象週</label>
+          <div class="special-week-nav">
+            <button type="button" onclick="specialWeekPrev()">◀</button>
+            <span id="specialWeekDisplay">2026/01/05 〜 2026/01/11</span>
+            <button type="button" onclick="specialWeekNext()">▶</button>
+          </div>
+        </div>
+        <div class="special-week-section">
+          <label class="special-week-label">患者を選択</label>
+          <select id="specialWeekPatientSelect" onchange="onSpecialWeekPatientChange()">
+            <option value="">-- 患者を選択 --</option>
+          </select>
+        </div>
+        <div class="special-week-section">
+          <label class="special-week-label">モード</label>
+          <div class="special-week-mode">
+            <label><input type="radio" name="specialWeekMode" value="ADD" checked onchange="onSpecialWeekModeChange()"> 追加</label>
+            <label><input type="radio" name="specialWeekMode" value="REPLACE" onchange="onSpecialWeekModeChange()"> 置換</label>
+          </div>
+          <div class="special-week-hint" id="specialWeekModeHint">通常スケジュールに加えて特別訪問を追加</div>
+        </div>
+        <div class="special-week-section">
+          <label class="special-week-label">理由（任意）</label>
+          <input type="text" id="specialWeekReason" style="width:100%; padding:6px; border:1px solid var(--color-border); border-radius:4px; font-size:12px;" placeholder="例：退院直後の集中ケア">
+        </div>
+        <div class="special-week-conflict" id="specialWeekConflictArea" style="display:none;">
+          <div class="special-week-conflict-title">個別変更リクエストとの競合</div>
+          <select id="specialWeekConflictPolicy">
+            <option value="keep_individual">個別変更を残す</option>
+            <option value="overwrite_individual">個別変更を上書き</option>
+            <option value="add_to_individual">個別変更に追加</option>
+          </select>
+        </div>
+        <div id="specialWeekWizardError" class="wizard-error"></div>
+      </div>
+      <div class="special-week-right">
+        <table class="special-week-grid">
+          <thead>
+            <tr>
+              <th style="width:60px;">行</th>
+              <th id="swTh0">月</th>
+              <th id="swTh1">火</th>
+              <th id="swTh2">水</th>
+              <th id="swTh3">木</th>
+              <th id="swTh4">金</th>
+              <th id="swTh5">土</th>
+              <th id="swTh6">日</th>
+            </tr>
+          </thead>
+          <tbody id="specialWeekGridBody">
+            <!-- JS で生成 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="special-week-footer">
+      <button class="wizard-btn secondary" onclick="closeSpecialWeekWizard()">キャンセル</button>
+      <button class="wizard-btn success" id="btnSaveSpecialWeek" onclick="saveSpecialWeekWizard()">保存</button>
+    </div>
+  </div>
+
   <div class="main-container">
     <div class="left-panel">
       <div class="status-bar">
@@ -420,6 +518,7 @@
         <div class="operation-group-title">新規登録</div>
         <button class="operation-btn primary" onclick="openWizard()"><span class="icon">💬</span>ウィザードで登録</button>
         <button class="operation-btn" onclick="openMentorWizard()"><span class="icon">👥</span>同行割付ウィザード</button>
+        <button class="operation-btn" onclick="openSpecialWeekWizard()"><span class="icon">📅</span>特別訪問週間</button>
       </div>
       <div class="operation-group">
         <div class="operation-group-title">行操作</div>
@@ -2393,6 +2492,338 @@
           to: formatDateJP(end),
           rows: rowsToSave
         });
+    }
+
+    // ============================================================
+    // 特別訪問週間ウィザード
+    // ============================================================
+    var specialWeekState = {
+      weekStart: null,    // Date オブジェクト（月曜日）
+      patientId: null,
+      patientName: '',
+      mode: 'ADD',        // 'ADD' or 'REPLACE'
+      reason: '',
+      basePlan: [],       // 患者マスタからの週計画（7日分）
+      changesByDate: {},  // 個別変更リクエスト
+      specialExisting: { details: [] }, // 既存の特別訪問週間データ
+      hasConflict: false,
+      conflictPolicy: 'keep_individual',
+      details: []         // 7日 x 入力行
+    };
+
+    function openSpecialWeekWizard() {
+      var panel = document.getElementById('specialWeekWizardPanel');
+      panel.classList.add('active');
+
+      // 週の初期化（今週の月曜日）
+      var today = new Date();
+      specialWeekState.weekStart = getWeekStartMonday(today);
+      updateSpecialWeekDisplay();
+
+      // 患者リスト設定
+      var sel = document.getElementById('specialWeekPatientSelect');
+      sel.innerHTML = '<option value="">-- 患者を選択 --</option>';
+      patientOptions.forEach(function(p) {
+        var opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.label;
+        sel.appendChild(opt);
+      });
+
+      // 状態リセット
+      specialWeekState.patientId = null;
+      specialWeekState.patientName = '';
+      specialWeekState.mode = 'ADD';
+      specialWeekState.reason = '';
+      document.getElementById('specialWeekReason').value = '';
+      document.querySelector('input[name="specialWeekMode"][value="ADD"]').checked = true;
+      onSpecialWeekModeChange();
+      clearSpecialWeekGrid();
+    }
+
+    function closeSpecialWeekWizard() {
+      document.getElementById('specialWeekWizardPanel').classList.remove('active');
+    }
+
+    function getWeekStartMonday(d) {
+      var date = new Date(d);
+      var day = date.getDay();
+      var diff = day === 0 ? -6 : 1 - day;
+      date.setDate(date.getDate() + diff);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    }
+
+    function updateSpecialWeekDisplay() {
+      var start = specialWeekState.weekStart;
+      var end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      document.getElementById('specialWeekDisplay').textContent =
+        formatDateJP(start) + ' 〜 ' + formatDateJP(end);
+
+      // ヘッダーに日付を表示
+      var WEEKDAYS = ['月', '火', '水', '木', '金', '土', '日'];
+      for (var i = 0; i < 7; i++) {
+        var d = new Date(start);
+        d.setDate(d.getDate() + i);
+        var th = document.getElementById('swTh' + i);
+        if (th) {
+          th.textContent = WEEKDAYS[i] + ' (' + (d.getMonth() + 1) + '/' + d.getDate() + ')';
+        }
+      }
+    }
+
+    function specialWeekPrev() {
+      specialWeekState.weekStart.setDate(specialWeekState.weekStart.getDate() - 7);
+      updateSpecialWeekDisplay();
+      if (specialWeekState.patientId) {
+        loadSpecialWeekData();
+      }
+    }
+
+    function specialWeekNext() {
+      specialWeekState.weekStart.setDate(specialWeekState.weekStart.getDate() + 7);
+      updateSpecialWeekDisplay();
+      if (specialWeekState.patientId) {
+        loadSpecialWeekData();
+      }
+    }
+
+    function onSpecialWeekPatientChange() {
+      var sel = document.getElementById('specialWeekPatientSelect');
+      specialWeekState.patientId = sel.value || null;
+      if (sel.selectedIndex > 0) {
+        specialWeekState.patientName = sel.options[sel.selectedIndex].textContent;
+      } else {
+        specialWeekState.patientName = '';
+      }
+
+      if (specialWeekState.patientId) {
+        loadSpecialWeekData();
+      } else {
+        clearSpecialWeekGrid();
+      }
+    }
+
+    function onSpecialWeekModeChange() {
+      var modeEl = document.querySelector('input[name="specialWeekMode"]:checked');
+      specialWeekState.mode = modeEl ? modeEl.value : 'ADD';
+      var hintEl = document.getElementById('specialWeekModeHint');
+      if (specialWeekState.mode === 'ADD') {
+        hintEl.textContent = '通常スケジュールに加えて特別訪問を追加';
+      } else {
+        hintEl.textContent = '通常スケジュールを置換して特別訪問のみ実施';
+      }
+      updateConflictArea();
+    }
+
+    function updateConflictArea() {
+      var area = document.getElementById('specialWeekConflictArea');
+      // 個別変更がある場合のみ表示
+      var hasChanges = Object.keys(specialWeekState.changesByDate).length > 0;
+      area.style.display = hasChanges ? 'block' : 'none';
+      specialWeekState.hasConflict = hasChanges;
+    }
+
+    function loadSpecialWeekData() {
+      var errorEl = document.getElementById('specialWeekWizardError');
+      errorEl.textContent = '';
+
+      google.script.run
+        .withSuccessHandler(function(data) {
+          if (!data) {
+            errorEl.textContent = 'データの取得に失敗しました';
+            return;
+          }
+          specialWeekState.basePlan = data.basePlan || [];
+          specialWeekState.changesByDate = data.changesByDate || {};
+          specialWeekState.specialExisting = data.specialExisting || { details: [] };
+
+          // 既存データからモード・理由を復元
+          if (specialWeekState.specialExisting.mode) {
+            specialWeekState.mode = specialWeekState.specialExisting.mode;
+            document.querySelector('input[name="specialWeekMode"][value="' + specialWeekState.mode + '"]').checked = true;
+            onSpecialWeekModeChange();
+          }
+          if (specialWeekState.specialExisting.reason) {
+            specialWeekState.reason = specialWeekState.specialExisting.reason;
+            document.getElementById('specialWeekReason').value = specialWeekState.reason;
+          }
+
+          updateConflictArea();
+          renderSpecialWeekGrid();
+        })
+        .withFailureHandler(function(e) {
+          errorEl.textContent = 'エラー: ' + (e.message || String(e));
+        })
+        .input_getSpecialWeekWizardData(formatDateJP(specialWeekState.weekStart), specialWeekState.patientId);
+    }
+
+    function clearSpecialWeekGrid() {
+      var tbody = document.getElementById('specialWeekGridBody');
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#999; padding:20px;">患者を選択してください</td></tr>';
+    }
+
+    function renderSpecialWeekGrid() {
+      var tbody = document.getElementById('specialWeekGridBody');
+      tbody.innerHTML = '';
+
+      // 行構成: 通常(muted), 個別変更(change), 特別訪問入力1〜3
+      var ROW_LABELS = ['通常', '個別変更', '特別1', '特別2', '特別3'];
+      var WEEKDAYS = ['月', '火', '水', '木', '金', '土', '日'];
+
+      for (var rowIdx = 0; rowIdx < ROW_LABELS.length; rowIdx++) {
+        var tr = document.createElement('tr');
+        var th = document.createElement('td');
+        th.className = 'row-header';
+        th.textContent = ROW_LABELS[rowIdx];
+        tr.appendChild(th);
+
+        for (var dayIdx = 0; dayIdx < 7; dayIdx++) {
+          var td = document.createElement('td');
+          var dateStr = getDateStrForDay(dayIdx);
+
+          if (rowIdx === 0) {
+            // 通常（患者マスタ由来）
+            td.className = 'cell-muted';
+            var base = specialWeekState.basePlan[dayIdx];
+            if (base && base.visits && base.visits.length > 0) {
+              td.innerHTML = base.visits.map(function(v) {
+                return '<div>' + (v.time || '') + ' ' + (v.duration || '') + '分</div>';
+              }).join('');
+            } else {
+              td.textContent = '-';
+            }
+          } else if (rowIdx === 1) {
+            // 個別変更
+            td.className = 'cell-change';
+            var changes = specialWeekState.changesByDate[dateStr] || [];
+            if (changes.length > 0) {
+              td.innerHTML = changes.map(function(c) {
+                var prefix = c.action_type === 'キャンセル' ? '✕ ' : '';
+                return '<div>' + prefix + (c.time || '') + '</div>';
+              }).join('');
+            } else {
+              td.textContent = '-';
+            }
+          } else {
+            // 特別訪問入力
+            td.className = 'cell-special';
+            var specialIdx = rowIdx - 2;
+            var existingDetail = findExistingDetail(dateStr, specialIdx);
+
+            var timeInput = document.createElement('input');
+            timeInput.type = 'time';
+            timeInput.dataset.day = dayIdx;
+            timeInput.dataset.slot = specialIdx;
+            timeInput.value = existingDetail ? existingDetail.time : '';
+            timeInput.onchange = function() { onSpecialTimeChange(this); };
+
+            var durationSel = document.createElement('select');
+            durationSel.dataset.day = dayIdx;
+            durationSel.dataset.slot = specialIdx;
+            durationSel.innerHTML = '<option value="">-</option><option value="30">30分</option><option value="60">60分</option><option value="90">90分</option>';
+            durationSel.value = existingDetail ? existingDetail.duration : '';
+
+            td.appendChild(timeInput);
+            td.appendChild(document.createElement('br'));
+            td.appendChild(durationSel);
+          }
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+
+    function getDateStrForDay(dayIdx) {
+      var d = new Date(specialWeekState.weekStart);
+      d.setDate(d.getDate() + dayIdx);
+      return formatDateJP(d);
+    }
+
+    function findExistingDetail(dateStr, slotIdx) {
+      var details = specialWeekState.specialExisting.details || [];
+      var matching = details.filter(function(d) { return d.date === dateStr; });
+      return matching[slotIdx] || null;
+    }
+
+    function onSpecialTimeChange(input) {
+      // 時間が入力されたら、次のスロットを有効化するなどの処理（任意）
+    }
+
+    function collectSpecialWeekDetails() {
+      var details = [];
+      var tbody = document.getElementById('specialWeekGridBody');
+      var rows = tbody.querySelectorAll('tr');
+
+      for (var rowIdx = 2; rowIdx < rows.length; rowIdx++) {
+        var slotIdx = rowIdx - 2;
+        var cells = rows[rowIdx].querySelectorAll('td');
+
+        for (var dayIdx = 0; dayIdx < 7; dayIdx++) {
+          var cell = cells[dayIdx + 1]; // +1 for row header
+          if (!cell) continue;
+
+          var timeInput = cell.querySelector('input[type="time"]');
+          var durationSel = cell.querySelector('select');
+
+          if (timeInput && timeInput.value && durationSel && durationSel.value) {
+            details.push({
+              date: getDateStrForDay(dayIdx),
+              time: timeInput.value,
+              duration: parseInt(durationSel.value, 10),
+              slot: slotIdx
+            });
+          }
+        }
+      }
+      return details;
+    }
+
+    function saveSpecialWeekWizard() {
+      var errorEl = document.getElementById('specialWeekWizardError');
+      errorEl.textContent = '';
+
+      if (!specialWeekState.patientId) {
+        errorEl.textContent = '患者を選択してください';
+        return;
+      }
+
+      var details = collectSpecialWeekDetails();
+      specialWeekState.reason = document.getElementById('specialWeekReason').value || '';
+      specialWeekState.conflictPolicy = document.getElementById('specialWeekConflictPolicy').value;
+
+      var payload = {
+        weekStart: formatDateJP(specialWeekState.weekStart),
+        patientId: specialWeekState.patientId,
+        patientName: specialWeekState.patientName,
+        mode: specialWeekState.mode,
+        reason: specialWeekState.reason,
+        conflictPolicy: specialWeekState.conflictPolicy,
+        details: details
+      };
+
+      var saveBtn = document.getElementById('btnSaveSpecialWeek');
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '保存';
+          if (result && result.success) {
+            showToast('success', '特別訪問週間を保存しました（' + (result.detailCount || 0) + '件）');
+            closeSpecialWeekWizard();
+          } else {
+            errorEl.textContent = (result && result.error) || '保存に失敗しました';
+          }
+        })
+        .withFailureHandler(function(e) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '保存';
+          errorEl.textContent = 'エラー: ' + (e.message || String(e));
+        })
+        .input_saveSpecialWeekWizard(payload);
     }
   </script>
 </body>
