@@ -2836,42 +2836,76 @@ function 割当結果を作成_(ss) {
 
     anchors.sort(function(a,b){ return a.s - b.s; });
 
+    // ============================================================
+    // アンカー同士（EV/FIX）の衝突も解消：後勝ちを未割当に落とす
+    // ルール：EVは最優先。EVと衝突したFIXは落とす。FIX同士なら後の方を落とす。
+    // ============================================================
+    (function resolveAnchorConflicts_(){
+      anchors.sort(function(a,b){ return a.s - b.s; });
+
+      var cleaned = [];
+      for (var i = 0; i < anchors.length; i++) {
+        var cur = anchors[i];
+        if (cleaned.length === 0) { cleaned.push(cur); continue; }
+
+        var prev = cleaned[cleaned.length - 1];
+
+        // 重なり判定
+        if (overlap_(prev.s, prev.e, cur.s, cur.e)) {
+          // EV優先：FIXを落とす
+          if (prev.kind === 'EV' && cur.kind === 'FIX') {
+            // cur を落とす
+            var rowC = resultRows[cur.idx];
+            rowC[3] = '';
+            rowC[4] = '未割当';
+            rowC[14] = (rowC[14] || '') + ' / アンカー衝突(EV優先で未割当)';
+            unassignedList.push({ date: rowC[1], youbi: rowC[2], pid: rowC[5], pname: rowC[6], needStaff: 1, slot: 1, reason: 'アンカー衝突(EV優先)' });
+            continue;
+          }
+          if (prev.kind === 'FIX' && cur.kind === 'EV') {
+            // prev を落として EV を採用（cleaned の最後を置き換え）
+            var rowP = resultRows[prev.idx];
+            rowP[3] = '';
+            rowP[4] = '未割当';
+            rowP[14] = (rowP[14] || '') + ' / アンカー衝突(EV優先で未割当)';
+            unassignedList.push({ date: rowP[1], youbi: rowP[2], pid: rowP[5], pname: rowP[6], needStaff: 1, slot: 1, reason: 'アンカー衝突(EV優先)' });
+
+            cleaned[cleaned.length - 1] = cur;
+            continue;
+          }
+
+          // FIX同士：後勝ち（cur）を落とす
+          if (prev.kind === 'FIX' && cur.kind === 'FIX') {
+            var rowF = resultRows[cur.idx];
+            rowF[3] = '';
+            rowF[4] = '未割当';
+            rowF[14] = (rowF[14] || '') + ' / 固定同士衝突で未割当';
+            unassignedList.push({ date: rowF[1], youbi: rowF[2], pid: rowF[5], pname: rowF[6], needStaff: 1, slot: 1, reason: '固定同士が衝突' });
+            continue;
+          }
+
+          // EV同士が衝突してる場合はデータ側問題（どちらも残す、要確認を記録）
+          if (prev.kind === 'EV' && cur.kind === 'EV') {
+            var rowE = resultRows[cur.idx];
+            rowE[14] = (rowE[14] || '') + ' / EV同士衝突(要確認)';
+            // 両方残す（どちらも固定なので）
+            cleaned.push(cur);
+            continue;
+          }
+        }
+
+        cleaned.push(cur);
+      }
+
+      anchors = cleaned;
+    })();
+
     // スタッフのシフト範囲を取得
     var staffId = key.split('|')[0];
     var dateStr = key.split('|')[1];
     var shift = getStaffShift_(staffId);
     var dayStart = (shift.shiftStartMin != null ? shift.shiftStartMin : 540);
     var dayEnd   = (shift.shiftEndMin   != null ? shift.shiftEndMin   : 1080);
-
-    // イベント優先：固定訪問がイベントと被ってたら押し出し（未割当化）
-    anchors.forEach(function(a){
-      if (a.kind !== 'FIX') return;
-      for (var i = 0; i < anchors.length; i++) {
-        var ev = anchors[i];
-        if (ev.kind !== 'EV') continue;
-        if (overlap_(a.s, a.e, ev.s, ev.e)) {
-          // FIX側を未割当に落とす（イベント優先）
-          var row = resultRows[a.idx];
-          row[3] = '';           // staff_id
-          row[4] = '未割当';      // スタッフ名
-          row[14] = (row[14] || '') + ' / EV衝突(イベント優先で未割当)';
-          unassignedList.push({
-            date: row[1],
-            youbi: row[2],
-            pid: row[5],
-            pname: row[6],
-            needStaff: 1,
-            slot: 1,
-            reason: 'イベント優先で固定訪問が衝突'
-          });
-          // アンカーから除去するため無効化
-          a.s = 99999; a.e = 99999;
-          break;
-        }
-      }
-    });
-    // 無効化したものを除外して再ソート
-    anchors = anchors.filter(function(a){ return a.s < 90000; }).sort(function(a,b){ return a.s - b.s; });
 
     // 可動訪問を「隙間」に詰める
     flexes.sort(function(aIdx,bIdx){
