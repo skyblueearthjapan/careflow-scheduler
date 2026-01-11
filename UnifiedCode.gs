@@ -2890,6 +2890,189 @@ function 割当結果を作成_(ss) {
     }
   });
 
+  // ============================================================
+  // Level 1: 未割当訪問の再挿入（別スタッフへの振り分け試行）
+  // ============================================================
+
+  // 未割当になった訪問を抽出（staff_idが空 or スタッフ名が"未割当"の行）
+  var unassignedRows = [];
+  for (var ui = 0; ui < resultRows.length; ui++) {
+    var uRow = resultRows[ui];
+    if (!uRow[3] || uRow[4] === '未割当') {
+      // イベント行は除外
+      if (String(uRow[0] || '').indexOf('EV_') === 0) continue;
+      unassignedRows.push({ idx: ui, row: uRow });
+    }
+  }
+
+  if (unassignedRows.length > 0) {
+    // 候補スタッフを選定する関数
+    function getCandidateStaffsForVisit_(visitRow, dateStr, youbi) {
+      var candidates = [];
+      var pid = visitRow[5];
+      var pInfo = patientMap[pid] || {};
+      var pLat = pInfo.lat;
+      var pLng = pInfo.lng;
+
+      for (var si = 0; si < staffList.length; si++) {
+        var staff = staffList[si];
+
+        // 1) 曜日チェック
+        if (staff.workDays && staff.workDays.length > 0) {
+          if (staff.workDays.indexOf(youbi) < 0) continue;
+        }
+
+        // 2) スタッフ変更（終日休み等）チェック
+        var scKey = staff.id + '|' + dateStr;
+        var scRecs = staffChangeMap[scKey] || [];
+        var isDayOff = false;
+        for (var sci = 0; sci < scRecs.length; sci++) {
+          var rt = scRecs[sci].restrictionType;
+          if (rt === '休み' || rt === '終日不可' || rt === '終日') {
+            isDayOff = true;
+            break;
+          }
+        }
+        if (isDayOff) continue;
+
+        // 3) 距離でスコア（近い順）
+        var distScore = 9999;
+        if (pLat != null && pLng != null && staff.lat != null && staff.lng != null) {
+          distScore = calcDistanceKm(pLat, pLng, staff.lat, staff.lng);
+        }
+
+        candidates.push({ staff: staff, distScore: distScore });
+      }
+
+      // 距離近い順にソート
+      candidates.sort(function(a, b) { return a.distScore - b.distScore; });
+
+      // 上位N人に絞る
+      return candidates.slice(0, 10);
+    }
+
+    // スタッフ+日の隙間に訪問が入るかチェック
+    function canInsertVisitToStaffDay_(staffId, dateStr, visitRow, svcMin) {
+      var dayKey = staffId + '|' + dateStr;
+      var dayIdxList = staffDateMap[dayKey] || [];
+      if (dayIdxList.length === 0) {
+        // そのスタッフのその日に何もなければ、シフト内なら入る
+        var shift = getStaffShift_(staffId);
+        var shiftS = shift.shiftStartMin != null ? shift.shiftStartMin : 540;
+        var shiftE = shift.shiftEndMin != null ? shift.shiftEndMin : 1080;
+        return (shiftE - shiftS >= svcMin) ? { ok: true, startMin: shiftS } : { ok: false };
+      }
+
+      // 既存の予定を集める
+      var anchors = [];
+      for (var di = 0; di < dayIdxList.length; di++) {
+        var rIdx = dayIdxList[di];
+        var r = resultRows[rIdx];
+        var s = toMinutes(r[8]);
+        var e = toMinutes(r[9]);
+        if (s != null && e != null && e > s) {
+          anchors.push({ start: s, end: e });
+        }
+      }
+      anchors.sort(function(a, b) { return a.start - b.start; });
+
+      // 隙間を探す
+      var shift2 = getStaffShift_(staffId);
+      var dayStart = shift2.shiftStartMin != null ? shift2.shiftStartMin : 540;
+      var dayEnd = shift2.shiftEndMin != null ? shift2.shiftEndMin : 1080;
+
+      var gaps = [];
+      var cursor = dayStart;
+      for (var ai = 0; ai < anchors.length; ai++) {
+        if (cursor + EXTRA_BUFFER_MIN < anchors[ai].start) {
+          gaps.push({ s: cursor, e: anchors[ai].start - EXTRA_BUFFER_MIN });
+        }
+        cursor = Math.max(cursor, anchors[ai].end + EXTRA_BUFFER_MIN);
+      }
+      if (cursor < dayEnd) {
+        gaps.push({ s: cursor, e: dayEnd });
+      }
+
+      // svcMin が入る隙間を探す
+      for (var gi = 0; gi < gaps.length; gi++) {
+        var gapLen = gaps[gi].e - gaps[gi].s;
+        if (gapLen >= svcMin) {
+          return { ok: true, startMin: gaps[gi].s };
+        }
+      }
+
+      return { ok: false };
+    }
+
+    // 再挿入ループ
+    var reinsertedCount = 0;
+    for (var uri = 0; uri < unassignedRows.length; uri++) {
+      var uItem = unassignedRows[uri];
+      var uRow = uItem.row;
+      var uIdx = uItem.idx;
+
+      var uDateObj = uRow[1];
+      if (!(uDateObj instanceof Date)) continue;
+      var uDateStr = Utilities.formatDate(uDateObj, tz, 'yyyy/MM/dd');
+      var uYoubi = normalizeYoubi(uRow[2]);
+      var uSvcMin = Number(uRow[10]) || 30;
+
+      var candidates = getCandidateStaffsForVisit_(uRow, uDateStr, uYoubi);
+
+      for (var ci = 0; ci < candidates.length; ci++) {
+        var cStaff = candidates[ci].staff;
+        var cStaffId = cStaff.id;
+
+        // 元のスタッフは除外（すでに試したはず）
+        if (cStaffId === uRow[3]) continue;
+
+        var insertResult = canInsertVisitToStaffDay_(cStaffId, uDateStr, uRow, uSvcMin);
+        if (insertResult.ok) {
+          // 挿入成功！ rowを更新
+          uRow[3] = cStaffId;
+          uRow[4] = cStaff.name;
+          uRow[8] = minutesToSerial_(insertResult.startMin);
+          uRow[9] = minutesToSerial_(insertResult.startMin + uSvcMin);
+          uRow[14] = (uRow[14] || '') + ' / 再挿入(' + cStaff.name + ')';
+
+          // staffDateMap に追加
+          var newKey = cStaffId + '|' + uDateStr;
+          if (!staffDateMap[newKey]) staffDateMap[newKey] = [];
+          staffDateMap[newKey].push(uIdx);
+
+          reinsertedCount++;
+          break;
+        }
+      }
+    }
+
+    // unassignedList から再挿入成功分を除去
+    if (reinsertedCount > 0) {
+      var newUnassignedList = [];
+      for (var nui = 0; nui < unassignedList.length; nui++) {
+        var uItem2 = unassignedList[nui];
+        // resultRows で同じ patient_id + date が未割当のままかチェック
+        var stillUnassigned = false;
+        for (var rri = 0; rri < resultRows.length; rri++) {
+          var rr = resultRows[rri];
+          if (rr[5] === uItem2.pid && rr[1] instanceof Date) {
+            var rrDateStr = Utilities.formatDate(rr[1], tz, 'yyyy/MM/dd');
+            var uItem2DateStr = (uItem2.date instanceof Date) ?
+              Utilities.formatDate(uItem2.date, tz, 'yyyy/MM/dd') : String(uItem2.date);
+            if (rrDateStr === uItem2DateStr && (!rr[3] || rr[4] === '未割当')) {
+              stillUnassigned = true;
+              break;
+            }
+          }
+        }
+        if (stillUnassigned) {
+          newUnassignedList.push(uItem2);
+        }
+      }
+      unassignedList = newUnassignedList;
+    }
+  }
+
   // 割当結果シートに書き込み
   resultSheet.clear();
   var header = ['visit_id','日付','曜日','staff_id','スタッフ名','patient_id','患者名','エリア',
