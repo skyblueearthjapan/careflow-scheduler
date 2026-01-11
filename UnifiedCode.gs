@@ -1344,10 +1344,54 @@ function 週ビューを更新_(ss) {
       const pData   = pValues.slice(1);
       const pIdxId  = pHeader.indexOf('patient_id');
       const pIdxGen = pHeader.indexOf('性別');
+      const pIdxName = pHeader.indexOf('患者名');
       pData.forEach(r => {
         const id = r[pIdxId];
         if (!id) return;
-        patientGenderMap[id] = pIdxGen >= 0 ? (r[pIdxGen] || '') : '';
+        patientGenderMap[id] = {
+          gender: pIdxGen >= 0 ? (r[pIdxGen] || '') : '',
+          name: pIdxName >= 0 ? (r[pIdxName] || '') : ''
+        };
+      });
+    }
+  }
+
+  // イベントリクエストの読み込み
+  const eventSheet = ss.getSheetByName('イベントリクエスト');
+  const eventList = [];
+  if (eventSheet && eventSheet.getLastRow() > 1) {
+    const evValues = eventSheet.getDataRange().getValues();
+    const evHeader = evValues[0];
+    const evIdx = {
+      staffId: evHeader.indexOf('staff_id'),
+      date: evHeader.indexOf('日付'),
+      eventType: evHeader.indexOf('イベント種別'),
+      title: evHeader.indexOf('タイトル'),
+      timeMode: evHeader.indexOf('時間指定方法'),
+      startTime: evHeader.indexOf('開始時刻'),
+      endTime: evHeader.indexOf('終了時刻'),
+      patientLinked: evHeader.indexOf('患者紐づき'),
+      patientId: evHeader.indexOf('patient_id'),
+      returnAfter: evHeader.indexOf('事後事務所戻り')
+    };
+
+    for (var evi = 1; evi < evValues.length; evi++) {
+      var evRow = evValues[evi];
+      var evDate = evRow[evIdx.date];
+      if (!evDate || !(evDate instanceof Date)) continue;
+
+      eventList.push({
+        staffId: evRow[evIdx.staffId] || '',
+        date: evDate,
+        dateStr: Utilities.formatDate(evDate, tz, 'yyyy/MM/dd'),
+        eventType: evRow[evIdx.eventType] || '',
+        title: evRow[evIdx.title] || '',
+        timeMode: evRow[evIdx.timeMode] || '',
+        startTime: evRow[evIdx.startTime],
+        endTime: evRow[evIdx.endTime],
+        patientLinked: evRow[evIdx.patientLinked] === true || evRow[evIdx.patientLinked] === 'TRUE',
+        patientId: evRow[evIdx.patientId] || '',
+        returnAfter: evRow[evIdx.returnAfter] === true || evRow[evIdx.returnAfter] === 'TRUE'
       });
     }
   }
@@ -1393,6 +1437,7 @@ function 週ビューを更新_(ss) {
   });
 
   const staffMap = new Map();
+  // 訪問からスタッフを収集
   weekData.forEach(r => {
     const sid   = r[idxStaffId];
     const sname = r[idxStaff] || '';
@@ -1402,6 +1447,21 @@ function 週ビューを更新_(ss) {
       let gender = '';
       if (sid && staffGenderMap[sid]) gender = staffGenderMap[sid].gender || '';
       staffMap.set(key, { id: sid || '', name: sname, gender: gender });
+    }
+  });
+
+  // イベントからもスタッフを収集（イベントのみのスタッフも週ビューに表示するため）
+  eventList.forEach(ev => {
+    if (!ev.staffId) return;
+    // 対象週内のイベントのみ
+    if (ev.dateStr < startStr || ev.dateStr > endStr) return;
+    if (!staffMap.has(ev.staffId)) {
+      const staffInfo = staffGenderMap[ev.staffId] || {};
+      staffMap.set(ev.staffId, {
+        id: ev.staffId,
+        name: staffInfo.name || '',
+        gender: staffInfo.gender || ''
+      });
     }
   });
 
@@ -1430,12 +1490,41 @@ function 週ビューを更新_(ss) {
     viewSheet.getRange(2 + idx, 1).setValue(label);
   });
 
+  // 時間値をHH:mm形式に変換するヘルパー関数
+  function formatTimeVal(val) {
+    if (!val) return '';
+    if (val instanceof Date) return Utilities.formatDate(val, tz, 'HH:mm');
+    if (typeof val === 'number') {
+      const base = new Date(1899, 11, 30);
+      const ms   = val * 24 * 60 * 60 * 1000;
+      const dd   = new Date(base.getTime() + ms);
+      return Utilities.formatDate(dd, tz, 'HH:mm');
+    }
+    return String(val);
+  }
+
+  // 時間値を分に変換するヘルパー関数（ソート用）
+  function toSortMinutes(val) {
+    if (!val) return 9999;
+    if (val instanceof Date) return val.getHours() * 60 + val.getMinutes();
+    if (typeof val === 'number') {
+      // シリアル値から分に変換
+      const totalMinutes = Math.round(val * 24 * 60);
+      return totalMinutes % 1440;
+    }
+    // "HH:mm" 形式の文字列
+    const match = String(val).match(/(\d{1,2}):(\d{2})/);
+    if (match) return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    return 9999;
+  }
+
   staffList.forEach((st, rIndex) => {
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const targetDateStr = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
 
+      // 患者訪問を取得
       const visits = weekData.filter(row => {
         const d2 = row[idxDate];
         const ds2 = Utilities.formatDate(d2, tz, 'yyyy/MM/dd');
@@ -1445,34 +1534,30 @@ function 週ビューを更新_(ss) {
         return key === (st.id || st.name) && ds2 === targetDateStr;
       });
 
-      visits.sort((a,b) => a[idxStart] - b[idxStart]);
+      // イベントを取得
+      const dayEvents = eventList.filter(ev => {
+        return ev.staffId === st.id && ev.dateStr === targetDateStr;
+      });
 
-      const lines = visits.map(v => {
+      // 表示アイテムを統合（訪問 + イベント）
+      const displayItems = [];
+
+      // 訪問をアイテム化
+      visits.forEach(v => {
         const startVal = v[idxStart];
         const endVal   = v[idxEnd];
         const pid      = v[idxPid] || '';
         const pname    = v[idxPatient] || '';
-        const pGender  = pid ? (patientGenderMap[pid] || '') : '';
+        const pInfo    = pid ? patientGenderMap[pid] : null;
+        const pGender  = pInfo ? (pInfo.gender || '') : '';
         const vid      = (idxVisitId >= 0) ? (v[idxVisitId] || '') : '';
         const noteVal  = (idxNote >= 0) ? (v[idxNote] || '') : '';
 
         const isTwo = (String(vid).indexOf('-') >= 0) || String(noteVal).indexOf('同時訪問') >= 0;
         const mark = isTwo ? '👥 ' : '';
 
-        function formatTime(val) {
-          if (!val) return '';
-          if (val instanceof Date) return Utilities.formatDate(val, tz, 'HH:mm');
-          if (typeof val === 'number') {
-            const base = new Date(1899, 11, 30);
-            const ms   = val * 24 * 60 * 60 * 1000;
-            const dd   = new Date(base.getTime() + ms);
-            return Utilities.formatDate(dd, tz, 'HH:mm');
-          }
-          return String(val);
-        }
-
-        const stime = formatTime(startVal);
-        const etime = formatTime(endVal);
+        const stime = formatTimeVal(startVal);
+        const etime = formatTimeVal(endVal);
 
         let pidPart = '';
         if (pid) {
@@ -1481,11 +1566,54 @@ function 週ビューを更新_(ss) {
           pidPart += ' ';
         }
 
-        if (!stime && !etime) return mark + pidPart + pname;
-        return mark + stime + '〜' + etime + ' ' + pidPart + pname;
+        let text;
+        if (!stime && !etime) {
+          text = mark + pidPart + pname;
+        } else {
+          text = mark + stime + '〜' + etime + ' ' + pidPart + pname;
+        }
+
+        displayItems.push({
+          sortKey: toSortMinutes(startVal),
+          text: text,
+          isEvent: false
+        });
       });
 
-      const cellText = lines.join('\n');
+      // イベントをアイテム化
+      dayEvents.forEach(ev => {
+        const stime = formatTimeVal(ev.startTime);
+        const etime = formatTimeVal(ev.endTime);
+
+        let evText = '';
+        if (stime && etime) {
+          evText = stime + '〜' + etime + ' ';
+        }
+        evText += '[EV] ' + (ev.eventType || '') + (ev.title ? ':' + ev.title : '');
+
+        // 患者紐づきがある場合
+        if (ev.patientLinked && ev.patientId) {
+          const pInfo = patientGenderMap[ev.patientId];
+          const pName = pInfo ? (pInfo.name || '') : '';
+          evText += '（' + ev.patientId + ' ' + pName + '）';
+        }
+
+        // 事務所戻りがある場合
+        if (ev.returnAfter) {
+          evText += ' →事務所戻り';
+        }
+
+        displayItems.push({
+          sortKey: toSortMinutes(ev.startTime),
+          text: evText,
+          isEvent: true
+        });
+      });
+
+      // 時刻でソート
+      displayItems.sort((a, b) => a.sortKey - b.sortKey);
+
+      const cellText = displayItems.map(item => item.text).join('\n');
       if (cellText) {
         const cell = viewSheet.getRange(2 + rIndex, 2 + i);
         cell.setValue(cellText);
@@ -1494,7 +1622,7 @@ function 週ビューを更新_(ss) {
     }
   });
 
-  return { message: '週ビューを更新しました（' + staffList.length + '名）' };
+  return { message: '週ビューを更新しました（' + staffList.length + '名、イベント' + eventList.length + '件含む）' };
 }
 
 // ============================================================
