@@ -1703,11 +1703,13 @@ function 割当結果を作成_(ss) {
           intervals.push({ start: rec.startTime, end: rec.endTime });
         }
       } else if (rType === '午前休') {
-        // 午前休: [0, 720) = 12:00まで不可
-        intervals.push({ start: 0, end: 720 });
+        // 午前休: [shiftStart, 12:00) = 12:00まで不可
+        var amStart = shift.shiftStartMin != null ? shift.shiftStartMin : 0;
+        intervals.push({ start: amStart, end: 720 });
       } else if (rType === '午後休') {
-        // 午後休: [720, 1440) = 12:00以降不可
-        intervals.push({ start: 720, end: 1440 });
+        // 午後休: [12:00, shiftEnd) = 12:00以降不可
+        var pmEnd = shift.shiftEndMin != null ? shift.shiftEndMin : 1440;
+        intervals.push({ start: 720, end: pmEnd });
       }
     });
 
