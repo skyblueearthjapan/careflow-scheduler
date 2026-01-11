@@ -1356,196 +1356,7 @@ function 週ビューを更新_(ss) {
     }
   }
 
-  // イベントリクエストの読み込み
-  const eventSheet = ss.getSheetByName('イベントリクエスト');
-  const eventList = [];
-  if (eventSheet && eventSheet.getLastRow() > 1) {
-    const evValues = eventSheet.getDataRange().getValues();
-    const evHeader = evValues[0];
-
-    // ヘッダー検索ヘルパー（空白や文字の違いに対応）
-    function findHeaderIndex(headers, targetName) {
-      // 完全一致を試す
-      var idx = headers.indexOf(targetName);
-      if (idx >= 0) return idx;
-
-      // trim して一致を試す
-      for (var i = 0; i < headers.length; i++) {
-        if (String(headers[i]).trim() === targetName) return i;
-      }
-
-      // 部分一致を試す（開始時刻 vs 開始時刻 など）
-      for (var j = 0; j < headers.length; j++) {
-        var h = String(headers[j]).trim();
-        if (h.indexOf(targetName) >= 0 || targetName.indexOf(h) >= 0) return j;
-      }
-
-      return -1;
-    }
-
-    const evIdx = {
-      staffId: findHeaderIndex(evHeader, 'staff_id'),
-      date: findHeaderIndex(evHeader, '日付'),
-      eventType: findHeaderIndex(evHeader, 'イベント種別'),
-      title: findHeaderIndex(evHeader, 'タイトル'),
-      timeMode: findHeaderIndex(evHeader, '時間指定方法'),
-      startTime: findHeaderIndex(evHeader, '開始時刻'),
-      endTime: findHeaderIndex(evHeader, '終了時刻'),
-      durationMin: findHeaderIndex(evHeader, '所要時間'),
-      fixedSlot: findHeaderIndex(evHeader, '固定枠'),
-      patientLinked: findHeaderIndex(evHeader, '患者紐づき'),
-      patientId: findHeaderIndex(evHeader, 'patient_id'),
-      returnAfter: findHeaderIndex(evHeader, '事後事務所戻り')
-    };
-
-    // 文字列日付もDate化するパーサ
-    function parseEvDate_(v) {
-      if (!v) return null;
-      if (v instanceof Date) return v;
-      var s = String(v).trim();
-      var m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-      if (m) {
-        var dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-        return isNaN(dt.getTime()) ? null : dt;
-      }
-      var dt2 = new Date(s);
-      return isNaN(dt2.getTime()) ? null : dt2;
-    }
-
-    // 時間値を分に変換するヘルパー（文字列 "10:00" にも対応）
-    function evToMinutes(v) {
-      if (v === null || v === undefined || v === '') return null;
-
-      // 数値（シリアル値）の場合
-      if (typeof v === 'number') {
-        // 0〜1の範囲ならシリアル時刻として扱う
-        if (v >= 0 && v < 1) {
-          return Math.round(v * 24 * 60);
-        }
-        // 1以上なら分として解釈（誤入力対応）
-        if (v >= 1 && v < 1440) {
-          return Math.round(v);
-        }
-        // それ以外はシリアル値として扱う
-        return Math.round(v * 24 * 60) % 1440;
-      }
-
-      // Date オブジェクトの場合
-      if (v instanceof Date) {
-        return v.getHours() * 60 + v.getMinutes();
-      }
-
-      // 文字列の場合
-      var s = String(v).trim();
-
-      // "14:00" や "9:30" 形式
-      var m = s.match(/^(\d{1,2}):(\d{2})$/);
-      if (m) return Number(m[1]) * 60 + Number(m[2]);
-
-      // "14:00:00" 形式（秒付き）
-      m = s.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
-      if (m) return Number(m[1]) * 60 + Number(m[2]);
-
-      // "午前10時30分" や "10時30分" 形式
-      m = s.match(/(\d{1,2})時(\d{1,2})分/);
-      if (m) return Number(m[1]) * 60 + Number(m[2]);
-
-      // "14時" 形式（分なし）
-      m = s.match(/^(\d{1,2})時$/);
-      if (m) return Number(m[1]) * 60;
-
-      // 数字だけの場合（分として解釈）
-      m = s.match(/^(\d+)$/);
-      if (m) {
-        var num = Number(m[1]);
-        if (num < 1440) return num; // 分として
-      }
-
-      // "HH:mm〜HH:mm" などにも保険で対応（先頭だけ）
-      m = s.match(/(\d{1,2}):(\d{2})/);
-      if (m) return Number(m[1]) * 60 + Number(m[2]);
-
-      return null;
-    }
-
-    for (var evi = 1; evi < evValues.length; evi++) {
-      var evRow = evValues[evi];
-      // parseEvDate_ で文字列日付もパース
-      var evDate = parseEvDate_(evRow[evIdx.date]);
-      if (!evDate) continue;
-
-      var evStaffId = evRow[evIdx.staffId] || '';
-      var evTimeMode = String(evRow[evIdx.timeMode] || '').trim();
-      var evStartMin = evToMinutes(evRow[evIdx.startTime]);
-      var evEndMin = evToMinutes(evRow[evIdx.endTime]);
-      // duration: 値があれば使用、なければ開始/終了から計算、それもなければ60分
-      var rawDuration = evRow[evIdx.durationMin];
-      var evDuration;
-      if (rawDuration && !isNaN(parseInt(rawDuration, 10))) {
-        evDuration = parseInt(rawDuration, 10);
-      } else if (evStartMin != null && evEndMin != null && evEndMin > evStartMin) {
-        evDuration = evEndMin - evStartMin;  // 開始/終了から自動算出
-      } else {
-        evDuration = 60;  // デフォルト
-      }
-      var evFixed = evRow[evIdx.fixedSlot] === true || evRow[evIdx.fixedSlot] === 'TRUE';
-
-      // スタッフのシフト情報を取得
-      var staffShift = staffGenderMap[evStaffId] || {};
-      var shiftStart = 540;  // デフォルト09:00
-      var shiftEnd = 1080;   // デフォルト18:00
-
-      // イベントの実際の時間を計算
-      var resolvedStart = null, resolvedEnd = null;
-
-      // 開始/終了時刻が指定されている場合は優先的に使用
-      if (evStartMin != null && evEndMin != null && evEndMin > evStartMin) {
-        // 開始・終了時刻がある場合は最優先で使用
-        resolvedStart = evStartMin;
-        resolvedEnd = evEndMin;
-      } else if (evStartMin != null && evEndMin == null) {
-        // 開始だけある場合はdurationで終了を計算
-        resolvedStart = evStartMin;
-        resolvedEnd = evStartMin + evDuration;
-      } else if (evStartMin == null && evEndMin != null) {
-        // 終了だけある場合はdurationで開始を計算
-        resolvedEnd = evEndMin;
-        resolvedStart = Math.max(evEndMin - evDuration, 0);
-      } else if (evTimeMode === '午前') {
-        // 午前: 09:00からduration分
-        resolvedStart = shiftStart;
-        resolvedEnd = Math.min(shiftStart + evDuration, 720);
-      } else if (evTimeMode === '午後') {
-        // 午後: 12:00からduration分
-        resolvedStart = 720;
-        resolvedEnd = Math.min(720 + evDuration, shiftEnd);
-      } else if (evTimeMode === '終日') {
-        // 終日: シフト全体
-        resolvedStart = shiftStart;
-        resolvedEnd = shiftEnd;
-      } else if (evTimeMode === '所要時間' || evTimeMode === '時間指定' || evTimeMode === '固定時間') {
-        // 所要時間モードでも開始/終了がない場合はシフト開始から仮配置
-        resolvedStart = shiftStart;
-        resolvedEnd = shiftStart + evDuration;
-      }
-
-      eventList.push({
-        staffId: evStaffId,
-        date: evDate,
-        dateStr: Utilities.formatDate(evDate, tz, 'yyyy/MM/dd'),
-        eventType: evRow[evIdx.eventType] || '',
-        title: evRow[evIdx.title] || '',
-        timeMode: evTimeMode,
-        startMin: resolvedStart,
-        endMin: resolvedEnd,
-        durationMin: evDuration,
-        fixedSlot: evFixed,
-        patientLinked: evRow[evIdx.patientLinked] === true || evRow[evIdx.patientLinked] === 'TRUE',
-        patientId: evRow[evIdx.patientId] || '',
-        returnAfter: evRow[evIdx.returnAfter] === true || evRow[evIdx.returnAfter] === 'TRUE'
-      });
-    }
-  }
+  // ※イベントは割当結果のEV行から取得するため、イベントリクエストの読み込みは不要
 
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -1601,20 +1412,7 @@ function 週ビューを更新_(ss) {
     }
   });
 
-  // イベントからもスタッフを収集（イベントのみのスタッフも週ビューに表示するため）
-  eventList.forEach(ev => {
-    if (!ev.staffId) return;
-    // 対象週内のイベントのみ
-    if (ev.dateStr < startStr || ev.dateStr > endStr) return;
-    if (!staffMap.has(ev.staffId)) {
-      const staffInfo = staffGenderMap[ev.staffId] || {};
-      staffMap.set(ev.staffId, {
-        id: ev.staffId,
-        name: staffInfo.name || '',
-        gender: staffInfo.gender || ''
-      });
-    }
-  });
+  // ※イベントは割当結果のEV行に含まれるため、staffMapには既に入っている
 
   let staffList = Array.from(staffMap.values());
   staffList.sort((a,b) => {
@@ -1669,14 +1467,23 @@ function 週ビューを更新_(ss) {
     return 9999;
   }
 
+  // "その行がイベントか" 判定（visit_id が EV_ か、備考に [EV]）
+  function isEventRowFromResult_(row) {
+    const vid  = (idxVisitId >= 0) ? String(row[idxVisitId] || '') : '';
+    const note = (idxNote >= 0) ? String(row[idxNote] || '') : '';
+    return vid.indexOf('EV_') === 0 || note.indexOf('[EV]') >= 0;
+  }
+
+  let eventCount = 0;
+
   staffList.forEach((st, rIndex) => {
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const targetDateStr = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
 
-      // 患者訪問を取得
-      const visits = weekData.filter(row => {
+      // 割当結果から、そのスタッフ×その日の行だけ取る（EV行もここに入る）
+      const rows = weekData.filter(row => {
         const d2 = row[idxDate];
         const ds2 = Utilities.formatDate(d2, tz, 'yyyy/MM/dd');
         const sid   = row[idxStaffId] || '';
@@ -1685,30 +1492,39 @@ function 週ビューを更新_(ss) {
         return key === (st.id || st.name) && ds2 === targetDateStr;
       });
 
-      // イベントを取得
-      const dayEvents = eventList.filter(ev => {
-        return ev.staffId === st.id && ev.dateStr === targetDateStr;
-      });
-
-      // 表示アイテムを統合（訪問 + イベント）
       const displayItems = [];
 
-      // 訪問をアイテム化
-      visits.forEach(v => {
+      rows.forEach(v => {
         const startVal = v[idxStart];
         const endVal   = v[idxEnd];
         const pid      = v[idxPid] || '';
         const pname    = v[idxPatient] || '';
-        const pInfo    = pid ? patientGenderMap[pid] : null;
-        const pGender  = pInfo ? (pInfo.gender || '') : '';
-        const vid      = (idxVisitId >= 0) ? (v[idxVisitId] || '') : '';
-        const noteVal  = (idxNote >= 0) ? (v[idxNote] || '') : '';
-
-        const isTwo = (String(vid).indexOf('-') >= 0) || String(noteVal).indexOf('同時訪問') >= 0;
-        const mark = isTwo ? '👥 ' : '';
+        const noteVal  = (idxNote >= 0) ? String(v[idxNote] || '') : '';
+        const vid      = (idxVisitId >= 0) ? String(v[idxVisitId] || '') : '';
 
         const stime = formatTimeVal(startVal);
         const etime = formatTimeVal(endVal);
+
+        // EV行として表示（割当結果の備考に [EV] が入っている）
+        if (isEventRowFromResult_(v)) {
+          eventCount++;
+          let evText = '';
+          if (stime && etime) evText += stime + '〜' + etime + ' ';
+          evText += noteVal ? noteVal : '[EV]';
+
+          displayItems.push({
+            sortKey: toSortMinutes(startVal),
+            text: evText,
+            isEvent: true
+          });
+          return;
+        }
+
+        // 通常訪問として表示
+        const pInfo   = pid ? patientGenderMap[pid] : null;
+        const pGender = pInfo ? (pInfo.gender || '') : '';
+        const isTwo   = (vid.indexOf('-') >= 0) || (noteVal.indexOf('同時訪問') >= 0);
+        const mark    = isTwo ? '👥 ' : '';
 
         let pidPart = '';
         if (pid) {
@@ -1731,47 +1547,6 @@ function 週ビューを更新_(ss) {
         });
       });
 
-      // イベントをアイテム化
-      dayEvents.forEach(ev => {
-        // 分から HH:mm 形式に変換
-        function minToTimeStr(min) {
-          if (min == null) return '';
-          var h = Math.floor(min / 60);
-          var m = min % 60;
-          return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-        }
-
-        const stime = minToTimeStr(ev.startMin);
-        const etime = minToTimeStr(ev.endMin);
-
-        let evText = '';
-        if (stime && etime) {
-          evText = stime + '〜' + etime + ' ';
-        } else if (ev.durationMin) {
-          // 時間が確定できない場合は所要時間を表示
-          evText = '未配置(' + ev.durationMin + '分) ';
-        }
-        evText += '[EV] ' + (ev.eventType || '') + (ev.title ? ':' + ev.title : '');
-
-        // 患者紐づきがある場合
-        if (ev.patientLinked && ev.patientId) {
-          const pInfo = patientGenderMap[ev.patientId];
-          const pName = pInfo ? (pInfo.name || '') : '';
-          evText += '（' + ev.patientId + ' ' + pName + '）';
-        }
-
-        // 事務所戻りがある場合
-        if (ev.returnAfter) {
-          evText += ' →事務所戻り';
-        }
-
-        displayItems.push({
-          sortKey: ev.startMin != null ? ev.startMin : 9999,
-          text: evText,
-          isEvent: true
-        });
-      });
-
       // 時刻でソート
       displayItems.sort((a, b) => a.sortKey - b.sortKey);
 
@@ -1784,7 +1559,7 @@ function 週ビューを更新_(ss) {
     }
   });
 
-  return { message: '週ビューを更新しました（' + staffList.length + '名、イベント' + eventList.length + '件含む）' };
+  return { message: '週ビューを更新しました（' + staffList.length + '名、EV行' + eventCount + '件含む）' };
 }
 
 // ============================================================
