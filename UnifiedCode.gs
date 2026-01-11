@@ -1393,7 +1393,16 @@ function 週ビューを更新_(ss) {
       var evTimeMode = String(evRow[evIdx.timeMode] || '').trim();
       var evStartMin = evToMinutes(evRow[evIdx.startTime]);
       var evEndMin = evToMinutes(evRow[evIdx.endTime]);
-      var evDuration = evRow[evIdx.durationMin] ? parseInt(evRow[evIdx.durationMin], 10) : 60;
+      // duration: 値があれば使用、なければ開始/終了から計算、それもなければ60分
+      var rawDuration = evRow[evIdx.durationMin];
+      var evDuration;
+      if (rawDuration && !isNaN(parseInt(rawDuration, 10))) {
+        evDuration = parseInt(rawDuration, 10);
+      } else if (evStartMin != null && evEndMin != null && evEndMin > evStartMin) {
+        evDuration = evEndMin - evStartMin;  // 開始/終了から自動算出
+      } else {
+        evDuration = 60;  // デフォルト
+      }
       var evFixed = evRow[evIdx.fixedSlot] === true || evRow[evIdx.fixedSlot] === 'TRUE';
 
       // スタッフのシフト情報を取得
@@ -1404,8 +1413,13 @@ function 週ビューを更新_(ss) {
       // イベントの実際の時間を計算
       var resolvedStart = null, resolvedEnd = null;
 
-      if (evTimeMode === '時間指定' && evStartMin != null && evEndMin != null) {
-        // 時間指定: 開始・終了時刻をそのまま使用
+      // 開始/終了時刻が指定されている場合は優先的に使用（時間指定/固定時間の場合）
+      if ((evTimeMode === '時間指定' || evTimeMode === '固定時間') && evStartMin != null && evEndMin != null) {
+        // 時間指定/固定時間: 開始・終了時刻をそのまま使用
+        resolvedStart = evStartMin;
+        resolvedEnd = evEndMin;
+      } else if (evStartMin != null && evEndMin != null) {
+        // timeModeに関係なく、開始/終了が両方あれば使用
         resolvedStart = evStartMin;
         resolvedEnd = evEndMin;
       } else if (evTimeMode === '午前') {
@@ -1903,7 +1917,16 @@ function 割当結果を作成_(ss) {
       // 時間をminに変換
       var evStartMin = toMinutes(evRow[evIdx.startTime]);
       var evEndMin = toMinutes(evRow[evIdx.endTime]);
-      var evDuration = evRow[evIdx.durationMin] ? parseInt(evRow[evIdx.durationMin], 10) : 60;
+      // duration: 値があれば使用、なければ開始/終了から計算、それもなければ60分
+      var rawEvDuration = evRow[evIdx.durationMin];
+      var evDuration;
+      if (rawEvDuration && !isNaN(parseInt(rawEvDuration, 10))) {
+        evDuration = parseInt(rawEvDuration, 10);
+      } else if (evStartMin != null && evEndMin != null && evEndMin > evStartMin) {
+        evDuration = evEndMin - evStartMin;  // 開始/終了から自動算出
+      } else {
+        evDuration = 60;  // デフォルト
+      }
       var evTimeMode = String(evRow[evIdx.timeMode] || '').trim();
 
       eventMap[evKey].push({
@@ -1984,12 +2007,11 @@ function 割当結果を作成_(ss) {
       events.forEach(function(ev) {
         var evStart, evEnd;
 
-        if (ev.timeMode === '時間指定') {
-          // 時間指定: 開始・終了時刻から直接取得
-          if (ev.startMin != null && ev.endMin != null) {
-            evStart = ev.startMin;
-            evEnd = ev.endMin;
-          }
+        // 開始/終了時刻が両方ある場合は優先的に使用
+        if (ev.startMin != null && ev.endMin != null) {
+          // 時間指定/固定時間: 開始・終了時刻から直接取得
+          evStart = ev.startMin;
+          evEnd = ev.endMin;
         } else if (ev.timeMode === '午前') {
           // 午前: シフト開始〜12:00の範囲内でdurationMin分確保
           evStart = shift.shiftStartMin != null ? shift.shiftStartMin : 540;
