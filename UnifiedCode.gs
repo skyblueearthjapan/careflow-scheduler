@@ -2753,3 +2753,82 @@ function ルートサマリを作成_(ss) {
 
   return { message: 'ルートサマリを ' + records.length + ' 行作成しました。' };
 }
+
+
+// ============================================================
+// シート生成ユーティリティ
+// ============================================================
+
+/**
+ * イベントリクエストシートを作成
+ * GASエディタから直接実行可能
+ */
+function createEventRequestSheet() {
+  var ssId = PropertiesService.getScriptProperties().getProperty("SS_ID");
+  if (!ssId) {
+    throw new Error("SS_ID が設定されていません");
+  }
+  var ss = SpreadsheetApp.openById(ssId);
+  
+  var sheetName = "イベントリクエスト";
+  var existingSheet = ss.getSheetByName(sheetName);
+  if (existingSheet) {
+    throw new Error("シート「" + sheetName + "」は既に存在します");
+  }
+  
+  var sheet = ss.insertSheet(sheetName);
+  
+  var headers = [
+    "event_id",
+    "日付",
+    "曜日",
+    "staff_id",
+    "スタッフ名",
+    "イベント種別",
+    "タイトル",
+    "住所",
+    "緯度",
+    "経度",
+    "時間指定方法",
+    "開始時刻",
+    "終了時刻",
+    "所要時間(分)",
+    "固定枠",
+    "患者紐づき",
+    "patient_id",
+    "患者影響",
+    "事前事務所戻り",
+    "事後事務所戻り",
+    "理由",
+    "備考"
+  ];
+  
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  
+  // ヘッダー行の書式設定
+  var headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setBackground("#4a7c59");
+  headerRange.setFontColor("#ffffff");
+  headerRange.setFontWeight("bold");
+  
+  // 列幅の調整
+  sheet.setColumnWidth(1, 80);   // event_id
+  sheet.setColumnWidth(2, 100);  // 日付
+  sheet.setColumnWidth(3, 50);   // 曜日
+  sheet.setColumnWidth(4, 80);   // staff_id
+  sheet.setColumnWidth(5, 100);  // スタッフ名
+  sheet.setColumnWidth(6, 120);  // イベント種別
+  sheet.setColumnWidth(7, 150);  // タイトル
+  sheet.setColumnWidth(8, 200);  // 住所
+  sheet.setColumnWidth(11, 100); // 時間指定方法
+  sheet.setColumnWidth(14, 100); // 所要時間(分)
+  sheet.setColumnWidth(21, 200); // 理由
+  sheet.setColumnWidth(22, 200); // 備考
+  
+  // 1行目を固定
+  sheet.setFrozenRows(1);
+  
+  Logger.log("シート「" + sheetName + "」を作成しました");
+  return "シート「" + sheetName + "」を作成しました";
+}
+
