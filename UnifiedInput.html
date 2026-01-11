@@ -374,7 +374,7 @@
     <div class="tabs-left">
       <button class="tab-btn active" data-sheet="患者マスタ" onclick="showSheet('患者マスタ', this)">患者マスタ</button>
       <button class="tab-btn" data-sheet="スタッフマスタ" onclick="showSheet('スタッフマスタ', this)">スタッフマスタ</button>
-      <button class="tab-btn" data-sheet="個別変更リクエスト" onclick="showSheet('個別変更リクエスト', this)">個別変更リクエスト</button>
+      <button class="tab-btn" data-sheet="個別変更リクエスト" onclick="showSheet('個別変更リクエスト', this)">患者個別変更</button>
       <button class="tab-btn" data-sheet="スタッフ個別変更リクエスト" onclick="showSheet('スタッフ個別変更リクエスト', this)">スタッフ個別変更</button>
     </div>
     <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
@@ -1490,8 +1490,8 @@
           '<option value="">-- 選択してください --</option>' +
           '<option value="患者マスタ">患者マスタ</option>' +
           '<option value="スタッフマスタ">スタッフマスタ</option>' +
-          '<option value="個別変更リクエスト">個別変更リクエスト（患者）</option>' +
-          '<option value="スタッフ個別変更">個別変更リクエスト（スタッフ）</option>' +
+          '<option value="個別変更リクエスト">患者個別変更</option>' +
+          '<option value="スタッフ個別変更">スタッフ個別変更</option>' +
           '</select>';
         backBtn.disabled = true;
         skipBtn.style.display = 'none';
