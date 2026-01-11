@@ -1787,6 +1787,9 @@ function 割当結果を作成_(ss) {
     var blockedIntervals = getStaffBlockedIntervals_(staffId, dateStr);
     if (blockedIntervals.length === 0) return true;  // 制限なし
 
+    // デバッグログ
+    console.log('Staff restriction check:', staffId, dateStr, 'blocked:', JSON.stringify(blockedIntervals), 'timeType:', timeType, 'start:', startMin, 'end:', endMin);
+
     // 終日不可チェック（[0,1440)が含まれていれば完全除外）
     for (var i = 0; i < blockedIntervals.length; i++) {
       if (blockedIntervals[i].start === 0 && blockedIntervals[i].end >= 1440) {
@@ -1794,35 +1797,47 @@ function 割当結果を作成_(ss) {
       }
     }
 
-    if (timeType === '固定') {
-      // 固定訪問: 訪問区間が不可区間と重なれば不可
-      return !isFixedVisitBlocked_(startMin, endMin, blockedIntervals);
-    } else {
-      // 可動訪問（午前/午後/終日/時間帯）
-      // 許容範囲を決定
-      var effEarliest = earliestMin;
-      var effLatest = latestMin;
-
-      // timeTypeによるデフォルト許容範囲
-      if (timeType === '午前') {
-        if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
-        if (effLatest == null) effLatest = 12 * 60;      // 12:00
-      } else if (timeType === '午後') {
-        if (effEarliest == null) effEarliest = 13 * 60;  // 13:00
-        if (effLatest == null) effLatest = 17 * 60;      // 17:00
-      } else if (timeType === '終日') {
-        if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
-        if (effLatest == null) effLatest = 18 * 60;      // 18:00
-      } else {
-        // 時間帯など: start/endから許容範囲を取得
-        if (effEarliest == null) effEarliest = startMin;
-        if (effLatest == null) effLatest = endMin;
+    // 固定訪問または具体的な時間が指定されている場合
+    if (timeType === '固定' || (startMin != null && endMin != null)) {
+      // 訪問区間が不可区間と重なれば不可
+      if (startMin != null && endMin != null) {
+        var isBlocked = isFixedVisitBlocked_(startMin, endMin, blockedIntervals);
+        console.log('Fixed visit check:', startMin, '-', endMin, 'blocked:', isBlocked);
+        return !isBlocked;
       }
-
-      if (effEarliest == null || effLatest == null) return true;  // 判定不能 → 可とする
-
-      return !isFlexibleVisitBlocked_(effEarliest, effLatest, svcMin, blockedIntervals);
     }
+
+    // 可動訪問（午前/午後/終日/時間帯）
+    // 許容範囲を決定
+    var effEarliest = earliestMin;
+    var effLatest = latestMin;
+
+    // timeTypeによるデフォルト許容範囲
+    if (timeType === '午前') {
+      if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
+      if (effLatest == null) effLatest = 12 * 60;      // 12:00
+    } else if (timeType === '午後') {
+      if (effEarliest == null) effEarliest = 13 * 60;  // 13:00
+      if (effLatest == null) effLatest = 17 * 60;      // 17:00
+    } else if (timeType === '終日') {
+      if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
+      if (effLatest == null) effLatest = 18 * 60;      // 18:00
+    } else {
+      // 時間帯など: start/endから許容範囲を取得
+      if (effEarliest == null) effEarliest = startMin;
+      if (effLatest == null) effLatest = endMin;
+    }
+
+    // 判定不能の場合、スタッフのシフト全体で判定
+    if (effEarliest == null || effLatest == null) {
+      var shift = getStaffShift_(staffId);
+      effEarliest = shift.shiftStartMin || 0;
+      effLatest = shift.shiftEndMin || 1440;
+    }
+
+    var isBlocked = isFlexibleVisitBlocked_(effEarliest, effLatest, svcMin || 30, blockedIntervals);
+    console.log('Flexible visit check:', effEarliest, '-', effLatest, 'svcMin:', svcMin, 'blocked:', isBlocked);
+    return !isBlocked;
   }
 
   var assignCountMap = {};
