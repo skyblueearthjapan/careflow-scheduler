@@ -377,6 +377,7 @@
       <button class="tab-btn" data-sheet="個別変更リクエスト" onclick="showSheet('個別変更リクエスト', this)">患者個別変更</button>
       <button class="tab-btn" data-sheet="スタッフ個別変更リクエスト" onclick="showSheet('スタッフ個別変更リクエスト', this)">スタッフ個別変更</button>
       <button class="tab-btn" data-sheet="イベントリクエスト" onclick="showSheet('イベントリクエスト', this)">イベント</button>
+      <button class="tab-btn" data-sheet="スタッフ同行割付" onclick="showSheet('スタッフ同行割付', this)">同行割付</button>
     </div>
     <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
   </div>
@@ -448,6 +449,9 @@
       if (h === 'change_id' && currentSheetName === '個別変更リクエスト') return 'auto_id';
       if (h === 'staff_change_id' && currentSheetName === 'スタッフ個別変更リクエスト') return 'auto_id';
       if (h === 'event_id' && currentSheetName === 'イベントリクエスト') return 'auto_id';
+      // スタッフ同行割付のstaff_idはスタッフ選択
+      if (h === 'trainee_staff_id' && currentSheetName === 'スタッフ同行割付') return 'staff_single_select';
+      if (h === 'mentor_staff_id' && currentSheetName === 'スタッフ同行割付') return 'staff_single_select';
       // 個別変更リクエストのpatient_idは患者選択
       if (h === 'patient_id' && currentSheetName === '個別変更リクエスト') return 'patient_select';
       // スタッフ個別変更リクエストのstaff_idはスタッフ選択
@@ -477,6 +481,7 @@
       if (hOrig === '制限タイプ') return 'restriction_type_select';
       // イベントリクエスト用
       if (hOrig === 'イベント種別') return 'event_type_select';
+      if (hOrig === '時間帯' && currentSheetName === 'スタッフ同行割付') return 'time_band_select';
       if (hOrig === '時間指定方法') return 'time_mode_select';
       if (hOrig === '患者影響') return 'patient_affect_select';
       if (hOrig === '所要時間(分)') return 'number';
@@ -802,6 +807,8 @@
           return createSelect(['病院同行', '新規面会/契約', '会議/打合せ', '役所/手続き', '後見人/弁護士同席', '事務作業（外出）', 'その他'], value);
         case 'time_mode_select':
           return createSelect(['時間指定', '午前', '午後', '終日'], value);
+        case 'time_band_select':
+          return createSelect(['終日', '午前', '午後'], value);
         case 'patient_affect_select':
           return createSelect(['', '訪問不可', '時間固定', '情報のみ'], value);
         case 'boolean_select':
