@@ -3194,6 +3194,182 @@ function 割当結果を作成_(ss) {
     r[13] = normalizeTimeCellToSerial_(r[13]);
   }
 
+  // ============================================================
+  // 同行（シャドー）割付：新人に親の予定をコピー
+  // ============================================================
+
+  // 同行割付シートを読み込んで日別マップに展開
+  function readShadowMap_() {
+    var sh = ss.getSheetByName('スタッフ同行割付');
+    var map = {}; // key: traineeId|yyyy/MM/dd => { mentorId, window:{s,e}|null, priority }
+
+    if (!sh || sh.getLastRow() <= 1) return map;
+
+    var values = sh.getDataRange().getValues();
+    var h = values[0];
+
+    var idx = {
+      trainee: h.indexOf('trainee_staff_id'),
+      mentor:  h.indexOf('mentor_staff_id'),
+      startD:  h.indexOf('開始日'),
+      endD:    h.indexOf('終了日'),
+      band:    h.indexOf('時間帯'),
+      st:      h.indexOf('開始時刻'),
+      et:      h.indexOf('終了時刻'),
+      youbi:   h.indexOf('曜日条件'),
+      prio:    h.indexOf('優先度')
+    };
+
+    function parseDays_(v) {
+      if (!v) return null; // null = 全曜日
+      return String(v).split(/[,\u3001\/・\s]+/).map(function(s){ return s.trim(); }).filter(Boolean);
+    }
+
+    function bandToWindow_(band, stVal, etVal) {
+      var b = String(band || '').trim();
+      if (!b || b === '終日') return null; // null=終日
+      if (b === '午前') return { s: 9*60,  e: 12*60 };
+      if (b === '午後') return { s: 12*60, e: 18*60 };
+      if (b === '時間指定') {
+        var s = parseTimeToMinutes_(stVal);
+        var e = parseTimeToMinutes_(etVal);
+        if (s != null && e != null && e > s) return { s: s, e: e };
+        return null; // 変なデータは終日に倒す（安全）
+      }
+      return null;
+    }
+
+    for (var i = 1; i < values.length; i++) {
+      var r = values[i];
+      var trainee = r[idx.trainee];
+      var mentor  = r[idx.mentor];
+      var sd = parseDate_(r[idx.startD]);
+      if (!trainee || !mentor || !sd) continue;
+
+      var ed = parseDate_(r[idx.endD]) || sd;
+      var daysCond = parseDays_(r[idx.youbi]); // ["月","火"]など or null
+      var window = bandToWindow_(r[idx.band], r[idx.st], r[idx.et]);
+      var prio = (idx.prio >= 0 && r[idx.prio] !== '' && r[idx.prio] != null) ? Number(r[idx.prio]) : 9999;
+
+      // 日別に展開
+      var d0 = new Date(sd); d0.setHours(0,0,0,0);
+      var d1 = new Date(ed); d1.setHours(0,0,0,0);
+
+      for (var d = new Date(d0); d <= d1; d.setDate(d.getDate()+1)) {
+        var dateStr = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+
+        // 曜日条件
+        if (daysCond) {
+          var youbi = ['日','月','火','水','木','金','土'][d.getDay()];
+          if (daysCond.indexOf(youbi) < 0) continue;
+        }
+
+        var key = trainee + '|' + dateStr;
+        var prev = map[key];
+
+        // 優先度が小さい方を採用（同じなら後勝ち）
+        if (!prev || prio < prev.priority || (prio === prev.priority)) {
+          map[key] = { mentorId: mentor, window: window, priority: prio };
+        }
+      }
+    }
+
+    return map;
+  }
+
+  // 終日休み判定
+  function isDayOffByBlocked_(blockedIntervals) {
+    for (var i = 0; i < blockedIntervals.length; i++) {
+      if (blockedIntervals[i].start === 0 && blockedIntervals[i].end >= 1440) return true;
+    }
+    return false;
+  }
+
+  // 同行適用（親の予定を新人にコピー）
+  function applyShadowAssignments_() {
+    var shadowMap = readShadowMap_();
+    if (!shadowMap || Object.keys(shadowMap).length === 0) return;
+
+    // staff_id -> name
+    var staffNameMap = {};
+    staffList.forEach(function(s){ staffNameMap[s.id] = s.name; });
+
+    // 親の行を引く index
+    var byStaffDate = {};
+    for (var i = 0; i < resultRows.length; i++) {
+      var r = resultRows[i];
+      var d = r[1], sid = r[3];
+      if (!sid || !(d instanceof Date)) continue;
+      var ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+      var k = sid + '|' + ds;
+      if (!byStaffDate[k]) byStaffDate[k] = [];
+      byStaffDate[k].push(i);
+    }
+
+    function rowOverlapsWindow_(row, window) {
+      if (!window) return true;
+      var s = parseTimeToMinutes_(row[8]);
+      var e = parseTimeToMinutes_(row[9]);
+      if (s == null || e == null || e <= s) return false;
+      return (s < window.e && window.s < e);
+    }
+
+    function makeShadowVisitId_(baseVisitId, traineeId) {
+      return String(baseVisitId || '') + '_SH_' + traineeId;
+    }
+
+    // 追加分を溜めて最後にpush
+    var addRows = [];
+
+    Object.keys(shadowMap).forEach(function(k){
+      var sp = k.split('|');
+      var traineeId = sp[0];
+      var dateStr = sp[1];
+      var conf = shadowMap[k];
+      var mentorId = conf.mentorId;
+      var window = conf.window;
+
+      // trainee 終日休みならスキップ（休み優先）
+      var blocked = getStaffBlockedIntervals_(traineeId, dateStr);
+      if (isDayOffByBlocked_(blocked)) return;
+
+      // 親の行を抽出
+      var mentorKey = mentorId + '|' + dateStr;
+      var idxs = byStaffDate[mentorKey] || [];
+      if (idxs.length === 0) return;
+
+      for (var ii = 0; ii < idxs.length; ii++) {
+        var row = resultRows[idxs[ii]];
+
+        // window があるなら、その時間帯にかかるものだけコピー
+        if (!rowOverlapsWindow_(row, window)) continue;
+
+        // コピー（配列複製）
+        var nr = row.slice();
+
+        // staff差し替え
+        nr[3] = traineeId;
+        nr[4] = staffNameMap[traineeId] || ('T:' + traineeId);
+
+        // visit_idユニーク化
+        nr[0] = makeShadowVisitId_(row[0], traineeId);
+
+        // 備考に同行マーク
+        nr[14] = (nr[14] || '') + ' / 同行(' + traineeId + '←' + mentorId + ')';
+
+        addRows.push(nr);
+      }
+    });
+
+    // 追加
+    if (addRows.length > 0) {
+      Array.prototype.push.apply(resultRows, addRows);
+    }
+  }
+
+  // 同行適用を実行
+  applyShadowAssignments_();
+
   // 割当結果シートに書き込み
   resultSheet.clear();
   var header = ['visit_id','日付','曜日','staff_id','スタッフ名','patient_id','患者名','エリア',
