@@ -544,8 +544,10 @@
       if (hOrig === '性別') return 'sex_select';
       if (hOrig === 'エリア' || hOrig === '得意エリア') return 'area_select';
       if (h.includes('緯度') || h.includes('経度')) return 'geo_readonly';
-      if (h.includes('日付')) return 'date_picker';
-      if (h.includes('時刻') || h.includes('開始') || h.includes('終了') || h.includes('時間帯（開始）') || h.includes('時間帯（終）') || h.includes('シフト')) return 'time_select';
+      // 日付フィールド（開始日・終了日を含む）
+      if (h.includes('日付') || hOrig === '開始日' || hOrig === '終了日') return 'date_picker';
+      // 時刻フィールド（開始・終了だけでは日付と区別できないので時刻を含むもののみ）
+      if (h.includes('時刻') || h.includes('時間帯（開始）') || h.includes('時間帯（終）') || h.includes('シフト')) return 'time_select';
       if (h.includes('曜日') && (h.includes('複数') || h.includes('希望') || h.includes('勤務'))) return 'weekday_multi';
       // 曜日NGは日本語単一選択
       if (hOrig === '曜日NG' || h.includes('曜日ng')) return 'weekday_ng_jp';
@@ -740,6 +742,25 @@
       if (editorType === 'time_select' && value) {
         // HH:MM:SS → HH:MM
         return String(value).substring(0, 5);
+      }
+      if (editorType === 'date_picker' && value) {
+        // Date object or date string → yyyy/MM/dd
+        try {
+          var d;
+          if (value instanceof Date) {
+            d = value;
+          } else if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}/)) {
+            d = new Date(value);
+          } else if (typeof value === 'string' && value.match(/^\d{4}\/\d{1,2}\/\d{1,2}/)) {
+            return value; // already formatted
+          } else {
+            d = new Date(value);
+          }
+          if (!isNaN(d.getTime())) {
+            return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+          }
+        } catch (e) {}
+        return String(value);
       }
       return String(value);
     }
