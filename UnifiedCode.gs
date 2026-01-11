@@ -2702,19 +2702,29 @@ function 割当結果を作成_(ss) {
   var moveKmArr = new Array(resultRows.length).fill('');
   var moveMinArr = new Array(resultRows.length).fill('');
 
-  // staffDateMapを再構築（時刻調整後のデータでLevel1再挿入・移動距離計算用）
+  // staffDateMapを再構築（時刻調整・Level1再挿入用：イベント含む）
   staffDateMap = {};
   resultRows.forEach(function(r, i){
     var d = r[1], staffId = r[3];
-    // pid条件を外してイベント行も含める（Level1再挿入の隙間判定に必要）
+    // イベント行も含める（時刻調整のアンカー、Level1再挿入の隙間判定に必要）
     if (!staffId || !(d instanceof Date)) return;
     var key = staffId + '|' + Utilities.formatDate(d, tz, 'yyyy/MM/dd');
     if (!staffDateMap[key]) staffDateMap[key] = [];
     staffDateMap[key].push(i);
   });
 
-  Object.keys(staffDateMap).forEach(function(key){
-    var indexList = staffDateMap[key];
+  // ★移動距離計算専用：患者行のみ（イベントはpid空なので除外）
+  var staffDateMapForMove = {};
+  resultRows.forEach(function(r, i){
+    var d = r[1], staffId = r[3], pid = r[5];
+    if (!staffId || !(d instanceof Date) || !pid) return;
+    var key = staffId + '|' + Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+    if (!staffDateMapForMove[key]) staffDateMapForMove[key] = [];
+    staffDateMapForMove[key].push(i);
+  });
+
+  Object.keys(staffDateMapForMove).forEach(function(key){
+    var indexList = staffDateMapForMove[key];
     indexList.sort(function(aIdx, bIdx){ return toMinutes(resultRows[aIdx][8]) - toMinutes(resultRows[bIdx][8]); });
     for (var j = 0; j < indexList.length; j++) {
       var currIndex = indexList[j];
@@ -2722,8 +2732,6 @@ function 割当結果を作成_(ss) {
       var prevIndex = indexList[j - 1];
       var prevPid = resultRows[prevIndex][5];
       var currPid = resultRows[currIndex][5];
-      // イベントなど pidなしは移動距離計算しない
-      if (!prevPid || !currPid) continue;
       var prevP = patientMap[prevPid] || {};
       var currP = patientMap[currPid] || {};
       if (prevP.lat != null && prevP.lng != null && currP.lat != null && currP.lng != null) {
