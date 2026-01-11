@@ -1377,17 +1377,42 @@ function 週ビューを更新_(ss) {
       returnAfter: evHeader.indexOf('事後事務所戻り')
     };
 
-    // 時間値を分に変換するヘルパー
+    // 文字列日付もDate化するパーサ
+    function parseEvDate_(v) {
+      if (!v) return null;
+      if (v instanceof Date) return v;
+      var s = String(v).trim();
+      var m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+      if (m) {
+        var dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        return isNaN(dt.getTime()) ? null : dt;
+      }
+      var dt2 = new Date(s);
+      return isNaN(dt2.getTime()) ? null : dt2;
+    }
+
+    // 時間値を分に変換するヘルパー（文字列 "10:00" にも対応）
     function evToMinutes(v) {
+      if (v === null || v === undefined || v === '') return null;
       if (typeof v === 'number') return Math.round(v * 24 * 60);
-      else if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
-      else return null;
+      if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
+
+      var s = String(v).trim();
+      var m = s.match(/^(\d{1,2}):(\d{2})$/);
+      if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+      // "HH:mm〜HH:mm" などにも保険で対応（先頭だけ）
+      m = s.match(/(\d{1,2}):(\d{2})/);
+      if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+      return null;
     }
 
     for (var evi = 1; evi < evValues.length; evi++) {
       var evRow = evValues[evi];
-      var evDate = evRow[evIdx.date];
-      if (!evDate || !(evDate instanceof Date)) continue;
+      // parseEvDate_ で文字列日付もパース
+      var evDate = parseEvDate_(evRow[evIdx.date]);
+      if (!evDate) continue;
 
       var evStaffId = evRow[evIdx.staffId] || '';
       var evTimeMode = String(evRow[evIdx.timeMode] || '').trim();
@@ -1801,10 +1826,46 @@ function 割当結果を作成_(ss) {
     return out;
   }
 
-  function toMinutes(v) {
+  // 文字列日付もDate化するパーサ
+  function parseDate_(v) {
+    if (!v) return null;
+    if (v instanceof Date) return v;
+
+    var s = String(v).trim();
+    var m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (m) {
+      var dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+    var dt2 = new Date(s);
+    return isNaN(dt2.getTime()) ? null : dt2;
+  }
+
+  // "10:00" / シリアル / Date すべて分にするパーサ
+  function parseTimeToMinutes_(v) {
+    if (v === null || v === undefined || v === '') return null;
     if (typeof v === 'number') return Math.round(v * 24 * 60);
-    else if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
-    else return null;
+    if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
+
+    var s = String(v).trim();
+    var m = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+    // "HH:mm〜HH:mm" などにも保険で対応（先頭だけ）
+    m = s.match(/(\d{1,2}):(\d{2})/);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+
+    return null;
+  }
+
+  // 分→シリアル(スプレッドシート時刻) に変換
+  function minutesToSerial_(min) {
+    if (min == null) return '';
+    return min / (24 * 60);
+  }
+
+  function toMinutes(v) {
+    return parseTimeToMinutes_(v);
   }
 
   function normalizeContPref(v) {
@@ -1854,15 +1915,11 @@ function 割当結果を作成_(ss) {
     for (var sci = 1; sci < scValues.length; sci++) {
       var scRow = scValues[sci];
       var scStaffId = scRow[scIdx.staffId];
-      var scDate = scRow[scIdx.date];
-      if (!scStaffId || !scDate) continue;
+      // parseDate_ で文字列日付もパース
+      var scDateObj = parseDate_(scRow[scIdx.date]);
+      if (!scStaffId || !scDateObj) continue;
 
-      var scDateStr;
-      if (scDate instanceof Date) {
-        scDateStr = Utilities.formatDate(scDate, tz, 'yyyy/MM/dd');
-      } else {
-        continue;  // 日付形式でなければスキップ
-      }
+      var scDateStr = Utilities.formatDate(scDateObj, tz, 'yyyy/MM/dd');
 
       var scKey = scStaffId + '|' + scDateStr;
       if (!staffChangeMap[scKey]) staffChangeMap[scKey] = [];
@@ -1884,8 +1941,11 @@ function 割当結果を作成_(ss) {
     var evValues = eventSheet.getDataRange().getValues();
     var evHeader = evValues[0];
     var evIdx = {
+      eventId: evHeader.indexOf('event_id'),
       staffId: evHeader.indexOf('staff_id'),
       date: evHeader.indexOf('日付'),
+      eventType: evHeader.indexOf('イベント種別'),
+      title: evHeader.indexOf('タイトル'),
       timeMode: evHeader.indexOf('時間指定方法'),
       startTime: evHeader.indexOf('開始時刻'),
       endTime: evHeader.indexOf('終了時刻'),
@@ -1901,20 +1961,15 @@ function 割当結果を作成_(ss) {
     for (var evi = 1; evi < evValues.length; evi++) {
       var evRow = evValues[evi];
       var evStaffId = evRow[evIdx.staffId];
-      var evDate = evRow[evIdx.date];
-      if (!evStaffId || !evDate) continue;
-
-      var evDateStr;
-      if (evDate instanceof Date) {
-        evDateStr = Utilities.formatDate(evDate, tz, 'yyyy/MM/dd');
-      } else {
-        continue;  // 日付形式でなければスキップ
-      }
+      // parseDate_ で文字列日付もパース
+      var evDateObj = parseDate_(evRow[evIdx.date]);
+      if (!evStaffId || !evDateObj) continue;
+      var evDateStr = Utilities.formatDate(evDateObj, tz, 'yyyy/MM/dd');
 
       var evKey = evStaffId + '|' + evDateStr;
       if (!eventMap[evKey]) eventMap[evKey] = [];
 
-      // 時間をminに変換
+      // 時間をminに変換（toMinutes は parseTimeToMinutes_ をラップ）
       var evStartMin = toMinutes(evRow[evIdx.startTime]);
       var evEndMin = toMinutes(evRow[evIdx.endTime]);
       // duration: 値があれば使用、なければ開始/終了から計算、それもなければ60分
@@ -1930,6 +1985,10 @@ function 割当結果を作成_(ss) {
       var evTimeMode = String(evRow[evIdx.timeMode] || '').trim();
 
       eventMap[evKey].push({
+        eventId: evRow[evIdx.eventId] || '',
+        eventType: evRow[evIdx.eventType] || '',
+        title: evRow[evIdx.title] || '',
+        dateObj: evDateObj,
         timeMode: evTimeMode,
         startMin: evStartMin,
         endMin: evEndMin,
@@ -2189,6 +2248,97 @@ function 割当結果を作成_(ss) {
   var resultRows = [];
   var unassignedList = [];
 
+  // ============================================================
+  // Task A-2.5: イベントを resultRows に先挿入（イベント優先の固定アンカー）
+  // ============================================================
+
+  // staff_id|dateStr ごとに、イベントの開始/終了を確定させる
+  function resolveEventInterval_(ev, staffId) {
+    var shift = getStaffShift_(staffId);
+    var shiftStart = (shift.shiftStartMin != null ? shift.shiftStartMin : 540);
+    var shiftEnd   = (shift.shiftEndMin   != null ? shift.shiftEndMin   : 1080);
+
+    // 1) start/end が両方あるなら最優先
+    if (ev.startMin != null && ev.endMin != null && ev.endMin > ev.startMin) {
+      return { start: ev.startMin, end: ev.endMin };
+    }
+
+    // 2) timeMode + duration で決める
+    var dur = Number(ev.durationMin || 60) || 60;
+    var mode = String(ev.timeMode || '').trim();
+
+    if (mode === '午前') {
+      var s = shiftStart;
+      var e = Math.min(s + dur, 720);
+      return { start: s, end: e };
+    }
+    if (mode === '午後') {
+      var s2 = 720;
+      var e2 = Math.min(s2 + dur, shiftEnd);
+      return { start: s2, end: e2 };
+    }
+    if (mode === '終日') {
+      return { start: shiftStart, end: shiftEnd };
+    }
+
+    // 3) それでも決まらない → 仮置き（目印用：13:00開始）
+    var s3 = Math.max(shiftStart, 13 * 60);
+    var e3 = Math.min(s3 + dur, shiftEnd);
+    return { start: s3, end: e3 };
+  }
+
+  // イベント行をresultRowsへ
+  Object.keys(eventMap).forEach(function(key) {
+    var parts = key.split('|');
+    var staffId = parts[0];
+    var dateStr = parts[1];
+
+    var events = eventMap[key] || [];
+    if (!staffId || !dateStr || events.length === 0) return;
+
+    // dateStr -> Date化
+    var dateObj = parseDate_(dateStr);
+    if (!dateObj) return;
+
+    events.forEach(function(ev, idxEv) {
+      var itv = resolveEventInterval_(ev, staffId);
+      if (!itv || itv.start == null || itv.end == null || itv.end <= itv.start) return;
+
+      var evid = ev.eventId ? String(ev.eventId) : ('EVT' + ('000' + (idxEv + 1)).slice(-3));
+      var visitId = 'EV_' + evid;
+
+      var evLabel = '[EV] ' + (ev.eventType || '') + (ev.title ? ':' + ev.title : '');
+      var note = evLabel + (ev.patientLinked && ev.patientId ? ('（' + ev.patientId + '）') : '');
+
+      // スタッフ名を取得
+      var staffName = '';
+      for (var si = 0; si < staffList.length; si++) {
+        if (staffList[si].id === staffId) { staffName = staffList[si].name; break; }
+      }
+
+      // resultRowsのフォーマット:
+      // [visit_id, 日付, 曜日, staff_id, スタッフ名, patient_id, 患者名, エリア, 開始時刻, 終了時刻,
+      //  サービス時間, 時間タイプ, 希望最早時刻, 希望最遅時刻, 備考]
+      resultRows.push([
+        visitId,
+        dateObj,
+        '',               // 曜日
+        staffId,
+        staffName,
+        '',               // patient_id
+        '',               // 患者名
+        'EV',             // エリア（目印）
+        minutesToSerial_(itv.start),
+        minutesToSerial_(itv.end),
+        (itv.end - itv.start), // サービス時間(分)
+        '固定',
+        minutesToSerial_(itv.start), // 希望最早
+        minutesToSerial_(itv.end),   // 希望最遅
+        note
+      ]);
+    });
+  });
+
   weeklyRequests.forEach(function(item, idx){
     var row = item.row;
     var dateObj = item.date;
@@ -2443,45 +2593,185 @@ function 割当結果を作成_(ss) {
     }
   });
 
-  // 時刻自動調整
+  // ============================================================
+  // 時刻自動調整（イベント/固定訪問をアンカーとして可動訪問を隙間に詰める）
+  // ============================================================
+
+  // "その行がイベントか" 判定（visit_idがEV_ か 備考に[EV]）
+  function isEventRow_(row) {
+    var vid = String(row[0] || '');
+    var note = String(row[14] || '');
+    return vid.indexOf('EV_') === 0 || note.indexOf('[EV]') >= 0;
+  }
+
+  // 分ベースのstart/end取得
+  function rowStartMin_(row) { return toMinutes(row[8]); }
+  function rowEndMin_(row)   { return toMinutes(row[9]); }
+
+  function setRowTimeByMinutes_(row, startMin, endMin) {
+    row[8] = minutesToSerial_(startMin);
+    row[9] = minutesToSerial_(endMin);
+  }
+
+  // 2区間が重なるか
+  function overlap_(s1,e1,s2,e2) {
+    return s1 < e2 && s2 < e1;
+  }
+
   Object.keys(staffDateMap).forEach(function(key){
     var idxList = staffDateMap[key];
-    idxList.sort(function(aIdx, bIdx){ return toMinutes(resultRows[aIdx][8]) - toMinutes(resultRows[bIdx][8]); });
-    var currentEndMin = null;
+    if (!idxList || idxList.length === 0) return;
+
+    // 時刻未確定が混ざるので、まずアンカー/可動で分ける
+    var anchors = []; // {idx, s, e, kind}
+    var flexes  = []; // idx
+
     idxList.forEach(function(rIdx){
       var row = resultRows[rIdx];
       var timeType = row[11];
-      var svcMin = Number(row[10]) || 0;
-      if (!svcMin) return;
-      var earliestMin = row[12] ? toMinutes(row[12]) : null;
-      var latestMin = row[13] ? toMinutes(row[13]) : null;
-      var moveMin = Number(moveMinArr[rIdx]) || 0;
-      var gapMin = moveMin + EXTRA_BUFFER_MIN;
+      var s = rowStartMin_(row);
+      var e = rowEndMin_(row);
 
-      if (timeType === '固定') {
-        var fixedStartMin = toMinutes(row[8]);
-        if (fixedStartMin == null) {
-          if (currentEndMin != null) fixedStartMin = currentEndMin + gapMin;
-          else if (earliestMin != null) fixedStartMin = earliestMin;
+      var isEv = isEventRow_(row);
+
+      // アンカー条件：
+      // - イベント（常に固定）
+      // - timeType固定 かつ start/end がある（固定訪問）
+      if (isEv) {
+        if (s != null && e != null && e > s) anchors.push({ idx: rIdx, s: s, e: e, kind: 'EV' });
+        else {
+          // イベントなのに時間が取れない → とりあえず何もしない（要データ）
+          row[14] = (row[14] || '') + ' / EV時間未確定';
+          flexes.push(rIdx);
         }
-        var fixedEndMin = fixedStartMin + svcMin;
-        row[8] = fixedStartMin / (24 * 60);
-        row[9] = fixedEndMin / (24 * 60);
-        currentEndMin = fixedEndMin;
         return;
       }
 
-      var baseStartMin = toMinutes(row[8]);
-      var startCandidate = baseStartMin != null ? baseStartMin : (earliestMin != null ? earliestMin : currentEndMin);
-      if (currentEndMin != null) startCandidate = Math.max(startCandidate || 0, currentEndMin + gapMin);
-      if (earliestMin != null) startCandidate = Math.max(startCandidate, earliestMin);
-      var startMin = startCandidate;
-      var endMin = startMin + svcMin;
-      if (latestMin != null && endMin > latestMin) row[14] = (row[14] || '') + ' / 希望時間帯内に収まらない可能性あり';
-      row[8] = startMin / (24 * 60);
-      row[9] = endMin / (24 * 60);
-      currentEndMin = endMin;
+      if (timeType === '固定' && s != null && e != null && e > s) {
+        anchors.push({ idx: rIdx, s: s, e: e, kind: 'FIX' });
+        return;
+      }
+
+      // それ以外は可動として扱う
+      flexes.push(rIdx);
     });
+
+    anchors.sort(function(a,b){ return a.s - b.s; });
+
+    // スタッフのシフト範囲を取得
+    var staffId = key.split('|')[0];
+    var dateStr = key.split('|')[1];
+    var shift = getStaffShift_(staffId);
+    var dayStart = (shift.shiftStartMin != null ? shift.shiftStartMin : 540);
+    var dayEnd   = (shift.shiftEndMin   != null ? shift.shiftEndMin   : 1080);
+
+    // イベント優先：固定訪問がイベントと被ってたら押し出し（未割当化）
+    anchors.forEach(function(a){
+      if (a.kind !== 'FIX') return;
+      for (var i = 0; i < anchors.length; i++) {
+        var ev = anchors[i];
+        if (ev.kind !== 'EV') continue;
+        if (overlap_(a.s, a.e, ev.s, ev.e)) {
+          // FIX側を未割当に落とす（イベント優先）
+          var row = resultRows[a.idx];
+          row[3] = '';           // staff_id
+          row[4] = '未割当';      // スタッフ名
+          row[14] = (row[14] || '') + ' / EV衝突(イベント優先で未割当)';
+          unassignedList.push({
+            date: row[1],
+            youbi: row[2],
+            pid: row[5],
+            pname: row[6],
+            needStaff: 1,
+            slot: 1,
+            reason: 'イベント優先で固定訪問が衝突'
+          });
+          // アンカーから除去するため無効化
+          a.s = 99999; a.e = 99999;
+          break;
+        }
+      }
+    });
+    // 無効化したものを除外して再ソート
+    anchors = anchors.filter(function(a){ return a.s < 90000; }).sort(function(a,b){ return a.s - b.s; });
+
+    // 可動訪問を「隙間」に詰める
+    flexes.sort(function(aIdx,bIdx){
+      var aS = rowStartMin_(resultRows[aIdx]);
+      var bS = rowStartMin_(resultRows[bIdx]);
+      if (aS == null && bS == null) return 0;
+      if (aS == null) return 1;
+      if (bS == null) return -1;
+      return aS - bS;
+    });
+
+    // gapを作る
+    var gaps = [];
+    var cursor = dayStart;
+    anchors.forEach(function(a){
+      if (cursor < a.s) gaps.push({ s: cursor, e: a.s });
+      cursor = Math.max(cursor, a.e);
+    });
+    if (cursor < dayEnd) gaps.push({ s: cursor, e: dayEnd });
+
+    // gap内へ順に配置
+    var cursorByGap = gaps.map(function(g){ return g.s; });
+
+    for (var fi = 0; fi < flexes.length; fi++) {
+      var rIdx = flexes[fi];
+      var row = resultRows[rIdx];
+
+      // 既に未割当になってるものはスキップ
+      if (String(row[4] || '') === '未割当') continue;
+
+      var svcMin = Number(row[10]) || 0;
+      if (!svcMin) svcMin = 30;
+
+      // 希望時間帯
+      var earliestMin = toMinutes(row[12]);
+      var latestMin   = toMinutes(row[13]);
+
+      var placed = false;
+
+      for (var gi = 0; gi < gaps.length; gi++) {
+        var g = gaps[gi];
+        var startCand = cursorByGap[gi];
+
+        // 希望がある場合はその範囲に寄せる
+        if (earliestMin != null) startCand = Math.max(startCand, earliestMin);
+        var endCand = startCand + svcMin;
+
+        // 最新制約（latestMin は「終了上限」として扱う）
+        if (latestMin != null && endCand > latestMin) {
+          // このgapでは無理かも → 次のgapへ
+          continue;
+        }
+
+        // gap内に収まるか
+        if (startCand >= g.s && endCand <= g.e) {
+          setRowTimeByMinutes_(row, startCand, endCand);
+          cursorByGap[gi] = endCand + EXTRA_BUFFER_MIN; // 次はバッファ込みで進める
+          placed = true;
+          break;
+        }
+      }
+
+      if (!placed) {
+        // 置けない → 未割当化
+        row[3] = '';
+        row[4] = '未割当';
+        row[14] = (row[14] || '') + ' / EV優先: 隙間に入らず未割当';
+        unassignedList.push({
+          date: row[1],
+          youbi: row[2],
+          pid: row[5],
+          pname: row[6],
+          needStaff: 1,
+          slot: 1,
+          reason: 'イベント優先で隙間に入らない'
+        });
+      }
+    }
   });
 
   // 割当結果シートに書き込み
