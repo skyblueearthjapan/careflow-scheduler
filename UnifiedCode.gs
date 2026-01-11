@@ -3169,6 +3169,27 @@ function 割当結果を作成_(ss) {
     }
   }
 
+  // ============================================================
+  // 出力前に「時刻セル」をシリアル(0〜1)へ正規化（型混在対策）
+  // ============================================================
+  function normalizeTimeCellToSerial_(v) {
+    var m = parseTimeToMinutes_(v);      // 既存のパーサを利用（Date/文字/数値すべて対応）
+    if (m == null) return '';
+    return minutesToSerial_(m);          // 必ずシリアルに統一
+  }
+
+  for (var i = 0; i < resultRows.length; i++) {
+    var r = resultRows[i];
+
+    // 開始/終了
+    r[8] = normalizeTimeCellToSerial_(r[8]);
+    r[9] = normalizeTimeCellToSerial_(r[9]);
+
+    // 希望最早/希望最遅（空でもOK）
+    r[12] = normalizeTimeCellToSerial_(r[12]);
+    r[13] = normalizeTimeCellToSerial_(r[13]);
+  }
+
   // 割当結果シートに書き込み
   resultSheet.clear();
   var header = ['visit_id','日付','曜日','staff_id','スタッフ名','patient_id','患者名','エリア',
