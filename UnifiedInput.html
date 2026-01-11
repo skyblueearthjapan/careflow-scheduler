@@ -375,6 +375,7 @@
       <button class="tab-btn active" data-sheet="患者マスタ" onclick="showSheet('患者マスタ', this)">患者マスタ</button>
       <button class="tab-btn" data-sheet="スタッフマスタ" onclick="showSheet('スタッフマスタ', this)">スタッフマスタ</button>
       <button class="tab-btn" data-sheet="個別変更リクエスト" onclick="showSheet('個別変更リクエスト', this)">個別変更リクエスト</button>
+      <button class="tab-btn" data-sheet="スタッフ個別変更リクエスト" onclick="showSheet('スタッフ個別変更リクエスト', this)">スタッフ個別変更</button>
     </div>
     <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
   </div>
@@ -444,8 +445,11 @@
       if (h === 'patient_id' && currentSheetName === '患者マスタ') return 'auto_id';
       if (h === 'staff_id' && currentSheetName === 'スタッフマスタ') return 'auto_id';
       if (h === 'change_id' && currentSheetName === '個別変更リクエスト') return 'auto_id';
+      if (h === 'staff_change_id' && currentSheetName === 'スタッフ個別変更リクエスト') return 'auto_id';
       // 個別変更リクエストのpatient_idは患者選択
       if (h === 'patient_id' && currentSheetName === '個別変更リクエスト') return 'patient_select';
+      // スタッフ個別変更リクエストのstaff_idはスタッフ選択
+      if (h === 'staff_id' && currentSheetName === 'スタッフ個別変更リクエスト') return 'staff_single_select';
       // 患者名・スタッフ名は自由入力
       if (hOrig === '患者名' || hOrig === 'スタッフ名') return 'text';
       // 指定スタッフID・NGスタッフIDはスタッフ選択（複数）
@@ -465,6 +469,7 @@
       if (h.includes('指定タイプ') || h.includes('継続希望')) return 'staff_type_select';
       if (h.includes('操作')) return 'operation_select';
       if (h.includes('スキル')) return 'skill_select';
+      if (hOrig === '制限タイプ') return 'restriction_type_select';
       return 'text';
     }
 
@@ -628,6 +633,11 @@
           return staff ? staff.label : id;
         }).join(', ');
       }
+      if (editorType === 'staff_single_select' && value) {
+        // S001 → S001 田中
+        var staff = staffOptions.find(function(s) { return s.id === String(value).trim(); });
+        return staff ? staff.label : value;
+      }
       if (editorType === 'patient_select' && value) {
         // P001 → P001 山田太郎
         var patient = patientOptions.find(function(p) { return p.id === String(value).trim(); });
@@ -775,6 +785,8 @@
           return createSelect(['キャンセル', '時間変更', '追加'], value);
         case 'skill_select':
           return createSelect(['', 'ベテラン', '中堅', '新人'], value);
+        case 'restriction_type_select':
+          return createSelect(['休み', '午前休', '午後休', '遅刻', '早退', '時間指定'], value);
         case 'time_select':
           var timeVal = value ? String(value).substring(0, 5) : '';
           return createSelect(TIME_OPTIONS, timeVal);
@@ -789,6 +801,8 @@
           return createSelect(['', '月', '火', '水', '木', '金', '土', '日'], jpValue);
         case 'staff_multi_select':
           return createStaffMultiSelect(value);
+        case 'staff_single_select':
+          return createStaffSingleSelect(value);
         case 'patient_select':
           return createPatientSelect(value);
         case 'number':
@@ -831,6 +845,18 @@
         });
       }
       html += '</div>';
+      return html;
+    }
+
+    function createStaffSingleSelect(value) {
+      var currentVal = String(value || '').trim();
+      var html = '<select>';
+      html += '<option value="">-- 選択 --</option>';
+      staffOptions.forEach(function(staff) {
+        var selected = (staff.id === currentVal) ? ' selected' : '';
+        html += '<option value="' + escapeHtml(staff.id) + '"' + selected + '>' + escapeHtml(staff.label) + '</option>';
+      });
+      html += '</select>';
       return html;
     }
 
