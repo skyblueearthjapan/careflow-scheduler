@@ -1348,8 +1348,8 @@
         { key: 'staff_id', header: 'staff_id', label: '対象のスタッフは？', type: 'staffSelect', required: true },
         { key: 'date', header: '日付', label: '変更日は？', type: 'date', required: true },
         { key: 'restrictionType', header: '制限タイプ', label: '制限タイプは？', type: 'select', options: ['休み', '遅刻', '早退', '時間指定'], required: true },
-        { key: 'startTime', header: '開始時刻', label: '開始時刻は？', type: 'time', conditionalOn: { key: 'restrictionType', value: '時間指定' } },
-        { key: 'endTime', header: '終了時刻', label: '終了時刻は？', type: 'time', conditionalOn: { key: 'restrictionType', value: '時間指定' } },
+        { key: 'startTime', header: '開始時刻', label: '新しい開始時刻は？', type: 'time', conditionalOn: { key: 'restrictionType', value: ['遅刻', '時間指定'] }, hint: '遅刻: 出勤予定時刻 / 時間指定: 不可開始時刻' },
+        { key: 'endTime', header: '終了時刻', label: '新しい終了時刻は？', type: 'time', conditionalOn: { key: 'restrictionType', value: ['早退', '時間指定'] }, hint: '早退: 退勤予定時刻 / 時間指定: 不可終了時刻' },
         { key: 'reason', header: '理由', label: '理由は？', type: 'textarea' },
         { key: 'note', header: '備考', label: '備考（任意）', type: 'textarea' }
       ]
@@ -1606,12 +1606,21 @@
     }
 
     // 条件付きステップをスキップすべきか判定
+    // conditionalOn.value は文字列または配列をサポート
     function shouldSkipStep(step) {
       if (!step.conditionalOn) return false;
       var condKey = step.conditionalOn.key;
       var condValue = step.conditionalOn.value;
-      return wizardState.answers[condKey] !== condValue;
+      var currentValue = wizardState.answers[condKey];
+
+      // value が配列の場合、いずれかに一致すればスキップしない
+      if (Array.isArray(condValue)) {
+        return condValue.indexOf(currentValue) === -1;
+      }
+      // 単一値の場合
+      return currentValue !== condValue;
     }
+
 
     // 次の有効なステップへ進む
     function advanceToNextValidStep() {

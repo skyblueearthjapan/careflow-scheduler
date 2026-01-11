@@ -1615,6 +1615,216 @@ function 割当結果を作成_(ss) {
 
   if (staffList.length === 0) throw new Error('有効なスタッフ情報がありません。');
 
+  // ============================================================
+  // Task A: スタッフ個別変更リクエストの読み込みとMap化
+  // ============================================================
+  var staffChangeMap = {};  // key: staff_id|yyyy/MM/dd => [records...]
+  var staffChangeSheet = ss.getSheetByName('スタッフ個別変更リクエスト');
+  if (staffChangeSheet && staffChangeSheet.getLastRow() > 1) {
+    var scValues = staffChangeSheet.getDataRange().getValues();
+    var scHeader = scValues[0];
+    var scIdx = {
+      staffId: scHeader.indexOf('staff_id'),
+      date: scHeader.indexOf('日付'),
+      restrictionType: scHeader.indexOf('制限タイプ'),
+      startTime: scHeader.indexOf('開始時刻'),
+      endTime: scHeader.indexOf('終了時刻')
+    };
+
+    for (var sci = 1; sci < scValues.length; sci++) {
+      var scRow = scValues[sci];
+      var scStaffId = scRow[scIdx.staffId];
+      var scDate = scRow[scIdx.date];
+      if (!scStaffId || !scDate) continue;
+
+      var scDateStr;
+      if (scDate instanceof Date) {
+        scDateStr = Utilities.formatDate(scDate, tz, 'yyyy/MM/dd');
+      } else {
+        continue;  // 日付形式でなければスキップ
+      }
+
+      var scKey = scStaffId + '|' + scDateStr;
+      if (!staffChangeMap[scKey]) staffChangeMap[scKey] = [];
+
+      staffChangeMap[scKey].push({
+        restrictionType: String(scRow[scIdx.restrictionType] || '').trim(),
+        startTime: toMinutes(scRow[scIdx.startTime]),
+        endTime: toMinutes(scRow[scIdx.endTime])
+      });
+    }
+  }
+
+  // ============================================================
+  // Task B & C: スタッフ制限の不可区間取得と衝突判定
+  // ============================================================
+
+  // スタッフの基本シフト情報を取得するヘルパー
+  function getStaffShift_(staffId) {
+    for (var i = 0; i < staffList.length; i++) {
+      if (staffList[i].id === staffId) {
+        return { shiftStartMin: staffList[i].shiftStartMin, shiftEndMin: staffList[i].shiftEndMin };
+      }
+    }
+    return { shiftStartMin: 0, shiftEndMin: 1440 };
+  }
+
+  // スタッフの不可区間を取得（制限タイプに基づいて正規化）
+  function getStaffBlockedIntervals_(staffId, dateStr) {
+    var records = staffChangeMap[staffId + '|' + dateStr];
+    if (!records || records.length === 0) return [];
+
+    var shift = getStaffShift_(staffId);
+    var intervals = [];
+
+    records.forEach(function(rec) {
+      var rType = rec.restrictionType;
+
+      if (rType === '休み') {
+        // 終日不可: [0, 1440)
+        intervals.push({ start: 0, end: 1440 });
+      } else if (rType === '遅刻') {
+        // 遅刻: [shiftStart, newStart) を不可
+        // newStart = rec.startTime（新しい出勤時刻）
+        var newStart = rec.startTime;
+        if (newStart != null && shift.shiftStartMin != null) {
+          intervals.push({ start: shift.shiftStartMin, end: newStart });
+        }
+      } else if (rType === '早退') {
+        // 早退: [newEnd, shiftEnd) を不可
+        // newEnd = rec.endTime（新しい退勤時刻）
+        var newEnd = rec.endTime;
+        if (newEnd != null && shift.shiftEndMin != null) {
+          intervals.push({ start: newEnd, end: shift.shiftEndMin });
+        }
+      } else if (rType === '時間指定') {
+        // 時間指定: [start, end) を不可
+        if (rec.startTime != null && rec.endTime != null) {
+          intervals.push({ start: rec.startTime, end: rec.endTime });
+        }
+      } else if (rType === '午前休') {
+        // 午前休: [0, 720) = 12:00まで不可
+        intervals.push({ start: 0, end: 720 });
+      } else if (rType === '午後休') {
+        // 午後休: [720, 1440) = 12:00以降不可
+        intervals.push({ start: 720, end: 1440 });
+      }
+    });
+
+    // 区間をマージ（重複・連続区間の統合）
+    if (intervals.length <= 1) return intervals;
+    intervals.sort(function(a, b) { return a.start - b.start; });
+    var merged = [intervals[0]];
+    for (var i = 1; i < intervals.length; i++) {
+      var last = merged[merged.length - 1];
+      var curr = intervals[i];
+      if (curr.start <= last.end) {
+        // 重複または連続 → マージ
+        last.end = Math.max(last.end, curr.end);
+      } else {
+        merged.push(curr);
+      }
+    }
+    return merged;
+  }
+
+  // 2つの区間が重なるかチェック
+  function intervalsOverlap_(a, b) {
+    return a.start < b.end && b.start < a.end;
+  }
+
+  // 固定訪問: 訪問区間が不可区間と1分でも重なれば不可
+  function isFixedVisitBlocked_(visitStart, visitEnd, blockedIntervals) {
+    if (visitStart == null || visitEnd == null) return false;
+    var visitInterval = { start: visitStart, end: visitEnd };
+    for (var i = 0; i < blockedIntervals.length; i++) {
+      if (intervalsOverlap_(visitInterval, blockedIntervals[i])) {
+        return true;  // 衝突あり
+      }
+    }
+    return false;  // 衝突なし
+  }
+
+  // 可動訪問: 許容範囲から不可区間を引いた空き区間にsvcMinを置けるか
+  function isFlexibleVisitBlocked_(earliestMin, latestMin, svcMin, blockedIntervals) {
+    if (earliestMin == null || latestMin == null) return false;
+    if (svcMin <= 0) svcMin = 30;  // デフォルト30分
+
+    // 許容範囲 [earliestMin, latestMin] から不可区間を除いた空き区間を計算
+    var available = [{ start: earliestMin, end: latestMin }];
+
+    blockedIntervals.forEach(function(blocked) {
+      var newAvailable = [];
+      available.forEach(function(avail) {
+        if (blocked.end <= avail.start || blocked.start >= avail.end) {
+          // 重ならない
+          newAvailable.push(avail);
+        } else {
+          // 重なる → 分割
+          if (avail.start < blocked.start) {
+            newAvailable.push({ start: avail.start, end: blocked.start });
+          }
+          if (blocked.end < avail.end) {
+            newAvailable.push({ start: blocked.end, end: avail.end });
+          }
+        }
+      });
+      available = newAvailable;
+    });
+
+    // 空き区間のどこかにsvcMinが収まるかチェック
+    for (var i = 0; i < available.length; i++) {
+      var gap = available[i].end - available[i].start;
+      if (gap >= svcMin) {
+        return false;  // 収まる → ブロックされていない
+      }
+    }
+    return true;  // どこにも収まらない → ブロック
+  }
+
+  // スタッフがこの訪問に対応可能かチェック（スタッフ個別変更を考慮）
+  function isStaffAvailableForVisit_(staffId, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin) {
+    var blockedIntervals = getStaffBlockedIntervals_(staffId, dateStr);
+    if (blockedIntervals.length === 0) return true;  // 制限なし
+
+    // 終日不可チェック（[0,1440)が含まれていれば完全除外）
+    for (var i = 0; i < blockedIntervals.length; i++) {
+      if (blockedIntervals[i].start === 0 && blockedIntervals[i].end >= 1440) {
+        return false;  // 終日不可
+      }
+    }
+
+    if (timeType === '固定') {
+      // 固定訪問: 訪問区間が不可区間と重なれば不可
+      return !isFixedVisitBlocked_(startMin, endMin, blockedIntervals);
+    } else {
+      // 可動訪問（午前/午後/終日/時間帯）
+      // 許容範囲を決定
+      var effEarliest = earliestMin;
+      var effLatest = latestMin;
+
+      // timeTypeによるデフォルト許容範囲
+      if (timeType === '午前') {
+        if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
+        if (effLatest == null) effLatest = 12 * 60;      // 12:00
+      } else if (timeType === '午後') {
+        if (effEarliest == null) effEarliest = 13 * 60;  // 13:00
+        if (effLatest == null) effLatest = 17 * 60;      // 17:00
+      } else if (timeType === '終日') {
+        if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
+        if (effLatest == null) effLatest = 18 * 60;      // 18:00
+      } else {
+        // 時間帯など: start/endから許容範囲を取得
+        if (effEarliest == null) effEarliest = startMin;
+        if (effLatest == null) effLatest = endMin;
+      }
+
+      if (effEarliest == null || effLatest == null) return true;  // 判定不能 → 可とする
+
+      return !isFlexibleVisitBlocked_(effEarliest, effLatest, svcMin, blockedIntervals);
+    }
+  }
+
   var assignCountMap = {};
   function getAssignCount(staffId, dateStr) { return assignCountMap[staffId + '|' + dateStr] || 0; }
   function incAssignCount(staffId, dateStr) { var k = staffId + '|' + dateStr; assignCountMap[k] = (assignCountMap[k] || 0) + 1; }
@@ -1703,6 +1913,12 @@ function 割当結果を作成_(ss) {
       }
       var count = getAssignCount(st.id, dateStr);
       if (count >= st.maxPerDay) return false;
+
+      // スタッフ個別変更リクエストによる制限チェック
+      if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) {
+        return false;
+      }
+
       preferAreaFlagObj.flag = false;
       return true;
     }
@@ -1761,6 +1977,10 @@ function 割当結果を作成_(ss) {
           }
           var dayCount = getAssignCount(st.id, dateStr);
           if (dayCount >= st.maxPerDay) return;
+
+          // スタッフ個別変更リクエストによる制限チェック
+          if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) return;
+
           var distKm = calcDistanceKm(plat, plng, st.lat, st.lng);
           candidates.push({ staff: st, dayCount: dayCount, patientCount: getPatientWeekCount(pid, st.id),
                            distKm: distKm, distScore: distToScore(distKm), samePatientToday: false });
@@ -1797,6 +2017,10 @@ function 割当結果を作成_(ss) {
           if (youbi && st.workDays.length > 0 && st.workDays.indexOf(youbi) === -1) return;
           if (startMin != null && st.shiftStartMin != null && startMin < st.shiftStartMin) return;
           if (endMin != null && st.shiftEndMin != null && endMin > st.shiftEndMin) return;
+
+          // スタッフ個別変更リクエストによる制限チェック（fallback時も適用）
+          if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) return;
+
           fallback.push({ staff: st, dayCount: getAssignCount(st.id, dateStr) });
         });
         if (fallback.length > 0) {
