@@ -22,6 +22,7 @@ const SHEETS = {
   STAFF_MASTER: 'スタッフマスタ',
   CHANGE_REQUEST: '個別変更リクエスト',
   STAFF_CHANGE_REQUEST: 'スタッフ個別変更リクエスト',
+  EVENT_REQUEST: 'イベントリクエスト',
   // 権限
   ADMIN: '管理者',
   // その他
@@ -42,7 +43,8 @@ const INPUT_TABS = [
   { key: 'patient', name: '患者マスタ', sheetName: SHEETS.PATIENT_MASTER },
   { key: 'staff', name: 'スタッフマスタ', sheetName: SHEETS.STAFF_MASTER },
   { key: 'change', name: '個別変更リクエスト', sheetName: SHEETS.CHANGE_REQUEST },
-  { key: 'staffChange', name: 'スタッフ個別変更', sheetName: SHEETS.STAFF_CHANGE_REQUEST }
+  { key: 'staffChange', name: 'スタッフ個別変更', sheetName: SHEETS.STAFF_CHANGE_REQUEST },
+  { key: 'event', name: 'イベントリクエスト', sheetName: SHEETS.EVENT_REQUEST }
 ];
 
 // 実行ボタン→関数名のマッピング（ホワイトリスト）
@@ -567,6 +569,11 @@ function input_insertRowBelow(sheetName, baseRowIndex) {
       if (idxScid >= 0) {
         emptyRow[idxScid] = generateNextId_(sheet, 'staff_change_id', 'SC', 3);
       }
+    } else if (sheetName === SHEETS.EVENT_REQUEST) {
+      const idxEvid = header.indexOf('event_id');
+      if (idxEvid >= 0) {
+        emptyRow[idxEvid] = generateNextId_(sheet, 'event_id', 'EV', 3);
+      }
     }
 
     sheet.getRange(insertAt, 1, 1, numCols).setValues([emptyRow]);
@@ -887,6 +894,11 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       if (idxScid >= 0) {
         rowData[idxScid] = generateNextId_(sheet, 'staff_change_id', 'SC', 3);
       }
+    } else if (formType === 'イベントリクエスト') {
+      var idxEvid = header.indexOf('event_id');
+      if (idxEvid >= 0) {
+        rowData[idxEvid] = generateNextId_(sheet, 'event_id', 'EV', 3);
+      }
     }
 
     // ヘッダー名とキーのマッピング定義
@@ -930,7 +942,18 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       'restrictionType': '制限タイプ',
       'startTime': '開始時刻',
       'endTime': '終了時刻',
-      'reason': '理由'
+      'reason': '理由',
+      // イベントリクエスト用
+      'eventType': 'イベント種別',
+      'title': 'タイトル',
+      'timeMode': '時間指定方法',
+      'durationMin': '所要時間(分)',
+      'fixedSlot': '固定枠',
+      'patientLinked': '患者紐づき',
+      'patientAffect': '患者影響',
+      'returnBefore': '事前事務所戻り',
+      'returnAfter': '事後事務所戻り',
+      'notes': '備考'
     };
 
     // 曜日の日本語→英語変換マップ
@@ -940,7 +963,7 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     };
 
     // 自動生成されたIDフィールドのリスト（上書き禁止）
-    var autoIdFields = ['patient_id', 'staff_id', 'change_id', 'staff_change_id'];
+    var autoIdFields = ['patient_id', 'staff_id', 'change_id', 'staff_change_id', 'event_id'];
 
     // answersをrowDataにマッピング
     for (var key in answers) {
@@ -1656,6 +1679,66 @@ function 割当結果を作成_(ss) {
   }
 
   // ============================================================
+  // Task A-2: イベントリクエストの読み込みとMap化
+  // ============================================================
+  var eventMap = {};  // key: staff_id|yyyy/MM/dd => [events...]
+  var eventSheet = ss.getSheetByName('イベントリクエスト');
+  if (eventSheet && eventSheet.getLastRow() > 1) {
+    var evValues = eventSheet.getDataRange().getValues();
+    var evHeader = evValues[0];
+    var evIdx = {
+      staffId: evHeader.indexOf('staff_id'),
+      date: evHeader.indexOf('日付'),
+      timeMode: evHeader.indexOf('時間指定方法'),
+      startTime: evHeader.indexOf('開始時刻'),
+      endTime: evHeader.indexOf('終了時刻'),
+      durationMin: evHeader.indexOf('所要時間(分)'),
+      fixedSlot: evHeader.indexOf('固定枠'),
+      patientLinked: evHeader.indexOf('患者紐づき'),
+      patientId: evHeader.indexOf('patient_id'),
+      patientAffect: evHeader.indexOf('患者影響'),
+      lat: evHeader.indexOf('緯度'),
+      lng: evHeader.indexOf('経度')
+    };
+
+    for (var evi = 1; evi < evValues.length; evi++) {
+      var evRow = evValues[evi];
+      var evStaffId = evRow[evIdx.staffId];
+      var evDate = evRow[evIdx.date];
+      if (!evStaffId || !evDate) continue;
+
+      var evDateStr;
+      if (evDate instanceof Date) {
+        evDateStr = Utilities.formatDate(evDate, tz, 'yyyy/MM/dd');
+      } else {
+        continue;  // 日付形式でなければスキップ
+      }
+
+      var evKey = evStaffId + '|' + evDateStr;
+      if (!eventMap[evKey]) eventMap[evKey] = [];
+
+      // 時間をminに変換
+      var evStartMin = toMinutes(evRow[evIdx.startTime]);
+      var evEndMin = toMinutes(evRow[evIdx.endTime]);
+      var evDuration = evRow[evIdx.durationMin] ? parseInt(evRow[evIdx.durationMin], 10) : 60;
+      var evTimeMode = String(evRow[evIdx.timeMode] || '').trim();
+
+      eventMap[evKey].push({
+        timeMode: evTimeMode,
+        startMin: evStartMin,
+        endMin: evEndMin,
+        durationMin: evDuration,
+        fixedSlot: evRow[evIdx.fixedSlot] === true || evRow[evIdx.fixedSlot] === 'TRUE',
+        patientLinked: evRow[evIdx.patientLinked] === true || evRow[evIdx.patientLinked] === 'TRUE',
+        patientId: evRow[evIdx.patientId] || null,
+        patientAffect: String(evRow[evIdx.patientAffect] || '').trim(),
+        lat: evRow[evIdx.lat],
+        lng: evRow[evIdx.lng]
+      });
+    }
+  }
+
+  // ============================================================
   // Task B & C: スタッフ制限の不可区間取得と衝突判定
   // ============================================================
 
@@ -1669,49 +1752,83 @@ function 割当結果を作成_(ss) {
     return { shiftStartMin: 0, shiftEndMin: 1440 };
   }
 
-  // スタッフの不可区間を取得（制限タイプに基づいて正規化）
+  // スタッフの不可区間を取得（制限タイプ＋イベントに基づいて正規化）
   function getStaffBlockedIntervals_(staffId, dateStr) {
-    var records = staffChangeMap[staffId + '|' + dateStr];
-    if (!records || records.length === 0) return [];
-
     var shift = getStaffShift_(staffId);
     var intervals = [];
 
-    records.forEach(function(rec) {
-      var rType = rec.restrictionType;
+    // スタッフ個別変更リクエストからの制限
+    var records = staffChangeMap[staffId + '|' + dateStr];
+    if (records && records.length > 0) {
+      records.forEach(function(rec) {
+        var rType = rec.restrictionType;
 
-      if (rType === '休み' || rType === '終日不可' || rType === '終日') {
-        // 終日不可: [0, 1440)
-        intervals.push({ start: 0, end: 1440 });
-      } else if (rType === '遅刻') {
-        // 遅刻: [shiftStart, newStart) を不可
-        // newStart = rec.startTime（新しい出勤時刻）
-        var newStart = rec.startTime;
-        if (newStart != null && shift.shiftStartMin != null) {
-          intervals.push({ start: shift.shiftStartMin, end: newStart });
+        if (rType === '休み' || rType === '終日不可' || rType === '終日') {
+          // 終日不可: [0, 1440)
+          intervals.push({ start: 0, end: 1440 });
+        } else if (rType === '遅刻') {
+          // 遅刻: [shiftStart, newStart) を不可
+          var newStart = rec.startTime;
+          if (newStart != null && shift.shiftStartMin != null) {
+            intervals.push({ start: shift.shiftStartMin, end: newStart });
+          }
+        } else if (rType === '早退') {
+          // 早退: [newEnd, shiftEnd) を不可
+          var newEnd = rec.endTime;
+          if (newEnd != null && shift.shiftEndMin != null) {
+            intervals.push({ start: newEnd, end: shift.shiftEndMin });
+          }
+        } else if (rType === '時間指定') {
+          // 時間指定: [start, end) を不可
+          if (rec.startTime != null && rec.endTime != null) {
+            intervals.push({ start: rec.startTime, end: rec.endTime });
+          }
+        } else if (rType === '午前休') {
+          // 午前休: [shiftStart, 12:00) = 12:00まで不可
+          var amStart = shift.shiftStartMin != null ? shift.shiftStartMin : 0;
+          intervals.push({ start: amStart, end: 720 });
+        } else if (rType === '午後休') {
+          // 午後休: [12:00, shiftEnd) = 12:00以降不可
+          var pmEnd = shift.shiftEndMin != null ? shift.shiftEndMin : 1440;
+          intervals.push({ start: 720, end: pmEnd });
         }
-      } else if (rType === '早退') {
-        // 早退: [newEnd, shiftEnd) を不可
-        // newEnd = rec.endTime（新しい退勤時刻）
-        var newEnd = rec.endTime;
-        if (newEnd != null && shift.shiftEndMin != null) {
-          intervals.push({ start: newEnd, end: shift.shiftEndMin });
+      });
+    }
+
+    // イベントリクエストからの不可時間帯
+    var events = eventMap[staffId + '|' + dateStr];
+    if (events && events.length > 0) {
+      events.forEach(function(ev) {
+        var evStart, evEnd;
+
+        if (ev.timeMode === '時間指定') {
+          // 時間指定: 開始・終了時刻から直接取得
+          if (ev.startMin != null && ev.endMin != null) {
+            evStart = ev.startMin;
+            evEnd = ev.endMin;
+          }
+        } else if (ev.timeMode === '午前') {
+          // 午前: シフト開始〜12:00の範囲内でdurationMin分確保
+          evStart = shift.shiftStartMin != null ? shift.shiftStartMin : 540;
+          evEnd = Math.min(evStart + ev.durationMin, 720);
+        } else if (ev.timeMode === '午後') {
+          // 午後: 12:00〜シフト終了の範囲内でdurationMin分確保
+          evStart = 720;
+          evEnd = Math.min(720 + ev.durationMin, shift.shiftEndMin || 1080);
+        } else if (ev.timeMode === '終日') {
+          // 終日: 終日不可
+          evStart = 0;
+          evEnd = 1440;
         }
-      } else if (rType === '時間指定') {
-        // 時間指定: [start, end) を不可
-        if (rec.startTime != null && rec.endTime != null) {
-          intervals.push({ start: rec.startTime, end: rec.endTime });
+
+        if (evStart != null && evEnd != null && evStart < evEnd) {
+          intervals.push({ start: evStart, end: evEnd, isEvent: true });
         }
-      } else if (rType === '午前休') {
-        // 午前休: [shiftStart, 12:00) = 12:00まで不可
-        var amStart = shift.shiftStartMin != null ? shift.shiftStartMin : 0;
-        intervals.push({ start: amStart, end: 720 });
-      } else if (rType === '午後休') {
-        // 午後休: [12:00, shiftEnd) = 12:00以降不可
-        var pmEnd = shift.shiftEndMin != null ? shift.shiftEndMin : 1440;
-        intervals.push({ start: 720, end: pmEnd });
-      }
-    });
+      });
+    }
+
+    // 区間がなければ空配列
+    if (intervals.length === 0) return [];
 
     // 区間をマージ（重複・連続区間の統合）
     if (intervals.length <= 1) return intervals;

@@ -376,6 +376,7 @@
       <button class="tab-btn" data-sheet="スタッフマスタ" onclick="showSheet('スタッフマスタ', this)">スタッフマスタ</button>
       <button class="tab-btn" data-sheet="個別変更リクエスト" onclick="showSheet('個別変更リクエスト', this)">患者個別変更</button>
       <button class="tab-btn" data-sheet="スタッフ個別変更リクエスト" onclick="showSheet('スタッフ個別変更リクエスト', this)">スタッフ個別変更</button>
+      <button class="tab-btn" data-sheet="イベントリクエスト" onclick="showSheet('イベントリクエスト', this)">イベント</button>
     </div>
     <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
   </div>
@@ -446,10 +447,14 @@
       if (h === 'staff_id' && currentSheetName === 'スタッフマスタ') return 'auto_id';
       if (h === 'change_id' && currentSheetName === '個別変更リクエスト') return 'auto_id';
       if (h === 'staff_change_id' && currentSheetName === 'スタッフ個別変更リクエスト') return 'auto_id';
+      if (h === 'event_id' && currentSheetName === 'イベントリクエスト') return 'auto_id';
       // 個別変更リクエストのpatient_idは患者選択
       if (h === 'patient_id' && currentSheetName === '個別変更リクエスト') return 'patient_select';
       // スタッフ個別変更リクエストのstaff_idはスタッフ選択
       if (h === 'staff_id' && currentSheetName === 'スタッフ個別変更リクエスト') return 'staff_single_select';
+      // イベントリクエストのstaff_id/patient_idは選択
+      if (h === 'staff_id' && currentSheetName === 'イベントリクエスト') return 'staff_single_select';
+      if (h === 'patient_id' && currentSheetName === 'イベントリクエスト') return 'patient_select';
       // 患者名・スタッフ名は自由入力
       if (hOrig === '患者名' || hOrig === 'スタッフ名') return 'text';
       // 指定スタッフID・NGスタッフIDはスタッフ選択（複数）
@@ -470,6 +475,12 @@
       if (h.includes('操作')) return 'operation_select';
       if (h.includes('スキル')) return 'skill_select';
       if (hOrig === '制限タイプ') return 'restriction_type_select';
+      // イベントリクエスト用
+      if (hOrig === 'イベント種別') return 'event_type_select';
+      if (hOrig === '時間指定方法') return 'time_mode_select';
+      if (hOrig === '患者影響') return 'patient_affect_select';
+      if (hOrig === '所要時間(分)') return 'number';
+      if (hOrig === '固定枠' || hOrig === '患者紐づき' || hOrig === '事前事務所戻り' || hOrig === '事後事務所戻り') return 'boolean_select';
       return 'text';
     }
 
@@ -787,6 +798,14 @@
           return createSelect(['', 'ベテラン', '中堅', '新人'], value);
         case 'restriction_type_select':
           return createSelect(['休み', '午前休', '午後休', '遅刻', '早退', '時間指定'], value);
+        case 'event_type_select':
+          return createSelect(['病院同行', '新規面会/契約', '会議/打合せ', '役所/手続き', '後見人/弁護士同席', '事務作業（外出）', 'その他'], value);
+        case 'time_mode_select':
+          return createSelect(['時間指定', '午前', '午後', '終日'], value);
+        case 'patient_affect_select':
+          return createSelect(['', '訪問不可', '時間固定', '情報のみ'], value);
+        case 'boolean_select':
+          return createSelect(['', 'TRUE', 'FALSE'], value);
         case 'time_select':
           var timeVal = value ? String(value).substring(0, 5) : '';
           return createSelect(TIME_OPTIONS, timeVal);
@@ -1387,6 +1406,26 @@
         { key: 'endTime', header: '終了時刻', label: '終了時刻は？', type: 'time', conditionalOn: { key: 'restrictionType', value: ['早退', '時間指定'] }, hint: '早退: 退勤予定時刻 / 時間指定: 不可終了時刻' },
         { key: 'reason', header: '理由', label: '理由は？', type: 'textarea' },
         { key: 'note', header: '備考', label: '備考（任意）', type: 'textarea' }
+      ],
+      'イベントリクエスト': [
+        { key: 'event_id', header: 'event_id', label: 'イベントIDを発行します', type: 'autoId', prefix: 'EV', required: true },
+        { key: 'date', header: '日付', label: 'イベントの日付は？', type: 'date', required: true },
+        { key: 'staff_id', header: 'staff_id', label: '担当スタッフは？', type: 'staffSelect', required: true },
+        { key: 'eventType', header: 'イベント種別', label: 'イベント種別は？', type: 'select', options: ['病院同行', '新規面会/契約', '会議/打合せ', '役所/手続き', '後見人/弁護士同席', '事務作業（外出）', 'その他'], required: true },
+        { key: 'title', header: 'タイトル', label: 'タイトル（簡単な名称）は？', type: 'text', required: true },
+        { key: 'address', header: '住所', label: '開催場所の住所は？', type: 'text', required: true, hint: '位置情報は後から「位置情報を更新」で取得できます' },
+        { key: 'timeMode', header: '時間指定方法', label: '時間の指定方法は？', type: 'select', options: ['時間指定', '午前', '午後', '終日'], required: true },
+        { key: 'startTime', header: '開始時刻', label: '開始時刻は？', type: 'time', conditionalOn: { key: 'timeMode', value: '時間指定' }, required: true },
+        { key: 'endTime', header: '終了時刻', label: '終了時刻は？', type: 'time', conditionalOn: { key: 'timeMode', value: '時間指定' }, required: true },
+        { key: 'durationMin', header: '所要時間(分)', label: '所要時間は何分？', type: 'number', conditionalOn: { key: 'timeMode', value: ['午前', '午後', '終日'] }, hint: '午前/午後/終日の場合に必要', required: true },
+        { key: 'fixedSlot', header: '固定枠', label: 'この枠は固定ですか？（動かせない）', type: 'toggle', required: true },
+        { key: 'patientLinked', header: '患者紐づき', label: '患者と紐づくイベントですか？', type: 'toggle', required: true },
+        { key: 'patient_id', header: 'patient_id', label: '対象患者は？', type: 'patientSelect', conditionalOn: { key: 'patientLinked', value: true } },
+        { key: 'patientAffect', header: '患者影響', label: '患者側への影響は？', type: 'select', options: ['訪問不可', '時間固定', '情報のみ'], conditionalOn: { key: 'patientLinked', value: true }, hint: '訪問不可:その時間はNG / 時間固定:イベントに合わせる / 情報のみ:患者側制約なし' },
+        { key: 'returnBefore', header: '事前事務所戻り', label: '事務所に戻ってから向かう？', type: 'toggle' },
+        { key: 'returnAfter', header: '事後事務所戻り', label: '終了後に事務所へ戻る？', type: 'toggle' },
+        { key: 'reason', header: '理由', label: '理由やメモ（任意）', type: 'textarea' },
+        { key: 'notes', header: '備考', label: '備考（任意）', type: 'textarea' }
       ]
     };
 
@@ -1501,6 +1540,7 @@
           '<option value="スタッフマスタ">スタッフマスタ</option>' +
           '<option value="個別変更リクエスト">患者個別変更</option>' +
           '<option value="スタッフ個別変更">スタッフ個別変更</option>' +
+          '<option value="イベントリクエスト">イベントリクエスト</option>' +
           '</select>';
         backBtn.disabled = true;
         skipBtn.style.display = 'none';
@@ -1592,6 +1632,12 @@
           return '<select id="wizardInput"><option value="">-- 選択 --</option>' + staffOptions.map(function(s) {
             return '<option value="' + escapeHtml(s.id) + '"' + (s.id === currentVal ? ' selected' : '') + '>' + escapeHtml(s.label) + '</option>';
           }).join('') + '</select>';
+        case 'toggle':
+          var isTrue = currentVal === true || currentVal === 'TRUE' || currentVal === 'true';
+          return '<select id="wizardInput">' +
+            '<option value="FALSE"' + (!isTrue ? ' selected' : '') + '>いいえ</option>' +
+            '<option value="TRUE"' + (isTrue ? ' selected' : '') + '>はい</option>' +
+            '</select>';
         default:
           return '<input type="text" id="wizardInput" value="' + escapeHtml(currentVal) + '" />';
       }
@@ -1648,12 +1694,17 @@
       var condValue = step.conditionalOn.value;
       var currentValue = wizardState.answers[condKey];
 
+      // boolean値の正規化（TRUE/FALSE文字列をbooleanに変換）
+      var normalizedCurrent = currentValue;
+      if (currentValue === 'TRUE' || currentValue === 'true') normalizedCurrent = true;
+      if (currentValue === 'FALSE' || currentValue === 'false') normalizedCurrent = false;
+
       // value が配列の場合、いずれかに一致すればスキップしない
       if (Array.isArray(condValue)) {
-        return condValue.indexOf(currentValue) === -1;
+        return condValue.indexOf(currentValue) === -1 && condValue.indexOf(normalizedCurrent) === -1;
       }
-      // 単一値の場合
-      return currentValue !== condValue;
+      // 単一値の場合（boolean比較も含む）
+      return currentValue !== condValue && normalizedCurrent !== condValue;
     }
 
 
@@ -1860,12 +1911,19 @@
           return s ? s.label : id;
         }).join(', ');
       }
+      if (step.type === 'staffSelect') {
+        var s = staffOptions.find(function(x) { return x.id === value; });
+        return s ? s.label : value;
+      }
       if (step.type === 'patientSelect') {
         var p = patientOptions.find(function(x) { return x.id === value; });
         return p ? p.label : value;
       }
       if (step.type === 'time') {
         return value.substring(0, 5);
+      }
+      if (step.type === 'toggle') {
+        return value === 'TRUE' ? 'はい' : 'いいえ';
       }
       return value;
     }
