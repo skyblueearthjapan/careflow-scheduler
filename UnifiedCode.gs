@@ -2427,6 +2427,41 @@ function 割当結果を作成_(ss) {
     });
   });
 
+  // ============================================================
+  // 割当時の重なりチェック用：staffDateMapを先に初期化（イベント含む）
+  // ============================================================
+  var staffDateMap = {};
+  resultRows.forEach(function(r, i) {
+    var d = r[1], staffId = r[3];
+    if (!staffId || !(d instanceof Date)) return;
+    var key = staffId + '|' + Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+    if (!staffDateMap[key]) staffDateMap[key] = [];
+    staffDateMap[key].push(i);
+  });
+
+  // 固定訪問が既存予定と重なるかチェックするヘルパー
+  function isOverlappedWithExisting_(staffId, dateObj, startMin, endMin) {
+    if (!staffId || !(dateObj instanceof Date) || startMin == null || endMin == null) return false;
+
+    var dateStr = Utilities.formatDate(dateObj, tz, 'yyyy/MM/dd');
+    var key = staffId + '|' + dateStr;
+    var idxList = staffDateMap[key] || [];
+
+    for (var i = 0; i < idxList.length; i++) {
+      var r = resultRows[idxList[i]];
+      if (!r) continue;
+      // 未割当は無視
+      if (!r[3] || r[4] === '未割当') continue;
+
+      var s = toMinutes(r[8]);
+      var e = toMinutes(r[9]);
+      if (s == null || e == null) continue;
+
+      if (s < endMin && startMin < e) return true; // overlap
+    }
+    return false;
+  }
+
   weeklyRequests.forEach(function(item, idx){
     var row = item.row;
     var dateObj = item.date;
@@ -2478,6 +2513,10 @@ function 割当結果を作成_(ss) {
         if (timeType === '固定') {
           if (startMin != null && startMin < st.shiftStartMin) return false;
           if (endMin != null && endMin > st.shiftEndMin) return false;
+          // ★追加：同スタッフの既存予定と重なるなら不可
+          if (startMin != null && endMin != null) {
+            if (isOverlappedWithExisting_(st.id, dateObj, startMin, endMin)) return false;
+          }
         } else {
           var reqStart = earliestMin != null ? earliestMin : startMin;
           var reqEnd = latestMin != null ? latestMin : endMin;
@@ -2542,6 +2581,10 @@ function 割当結果を作成_(ss) {
             if (timeType === '固定') {
               if (startMin != null && startMin < st.shiftStartMin) return;
               if (endMin != null && endMin > st.shiftEndMin) return;
+              // ★追加：同スタッフの既存予定と重なるなら不可
+              if (startMin != null && endMin != null) {
+                if (isOverlappedWithExisting_(st.id, dateObj, startMin, endMin)) return;
+              }
             } else {
               var reqStart = earliestMin != null ? earliestMin : startMin;
               var reqEnd = latestMin != null ? latestMin : endMin;
@@ -2626,6 +2669,13 @@ function 割当結果を作成_(ss) {
       if (needStaff > 1) note2 = (note2 ? note2 + ' / ' : '') + '同時訪問(' + slot + '/' + needStaff + ')';
 
       resultRows.push([visitId, dateObj, youbiRaw, staffId, staffName, pid, pname, area, start, end, svcMin, timeType, earliest, latest, note2]);
+
+      // ★追加：この行を staffDateMap に登録（後続の重なり判定に使う）
+      if (staffId && dateObj instanceof Date) {
+        var k = staffId + '|' + dateStr;
+        if (!staffDateMap[k]) staffDateMap[k] = [];
+        staffDateMap[k].push(resultRows.length - 1);
+      }
     }
   });
 
@@ -2652,10 +2702,12 @@ function 割当結果を作成_(ss) {
   var moveKmArr = new Array(resultRows.length).fill('');
   var moveMinArr = new Array(resultRows.length).fill('');
 
-  var staffDateMap = {};
+  // staffDateMapを再構築（時刻調整後のデータでLevel1再挿入・移動距離計算用）
+  staffDateMap = {};
   resultRows.forEach(function(r, i){
-    var d = r[1], staffId = r[3], pid = r[5];
-    if (!staffId || !(d instanceof Date) || !pid) return;
+    var d = r[1], staffId = r[3];
+    // pid条件を外してイベント行も含める（Level1再挿入の隙間判定に必要）
+    if (!staffId || !(d instanceof Date)) return;
     var key = staffId + '|' + Utilities.formatDate(d, tz, 'yyyy/MM/dd');
     if (!staffDateMap[key]) staffDateMap[key] = [];
     staffDateMap[key].push(i);
@@ -2670,6 +2722,8 @@ function 割当結果を作成_(ss) {
       var prevIndex = indexList[j - 1];
       var prevPid = resultRows[prevIndex][5];
       var currPid = resultRows[currIndex][5];
+      // イベントなど pidなしは移動距離計算しない
+      if (!prevPid || !currPid) continue;
       var prevP = patientMap[prevPid] || {};
       var currP = patientMap[currPid] || {};
       if (prevP.lat != null && prevP.lng != null && currP.lat != null && currP.lng != null) {
