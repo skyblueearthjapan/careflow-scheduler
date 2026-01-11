@@ -2945,6 +2945,229 @@ function 割当結果を作成_(ss) {
   }
 
   // ============================================================
+  // Level3: 距離最適化（安全版）
+  // - EV/固定は動かさない
+  // - 希望最早/希望最遅が空の可動訪問のみ並べ替え
+  // - 並べ替え後、各「隙間」内で詰め直す（EXTRA_BUFFER_MIN 適用）
+  // ============================================================
+  function applyLevel3RouteOptimizeSafe_() {
+
+    function getPatientLatLng_(pid) {
+      var p = patientMap[pid];
+      if (!p) return null;
+      if (p.lat == null || p.lng == null) return null;
+      return { lat: Number(p.lat), lng: Number(p.lng) };
+    }
+
+    function getRowLatLng_(row) {
+      var pid = row[5];
+      if (!pid) return null;
+      return getPatientLatLng_(pid);
+    }
+
+    function distKmByLL_(a, b) {
+      if (!a || !b) return null;
+      return calcDistanceKm(a.lat, a.lng, b.lat, b.lng);
+    }
+
+    // 2-optで改善（近い順ベースの経路をちょい改善）
+    function twoOpt_(nodes) {
+      // nodes: [{idx, ll}]
+      if (nodes.length <= 3) return nodes;
+
+      function routeLen(arr) {
+        var sum = 0;
+        for (var i = 0; i < arr.length - 1; i++) {
+          var d = distKmByLL_(arr[i].ll, arr[i+1].ll);
+          if (d != null) sum += d;
+        }
+        return sum;
+      }
+
+      var best = nodes.slice();
+      var bestLen = routeLen(best);
+
+      var improved = true;
+      var guard = 0;
+      while (improved && guard < 50) {
+        guard++;
+        improved = false;
+
+        for (var i = 1; i < best.length - 2; i++) {
+          for (var k = i + 1; k < best.length - 1; k++) {
+            var cand = best.slice(0, i)
+              .concat(best.slice(i, k + 1).reverse())
+              .concat(best.slice(k + 1));
+            var candLen = routeLen(cand);
+            if (candLen + 1e-9 < bestLen) {
+              best = cand;
+              bestLen = candLen;
+              improved = true;
+            }
+          }
+        }
+      }
+      return best;
+    }
+
+    // 近傍法（スタート地点から近い順に作る）
+    function nearestNeighbor_(nodes, startLL) {
+      if (nodes.length <= 1) return nodes.slice();
+
+      var rest = nodes.slice();
+      var route = [];
+
+      var currLL = startLL || rest[0].ll;
+      while (rest.length > 0) {
+        var bestIdx = 0;
+        var bestDist = Infinity;
+        for (var i = 0; i < rest.length; i++) {
+          var d = distKmByLL_(currLL, rest[i].ll);
+          // 位置が取れない場合は後回しになりやすいように大きめ
+          var dd = (d == null ? 99999 : d);
+          if (dd < bestDist) {
+            bestDist = dd;
+            bestIdx = i;
+          }
+        }
+        var pick = rest.splice(bestIdx, 1)[0];
+        route.push(pick);
+        currLL = pick.ll || currLL;
+      }
+      return route;
+    }
+
+    // staffDateMap を使って「スタッフ×日」ごとに処理
+    Object.keys(staffDateMap).forEach(function(key){
+      var idxList = staffDateMap[key];
+      if (!idxList || idxList.length === 0) return;
+
+      var staffId = key.split('|')[0];
+
+      // スタッフ基点（lat/lng）: スタッフマスタの緯度経度
+      var staffLL = null;
+      for (var si = 0; si < staffList.length; si++) {
+        if (staffList[si].id === staffId) {
+          var slat = Number(staffList[si].lat);
+          var slng = Number(staffList[si].lng);
+          if (!isNaN(slat) && !isNaN(slng)) staffLL = { lat: slat, lng: slng };
+          break;
+        }
+      }
+
+      // 予定を「アンカー」と「可動」に分ける
+      var anchors = []; // {idx, s, e}
+      var flex = [];    // {idx, row, s, e, svcMin, ll}
+
+      idxList.forEach(function(rIdx){
+        var row = resultRows[rIdx];
+        if (!row) return;
+
+        // 未割当はスキップ
+        if (!row[3] || String(row[4] || '') === '未割当') return;
+
+        var isEv = isEventRow_(row);
+        var timeType = row[11];
+        var s = toMinutes(row[8]);
+        var e = toMinutes(row[9]);
+
+        var earliestMin = toMinutes(row[12]);
+        var latestMin   = toMinutes(row[13]);
+
+        // アンカー：EV or 固定（時間確定）
+        if (isEv || (timeType === '固定' && s != null && e != null && e > s)) {
+          if (s != null && e != null && e > s) anchors.push({ idx: rIdx, s: s, e: e });
+          return;
+        }
+
+        // "安全版"なので、希望最早/最遅があるものは並べ替え対象外（そのまま）
+        if (earliestMin != null || latestMin != null) {
+          // 触らないが「可動」なので隙間詰め対象にはなり得る
+          // ここでは順序最適化から除外するため anchors 側に入れて固定扱いにする
+          if (s != null && e != null && e > s) anchors.push({ idx: rIdx, s: s, e: e });
+          return;
+        }
+
+        var svcMin = Number(row[10]) || 30;
+        var ll = getRowLatLng_(row);
+        flex.push({ idx: rIdx, row: row, s: s, e: e, svcMin: svcMin, ll: ll });
+      });
+
+      if (flex.length <= 2) return; // 少なければ意味が薄い
+
+      // アンカー時刻順
+      anchors.sort(function(a,b){ return a.s - b.s; });
+
+      // スタッフのシフト範囲
+      var shift = getStaffShift_(staffId);
+      var dayStart = (shift.shiftStartMin != null ? shift.shiftStartMin : 540);
+      var dayEnd   = (shift.shiftEndMin   != null ? shift.shiftEndMin   : 1080);
+
+      // "隙間"を作成
+      var gaps = [];
+      var cursor = dayStart;
+      anchors.forEach(function(a){
+        if (cursor < a.s) gaps.push({ s: cursor, e: a.s });
+        cursor = Math.max(cursor, a.e);
+      });
+      if (cursor < dayEnd) gaps.push({ s: cursor, e: dayEnd });
+
+      if (gaps.length === 0) return;
+
+      // いったん flex を「所属gap」に振り分け（現状時刻で判定、取れないものは最初のgap）
+      var flexByGap = gaps.map(function(){ return []; });
+
+      flex.forEach(function(f){
+        var placed = false;
+        if (f.s != null && f.e != null) {
+          for (var gi = 0; gi < gaps.length; gi++) {
+            var g = gaps[gi];
+            if (f.s >= g.s && f.e <= g.e) { flexByGap[gi].push(f); placed = true; break; }
+          }
+        }
+        if (!placed) flexByGap[0].push(f);
+      });
+
+      // 各gap内で順序を最適化 → gap先頭から詰め直す
+      for (var gi = 0; gi < gaps.length; gi++) {
+        var g = gaps[gi];
+        var list = flexByGap[gi];
+        if (!list || list.length <= 1) continue;
+
+        // llが無いものがあると距離最適化が弱いので、ll無しは末尾へ
+        var withLL = list.filter(function(x){ return !!x.ll; });
+        var noLL   = list.filter(function(x){ return !x.ll; });
+
+        if (withLL.length >= 2) {
+          var nn = nearestNeighbor_(withLL, staffLL);
+          var opt = twoOpt_(nn);
+          list = opt.concat(noLL);
+        } else {
+          list = withLL.concat(noLL);
+        }
+
+        // gapの先頭から詰め直し（バッファ込み）
+        var t = g.s;
+        for (var li = 0; li < list.length; li++) {
+          var f = list[li];
+          var s2 = t;
+          var e2 = s2 + f.svcMin;
+
+          if (e2 > g.e) {
+            // 入らないなら触らない（安全優先）
+            continue;
+          }
+          setRowTimeByMinutes_(f.row, s2, e2);
+          t = e2 + EXTRA_BUFFER_MIN;
+        }
+      }
+    });
+  }
+
+  // Level3距離最適化を実行
+  applyLevel3RouteOptimizeSafe_();
+
+  // ============================================================
   // 出力前に「時刻セル」をシリアル(0〜1)へ正規化（型混在対策）
   // ============================================================
   function normalizeTimeCellToSerial_(v) {
