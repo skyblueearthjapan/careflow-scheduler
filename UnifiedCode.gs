@@ -2692,12 +2692,15 @@ function 割当結果を作成_(ss) {
       return aS - bS;
     });
 
-    // gapを作る
+    // gapを作る（アンカー前後にバッファを確保）
     var gaps = [];
     var cursor = dayStart;
     anchors.forEach(function(a){
-      if (cursor < a.s) gaps.push({ s: cursor, e: a.s });
-      cursor = Math.max(cursor, a.e);
+      // アンカー開始前にバッファを空ける
+      var gapEnd = a.s - EXTRA_BUFFER_MIN;
+      if (cursor < gapEnd) gaps.push({ s: cursor, e: gapEnd });
+      // アンカー終了後にバッファを空けて次へ
+      cursor = Math.max(cursor, a.e + EXTRA_BUFFER_MIN);
     });
     if (cursor < dayEnd) gaps.push({ s: cursor, e: dayEnd });
 
@@ -3103,12 +3106,15 @@ function 割当結果を作成_(ss) {
       var dayStart = (shift.shiftStartMin != null ? shift.shiftStartMin : 540);
       var dayEnd   = (shift.shiftEndMin   != null ? shift.shiftEndMin   : 1080);
 
-      // "隙間"を作成
+      // "隙間"を作成（アンカー前後にバッファを確保）
       var gaps = [];
       var cursor = dayStart;
       anchors.forEach(function(a){
-        if (cursor < a.s) gaps.push({ s: cursor, e: a.s });
-        cursor = Math.max(cursor, a.e);
+        // アンカー開始前にバッファを空ける
+        var gapEnd = a.s - EXTRA_BUFFER_MIN;
+        if (cursor < gapEnd) gaps.push({ s: cursor, e: gapEnd });
+        // アンカー終了後にバッファを空けて次へ
+        cursor = Math.max(cursor, a.e + EXTRA_BUFFER_MIN);
       });
       if (cursor < dayEnd) gaps.push({ s: cursor, e: dayEnd });
 
