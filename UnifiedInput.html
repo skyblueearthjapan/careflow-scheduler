@@ -767,8 +767,8 @@
       var statusBar = document.querySelector('.status-bar');
       var sun = new Date(specialWeekSheetState.weekMonday);
       sun.setDate(sun.getDate() + 6);
-      var startStr = formatDateStr(specialWeekSheetState.weekMonday);
-      var endStr = formatDateStr(sun);
+      var startStr = formatDateJP(specialWeekSheetState.weekMonday);
+      var endStr = formatDateJP(sun);
 
       statusBar.innerHTML = '<div style="display:flex;align-items:center;gap:12px;width:100%;">' +
         '<span class="status-text" id="statusText">特別訪問週間</span>' +
@@ -803,14 +803,14 @@
     function updateSpecialWeekSheetDisplay() {
       var sun = new Date(specialWeekSheetState.weekMonday);
       sun.setDate(sun.getDate() + 6);
-      var startStr = formatDateStr(specialWeekSheetState.weekMonday);
-      var endStr = formatDateStr(sun);
+      var startStr = formatDateJP(specialWeekSheetState.weekMonday);
+      var endStr = formatDateJP(sun);
       var el = document.getElementById('specialWeekSheetDisplay');
       if (el) el.textContent = startStr + ' 〜 ' + endStr;
     }
 
     function loadSpecialWeekSheetData() {
-      var weekStartStr = formatDateStr(specialWeekSheetState.weekMonday);
+      var weekStartStr = formatDateJP(specialWeekSheetState.weekMonday);
       setStatus('loading', '特別訪問週間を読み込み中...');
 
       google.script.run
