@@ -4266,17 +4266,119 @@ function ensureSpecialWeekSheets_(ss) {
     headerSh.setFrozenRows(1);
   }
 
-  // 明細シート
+  // 明細シート（明細A仕様：15列）
   var detailName = '特別訪問週間_明細';
   var detailSh = ss.getSheetByName(detailName);
   if (!detailSh) detailSh = ss.insertSheet(detailName);
   if (detailSh.getLastRow() === 0) {
-    var dCols = ['special_id','日付','行ラベル','timeType','開始時刻','終了時刻','希望最早時刻','希望最遅時刻','サービス時間','備考'];
+    var dCols = ['special_week_id','patient_id','日付','曜日','行ラベル','時間タイプ','開始時刻','終了時刻','希望最早','希望最遅','サービス時間','必要スタッフ数','備考','個別変更の扱い','更新日時'];
     detailSh.getRange(1,1,1,dCols.length).setValues([dCols]);
     detailSh.setFrozenRows(1);
   }
 
   return { header: headerSh, detail: detailSh };
+}
+
+// ============================================================
+// 旧明細→明細A（15列）へのマイグレーション
+// ============================================================
+function migrateSpecialWeekDetailToNewFormat_(ss) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var headerSh = ss.getSheetByName('特別訪問週間_ヘッダ');
+  var detailSh = ss.getSheetByName('特別訪問週間_明細');
+  if (!detailSh || detailSh.getLastRow() <= 1) return { migrated: false, message: '明細データなし' };
+
+  var dValues = detailSh.getDataRange().getValues();
+  var dHeader = dValues[0];
+
+  // 新フォーマットチェック（special_week_idがあれば移行済み）
+  if (dHeader.indexOf('special_week_id') >= 0) {
+    return { migrated: false, message: '既に新フォーマット' };
+  }
+
+  // 旧フォーマットのインデックス
+  var oldIdx = {
+    specialId: dHeader.indexOf('special_id'),
+    date: dHeader.indexOf('日付'),
+    rowLabel: dHeader.indexOf('行ラベル'),
+    timeType: dHeader.indexOf('timeType'),
+    start: dHeader.indexOf('開始時刻'),
+    end: dHeader.indexOf('終了時刻'),
+    earliest: dHeader.indexOf('希望最早時刻'),
+    latest: dHeader.indexOf('希望最遅時刻'),
+    svcMin: dHeader.indexOf('サービス時間'),
+    note: dHeader.indexOf('備考')
+  };
+
+  // ヘッダシートからpatient_id、個別変更扱いを取得（JOINデータ）
+  var headerMap = {};
+  if (headerSh && headerSh.getLastRow() > 1) {
+    var hValues = headerSh.getDataRange().getValues();
+    var hHeader = hValues[0];
+    var hIdx = {
+      specialId: hHeader.indexOf('special_id'),
+      pid: hHeader.indexOf('patient_id'),
+      changeHandle: hHeader.indexOf('個別変更扱い')
+    };
+    hValues.slice(1).forEach(function(r) {
+      var spId = r[hIdx.specialId];
+      if (spId) {
+        headerMap[spId] = {
+          patient_id: r[hIdx.pid] || '',
+          changeHandle: r[hIdx.changeHandle] || 'そのまま残す'
+        };
+      }
+    });
+  }
+
+  // 曜日変換関数（Mon/Tue/Wed/Thu/Fri/Sat/Sun）
+  function getDayOfWeekStr(dateObj) {
+    if (!dateObj) return '';
+    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    return days[dateObj.getDay()];
+  }
+
+  // 新フォーマットデータ作成
+  var newHeader = ['special_week_id','patient_id','日付','曜日','行ラベル','時間タイプ','開始時刻','終了時刻','希望最早','希望最遅','サービス時間','必要スタッフ数','備考','個別変更の扱い','更新日時'];
+  var newData = [newHeader];
+  var now = new Date();
+
+  dValues.slice(1).forEach(function(r) {
+    var spId = r[oldIdx.specialId];
+    if (!spId) return;
+    var hInfo = headerMap[spId] || { patient_id: '', changeHandle: 'そのまま残す' };
+
+    var dateVal = r[oldIdx.date];
+    var dateObj = parseDateLoose_(dateVal);
+    var dayOfWeek = getDayOfWeekStr(dateObj);
+
+    newData.push([
+      spId,                                           // special_week_id
+      hInfo.patient_id,                               // patient_id
+      dateVal,                                        // 日付
+      dayOfWeek,                                      // 曜日
+      r[oldIdx.rowLabel] || '特別1',                  // 行ラベル
+      r[oldIdx.timeType] || '時間帯',                 // 時間タイプ（名称変更）
+      r[oldIdx.start] || '',                          // 開始時刻
+      r[oldIdx.end] || '',                            // 終了時刻
+      r[oldIdx.earliest] || '',                       // 希望最早（名称短縮）
+      r[oldIdx.latest] || '',                         // 希望最遅（名称短縮）
+      r[oldIdx.svcMin] || '',                         // サービス時間
+      1,                                              // 必要スタッフ数（デフォルト1）
+      r[oldIdx.note] || '',                           // 備考
+      hInfo.changeHandle,                             // 個別変更の扱い
+      now                                             // 更新日時
+    ]);
+  });
+
+  // シートを更新
+  detailSh.clear();
+  if (newData.length > 0) {
+    detailSh.getRange(1, 1, newData.length, newHeader.length).setValues(newData);
+    detailSh.setFrozenRows(1);
+  }
+
+  return { migrated: true, message: 'マイグレーション完了: ' + (newData.length - 1) + '行', rowCount: newData.length - 1 };
 }
 
 // 後方互換性のため旧関数も残す
@@ -4555,23 +4657,30 @@ function api_getSpecialWeekContext_(payload) {
       reason: hHeader.indexOf('理由'),
     };
 
-    // 明細を読み込み
+    // 明細を読み込み（新旧両フォーマット対応）
     var detailMap = {};
     if (detailSh && detailSh.getLastRow() > 1) {
       var dValues = detailSh.getDataRange().getValues();
       var dHeader = dValues[0];
       var dData = dValues.slice(1);
+      // 新フォーマット（special_week_id）か旧フォーマット（special_id）かを判定
+      var isNewFormat = dHeader.indexOf('special_week_id') >= 0;
       var dIdx = {
-        specialId: dHeader.indexOf('special_id'),
+        specialId: isNewFormat ? dHeader.indexOf('special_week_id') : dHeader.indexOf('special_id'),
+        patientId: dHeader.indexOf('patient_id'),
         date: dHeader.indexOf('日付'),
+        dayOfWeek: dHeader.indexOf('曜日'),
         rowLabel: dHeader.indexOf('行ラベル'),
-        timeType: dHeader.indexOf('timeType'),
+        timeType: isNewFormat ? dHeader.indexOf('時間タイプ') : dHeader.indexOf('timeType'),
         start: dHeader.indexOf('開始時刻'),
         end: dHeader.indexOf('終了時刻'),
-        earliest: dHeader.indexOf('希望最早時刻'),
-        latest: dHeader.indexOf('希望最遅時刻'),
+        earliest: isNewFormat ? dHeader.indexOf('希望最早') : dHeader.indexOf('希望最早時刻'),
+        latest: isNewFormat ? dHeader.indexOf('希望最遅') : dHeader.indexOf('希望最遅時刻'),
         svcMin: dHeader.indexOf('サービス時間'),
+        needStaff: dHeader.indexOf('必要スタッフ数'),
         note: dHeader.indexOf('備考'),
+        changeHandle: dHeader.indexOf('個別変更の扱い'),
+        updatedAt: dHeader.indexOf('更新日時'),
       };
 
       dData.forEach(function(r) {
@@ -4585,6 +4694,7 @@ function api_getSpecialWeekContext_(payload) {
 
         detailMap[spId].push({
           dateStr: ds,
+          dayOfWeek: dIdx.dayOfWeek >= 0 ? (r[dIdx.dayOfWeek] || '') : '',
           rowLabel: r[dIdx.rowLabel] || '特別1',
           timeType: r[dIdx.timeType] || '時間帯',
           start: serialToTimeStr_(r[dIdx.start], tz),
@@ -4592,7 +4702,9 @@ function api_getSpecialWeekContext_(payload) {
           earliest: serialToTimeStr_(r[dIdx.earliest], tz),
           latest: serialToTimeStr_(r[dIdx.latest], tz),
           svcMin: r[dIdx.svcMin],
-          note: r[dIdx.note] || ''
+          needStaff: dIdx.needStaff >= 0 ? (Number(r[dIdx.needStaff]) || 1) : 1,
+          note: r[dIdx.note] || '',
+          changeHandle: dIdx.changeHandle >= 0 ? (r[dIdx.changeHandle] || 'そのまま残す') : 'そのまま残す'
         });
       });
     }
@@ -4639,7 +4751,7 @@ function api_getSpecialWeekContext_(payload) {
 function api_getSpecialWeekWizardData(weekStartStr, patientId) {
   var result = api_getSpecialWeekContext_({ weekStartStr: weekStartStr, patient_id: patientId });
 
-  // ウィザードが期待する形式に変換
+  // ウィザードが期待する形式に変換（明細A対応：needStaff, changeHandle追加）
   var specialRows = [];
   (result.specialEntries || []).forEach(function(entry) {
     (entry.details || []).forEach(function(d) {
@@ -4652,9 +4764,11 @@ function api_getSpecialWeekWizardData(weekStartStr, patientId) {
         earliest: d.earliest,
         latest: d.latest,
         svcMin: d.svcMin,
+        needStaff: d.needStaff || 1,
         start: d.start,
         end: d.end,
-        note: d.note
+        note: d.note,
+        changeHandle: d.changeHandle || 'そのまま残す'
       });
     });
   });
@@ -4719,12 +4833,14 @@ function api_saveSpecialWeekWizard(payload) {
     headerSh.getRange(2,1,keepHeader.length-1,hHeader.length).setValues(keepHeader.slice(1));
   }
 
-  // 明細シートから削除対象のspecial_idの行を削除
+  // 明細シートから削除対象のspecial_idの行を削除（新旧フォーマット対応）
   if (deleteIds.length > 0 && detailSh.getLastRow() > 1) {
     var dValues = detailSh.getDataRange().getValues();
     var dHeader = dValues[0];
     var dData = dValues.slice(1);
-    var dIdx = { specialId: dHeader.indexOf('special_id') };
+    // special_week_id（新）または special_id（旧）を判定
+    var isNewFormat = dHeader.indexOf('special_week_id') >= 0;
+    var dIdx = { specialId: isNewFormat ? dHeader.indexOf('special_week_id') : dHeader.indexOf('special_id') };
 
     var keepDetail = [dHeader];
     dData.forEach(function(r) {
@@ -4756,7 +4872,17 @@ function api_saveSpecialWeekWizard(payload) {
   ];
   headerSh.getRange(headerSh.getLastRow() + 1, 1, 1, newHeaderRow.length).setValues([newHeaderRow]);
 
-  // 新規明細追加
+  // 曜日変換関数（Mon/Tue/Wed/Thu/Fri/Sat/Sun）
+  function getDayOfWeekStr(dateObj) {
+    if (!dateObj) return '';
+    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    return days[dateObj.getDay()];
+  }
+
+  // モードに応じた個別変更の扱いデフォルト値
+  var defaultChangeHandle = (payload.mode === '置換') ? '置換する' : 'そのまま残す';
+
+  // 新規明細追加（明細A：15列フォーマット）
   var detailRows = [];
   (payload.items || []).forEach(function(it) {
     if (!it || !it.dateStr) return;
@@ -4782,24 +4908,32 @@ function api_saveSpecialWeekWizard(payload) {
     }
 
     var svcMin = Number(it.svcMin || 0) || '';
+    var needStaff = Number(it.needStaff || 1) || 1;
+    var changeHandle = it.changeHandle || defaultChangeHandle;
 
+    // 明細A（15列）：special_week_id, patient_id, 日付, 曜日, 行ラベル, 時間タイプ, 開始時刻, 終了時刻, 希望最早, 希望最遅, サービス時間, 必要スタッフ数, 備考, 個別変更の扱い, 更新日時
     detailRows.push([
-      specialId,
-      dateObj,
-      it.rowLabel || '特別1',
-      timeType,
-      startS,
-      endS,
-      earliestS,
-      latestS,
-      svcMin,
-      it.note || ''
+      specialId,                                // special_week_id
+      pid,                                      // patient_id
+      dateObj,                                  // 日付
+      getDayOfWeekStr(dateObj),                 // 曜日
+      it.rowLabel || '特別1',                   // 行ラベル
+      timeType,                                 // 時間タイプ
+      startS,                                   // 開始時刻
+      endS,                                     // 終了時刻
+      earliestS,                                // 希望最早
+      latestS,                                  // 希望最遅
+      svcMin,                                   // サービス時間
+      needStaff,                                // 必要スタッフ数
+      it.note || '',                            // 備考
+      changeHandle,                             // 個別変更の扱い
+      now                                       // 更新日時
     ]);
   });
 
   if (detailRows.length > 0) {
     var startRow = detailSh.getLastRow() + 1;
-    detailSh.getRange(startRow, 1, detailRows.length, 10).setValues(detailRows);
+    detailSh.getRange(startRow, 1, detailRows.length, 15).setValues(detailRows);
   }
 
   return { ok: true, success: true, message: '特別訪問週間を保存しました: ' + detailRows.length + '行', detailCount: detailRows.length };
@@ -4852,22 +4986,27 @@ function applySpecialWeekToWeeklyRequests_(ss, weeklyRequests, weeklyMap, weekSt
 
   if (Object.keys(headerMap).length === 0) return;
 
-  // 明細シート読み込み
+  // 明細シート読み込み（新旧両フォーマット対応）
   if (!detailSh || detailSh.getLastRow() <= 1) return;
   var dValues = detailSh.getDataRange().getValues();
   var dHeader = dValues[0];
   var dData = dValues.slice(1);
+  // 新フォーマット（special_week_id）か旧フォーマット（special_id）かを判定
+  var isNewFormat = dHeader.indexOf('special_week_id') >= 0;
   var dIdx = {
-    specialId: dHeader.indexOf('special_id'),
+    specialId: isNewFormat ? dHeader.indexOf('special_week_id') : dHeader.indexOf('special_id'),
+    patientId: dHeader.indexOf('patient_id'),
     date: dHeader.indexOf('日付'),
     rowLabel: dHeader.indexOf('行ラベル'),
-    timeType: dHeader.indexOf('timeType'),
+    timeType: isNewFormat ? dHeader.indexOf('時間タイプ') : dHeader.indexOf('timeType'),
     start: dHeader.indexOf('開始時刻'),
     end: dHeader.indexOf('終了時刻'),
-    earliest: dHeader.indexOf('希望最早時刻'),
-    latest: dHeader.indexOf('希望最遅時刻'),
+    earliest: isNewFormat ? dHeader.indexOf('希望最早') : dHeader.indexOf('希望最早時刻'),
+    latest: isNewFormat ? dHeader.indexOf('希望最遅') : dHeader.indexOf('希望最遅時刻'),
     svcMin: dHeader.indexOf('サービス時間'),
+    needStaff: dHeader.indexOf('必要スタッフ数'),
     note: dHeader.indexOf('備考'),
+    detailChangeHandle: dHeader.indexOf('個別変更の扱い'),
   };
 
   // 明細からspecialエントリを抽出
@@ -4883,11 +5022,20 @@ function applySpecialWeekToWeeklyRequests_(ss, weeklyRequests, weeklyMap, weekSt
     var ds = Utilities.formatDate(dObj, tz, 'yyyy/MM/dd');
     if (ds < startStr || ds > endStr) return;
 
+    // patient_id: 新フォーマットは明細から、旧フォーマットはヘッダから
+    var pid = (isNewFormat && dIdx.patientId >= 0) ? r[dIdx.patientId] : h.pid;
+    // 個別変更の扱い: 新フォーマットは明細から（日別設定可能）、旧フォーマットはヘッダから
+    var detailChangeHandle = (isNewFormat && dIdx.detailChangeHandle >= 0)
+      ? String(r[dIdx.detailChangeHandle] || 'そのまま残す').trim()
+      : h.changeHandle;
+    // 必要スタッフ数: 新フォーマットは明細から
+    var needStaff = (isNewFormat && dIdx.needStaff >= 0) ? (Number(r[dIdx.needStaff]) || 1) : 1;
+
     specials.push({
-      pid: h.pid,
+      pid: pid,
       pname: h.pname,
       mode: h.mode,
-      changeHandle: h.changeHandle,
+      changeHandle: detailChangeHandle,
       reason: h.reason,
       dateObj: dObj,
       dateStr: ds,
@@ -4898,6 +5046,7 @@ function applySpecialWeekToWeeklyRequests_(ss, weeklyRequests, weeklyMap, weekSt
       start: r[dIdx.start],
       end: r[dIdx.end],
       svcMin: Number(r[dIdx.svcMin] || 0) || 0,
+      needStaff: needStaff,
       note: String(r[dIdx.note] || '')
     });
   });
@@ -4927,6 +5076,10 @@ function applySpecialWeekToWeeklyRequests_(ss, weeklyRequests, weeklyMap, weekSt
     list.forEach(function(sp) {
       var timeType = sp.timeType || '時間帯';
       var svcMin = sp.svcMin || 30;
+      var needStaff = sp.needStaff || 1;
+
+      // 個別変更の扱い：「置換する」の場合、個別変更を無効化するフラグを立てる
+      var overrideIndividual = (sp.changeHandle === '置換する');
 
       var req = {
         date: sp.dateObj,
@@ -4937,7 +5090,7 @@ function applySpecialWeekToWeeklyRequests_(ss, weeklyRequests, weeklyMap, weekSt
         area: '',
         start: '', end: '',
         svcMin: svcMin,
-        needStaff: 1,
+        needStaff: needStaff,
         specifiedIds: '', specifiedType: '', ngStaffIds: '',
         sexLimit: '', contPref: '',
         changeType: (mode === '置換') ? '特別(置換)' : '特別(追加)',
@@ -4945,7 +5098,8 @@ function applySpecialWeekToWeeklyRequests_(ss, weeklyRequests, weeklyMap, weekSt
         timeType: timeType,
         earliest: '',
         latest: '',
-        note: (sp.note ? sp.note + ' / ' : '') + '特別訪問[' + sp.rowLabel + ']' + (sp.reason ? (' 理由:' + sp.reason) : '')
+        note: (sp.note ? sp.note + ' / ' : '') + '特別訪問[' + sp.rowLabel + ']' + (sp.reason ? (' 理由:' + sp.reason) : ''),
+        overrideIndividualChanges: overrideIndividual
       };
 
       if (timeType === '固定') {

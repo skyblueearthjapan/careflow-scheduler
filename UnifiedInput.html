@@ -2946,7 +2946,9 @@
             var cur = spMap[key] || {};
 
             var timeType = cur.timeType || '時間帯';
-            var html = '<div style="display:flex;flex-direction:column;gap:4px;">';
+            var needStaff = cur.needStaff || 1;
+            var changeHandle = cur.changeHandle || 'そのまま残す';
+            var html = '<div style="display:flex;flex-direction:column;gap:3px;">';
             html += '<select data-k="' + key + '" class="swTimeType" style="width:80px;">';
             html += '<option value="時間帯"' + (timeType==='時間帯'?' selected':'') + '>時間帯</option>';
             html += '<option value="固定"' + (timeType==='固定'?' selected':'') + '>固定</option>';
@@ -2956,9 +2958,14 @@
             html += '<span style="font-size:10px;">遅</span><input type="time" data-k="' + key + '" class="swLatest" value="' + (cur.latest||'') + '" style="width:75px;font-size:10px;">';
             html += '</div>';
             html += '<div style="display:flex;gap:2px;align-items:center;">';
-            html += '<select data-k="' + key + '" class="swSvc" style="width:60px;font-size:10px;">';
+            html += '<select data-k="' + key + '" class="swSvc" style="width:50px;font-size:10px;">';
             [30,45,60,90,120].forEach(function(m) {
               html += '<option value="' + m + '"' + ((Number(cur.svcMin||0)===m)?'selected':'') + '>' + m + '分</option>';
+            });
+            html += '</select>';
+            html += '<select data-k="' + key + '" class="swNeedStaff" style="width:40px;font-size:10px;" title="必要スタッフ数">';
+            [1,2,3].forEach(function(n) {
+              html += '<option value="' + n + '"' + (needStaff===n?' selected':'') + '>' + n + '人</option>';
             });
             html += '</select>';
             html += '</div>';
@@ -2966,6 +2973,10 @@
             html += '<span>固定:</span><input type="time" data-k="' + key + '" class="swStart" value="' + (cur.start||'') + '" style="width:65px;font-size:9px;">';
             html += '<input type="time" data-k="' + key + '" class="swEnd" value="' + (cur.end||'') + '" style="width:65px;font-size:9px;">';
             html += '</div>';
+            html += '<select data-k="' + key + '" class="swChangeHandle" style="width:100%;font-size:9px;" title="個別変更の扱い">';
+            html += '<option value="そのまま残す"' + (changeHandle==='そのまま残す'?' selected':'') + '>個別変更を残す</option>';
+            html += '<option value="置換する"' + (changeHandle==='置換する'?' selected':'') + '>個別変更を置換</option>';
+            html += '</select>';
             html += '</div>';
 
             td.innerHTML = html;
@@ -3029,6 +3040,10 @@
         var svcMin = document.querySelector('.swSvc[data-k="' + key + '"]').value;
         var start = document.querySelector('.swStart[data-k="' + key + '"]').value;
         var end = document.querySelector('.swEnd[data-k="' + key + '"]').value;
+        var needStaffEl = document.querySelector('.swNeedStaff[data-k="' + key + '"]');
+        var needStaff = needStaffEl ? Number(needStaffEl.value) || 1 : 1;
+        var changeHandleEl = document.querySelector('.swChangeHandle[data-k="' + key + '"]');
+        var changeHandle = changeHandleEl ? changeHandleEl.value : 'そのまま残す';
 
         var hasSomething = (timeType === '固定') ? (start && end) : (earliest && latest && svcMin);
         if (!hasSomething) return;
@@ -3040,9 +3055,11 @@
           earliest: earliest,
           latest: latest,
           svcMin: svcMin,
+          needStaff: needStaff,
           start: start,
           end: end,
-          note: ''
+          note: '',
+          changeHandle: changeHandle
         });
       });
 
