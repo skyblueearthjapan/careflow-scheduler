@@ -555,11 +555,77 @@
       <button class="tab-btn" data-sheet="スタッフ個別変更リクエスト" onclick="showSheet('スタッフ個別変更リクエスト', this)">スタッフ個別変更</button>
       <button class="tab-btn" data-sheet="イベントリクエスト" onclick="showSheet('イベントリクエスト', this)">イベント</button>
       <button class="tab-btn" data-sheet="スタッフ同行割付" onclick="showSheet('スタッフ同行割付', this)">同行割付</button>
+      <button class="tab-btn" data-sheet="特別訪問週間" onclick="showSpecialWeekTab(this)">特別訪問週間</button>
     </div>
     <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
   </div>
 
   <div class="toast-container" id="toastContainer"></div>
+
+  <!-- 特別訪問週間タブコンテンツ -->
+  <div id="specialWeekTabContent" style="display:none; position:fixed; top:50px; left:0; right:0; bottom:50px; background:#f5f5f5; z-index:100; overflow:auto;">
+    <div style="max-width:1400px; margin:0 auto; padding:20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h2 style="margin:0; font-size:18px; color:#333;">特別訪問週間（ヘッダ/明細ビュー）</h2>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span>対象週:</span>
+            <button onclick="specialWeekTabPrev()" style="padding:4px 8px; cursor:pointer;">◀</button>
+            <span id="specialWeekTabDisplay" style="font-weight:bold;">2026/01/06 〜 2026/01/12</span>
+            <button onclick="specialWeekTabNext()" style="padding:4px 8px; cursor:pointer;">▶</button>
+          </div>
+          <button onclick="loadSpecialWeekTabData()" style="padding:6px 12px; background:#4caf50; color:white; border:none; border-radius:4px; cursor:pointer;">更新</button>
+          <button onclick="closeSpecialWeekTab()" style="padding:6px 12px; background:#666; color:white; border:none; border-radius:4px; cursor:pointer;">閉じる</button>
+        </div>
+      </div>
+
+      <!-- ヘッダシート表示 -->
+      <div style="background:white; border-radius:8px; padding:16px; margin-bottom:16px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+        <h3 style="margin:0 0 12px 0; font-size:14px; color:#7b1fa2;">ヘッダ一覧（患者×週単位）</h3>
+        <table id="specialWeekHeaderTable" style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="background:#f0f0f0;">
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">ID</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">週開始日</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">患者ID</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">患者名</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">モード</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">個別変更扱い</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">理由</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="specialWeekHeaderTableBody">
+            <tr><td colspan="8" style="padding:12px; text-align:center; color:#666;">データなし</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 明細シート表示 -->
+      <div style="background:white; border-radius:8px; padding:16px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+        <h3 style="margin:0 0 12px 0; font-size:14px; color:#1976d2;">明細一覧（日付×時間）</h3>
+        <table id="specialWeekDetailTable" style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="background:#f0f0f0;">
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">ヘッダID</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">日付</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">行ラベル</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">時間タイプ</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">開始時刻</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">終了時刻</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">希望最早</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">希望最遅</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">サービス時間</th>
+              <th style="padding:8px; border:1px solid #ddd; text-align:left;">備考</th>
+            </tr>
+          </thead>
+          <tbody id="specialWeekDetailTableBody">
+            <tr><td colspan="10" style="padding:12px; text-align:center; color:#666;">データなし</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
   <script>
     // ============================================================
@@ -2809,6 +2875,149 @@
           errorEl.textContent = 'エラー: ' + (e.message || String(e));
         })
         .input_saveSpecialWeekWizard(payload);
+    }
+
+    // ============================================================
+    // 特別訪問週間タブ（ヘッダ/明細ビュー）
+    // ============================================================
+    var specialWeekTabMonday = null;
+    var specialWeekTabData = { specialEntries: [] };
+
+    function showSpecialWeekTab(btn) {
+      // タブボタンのアクティブ状態を更新
+      document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+      if (btn) btn.classList.add('active');
+
+      // メインコンテンツを非表示、タブコンテンツを表示
+      document.querySelector('.main-container').style.display = 'none';
+      document.getElementById('specialWeekTabContent').style.display = 'block';
+
+      // 週を初期化
+      if (!specialWeekTabMonday) {
+        specialWeekTabMonday = getMonday(new Date());
+      }
+      updateSpecialWeekTabDisplay();
+      loadSpecialWeekTabData();
+    }
+
+    function closeSpecialWeekTab() {
+      document.getElementById('specialWeekTabContent').style.display = 'none';
+      document.querySelector('.main-container').style.display = 'flex';
+      // 患者マスタタブをアクティブに
+      var patientBtn = document.querySelector('.tab-btn[data-sheet="患者マスタ"]');
+      if (patientBtn) {
+        patientBtn.click();
+      }
+    }
+
+    function specialWeekTabPrev() {
+      specialWeekTabMonday.setDate(specialWeekTabMonday.getDate() - 7);
+      updateSpecialWeekTabDisplay();
+      loadSpecialWeekTabData();
+    }
+
+    function specialWeekTabNext() {
+      specialWeekTabMonday.setDate(specialWeekTabMonday.getDate() + 7);
+      updateSpecialWeekTabDisplay();
+      loadSpecialWeekTabData();
+    }
+
+    function updateSpecialWeekTabDisplay() {
+      var sun = new Date(specialWeekTabMonday);
+      sun.setDate(sun.getDate() + 6);
+      var startStr = formatDateStr(specialWeekTabMonday);
+      var endStr = formatDateStr(sun);
+      document.getElementById('specialWeekTabDisplay').textContent = startStr + ' 〜 ' + endStr;
+    }
+
+    function loadSpecialWeekTabData() {
+      var weekStartStr = formatDateStr(specialWeekTabMonday);
+      document.getElementById('specialWeekHeaderTableBody').innerHTML = '<tr><td colspan="8" style="padding:12px; text-align:center; color:#666;">読み込み中...</td></tr>';
+      document.getElementById('specialWeekDetailTableBody').innerHTML = '<tr><td colspan="10" style="padding:12px; text-align:center; color:#666;">読み込み中...</td></tr>';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          specialWeekTabData = result || { specialEntries: [] };
+          renderSpecialWeekTabData();
+        })
+        .withFailureHandler(function(e) {
+          document.getElementById('specialWeekHeaderTableBody').innerHTML = '<tr><td colspan="8" style="padding:12px; text-align:center; color:#c00;">エラー: ' + (e.message || String(e)) + '</td></tr>';
+          document.getElementById('specialWeekDetailTableBody').innerHTML = '<tr><td colspan="10" style="padding:12px; text-align:center; color:#c00;">エラー: ' + (e.message || String(e)) + '</td></tr>';
+        })
+        .input_getSpecialWeekWizardData(weekStartStr, null);
+    }
+
+    function renderSpecialWeekTabData() {
+      var entries = specialWeekTabData.specialEntries || [];
+      var headerBody = document.getElementById('specialWeekHeaderTableBody');
+      var detailBody = document.getElementById('specialWeekDetailTableBody');
+
+      // ヘッダテーブル
+      if (entries.length === 0) {
+        headerBody.innerHTML = '<tr><td colspan="8" style="padding:12px; text-align:center; color:#666;">この週の特別訪問週間データはありません</td></tr>';
+      } else {
+        var hHtml = '';
+        entries.forEach(function(e) {
+          hHtml += '<tr>';
+          hHtml += '<td style="padding:6px 8px; border:1px solid #ddd; font-family:monospace; font-size:10px;">' + escapeHtml(e.special_id || '') + '</td>';
+          hHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(e.weekStartStr || '') + '</td>';
+          hHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(e.patient_id || '') + '</td>';
+          hHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(e.patient_name || '') + '</td>';
+          hHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + (e.mode === '置換' ? '<span style="color:#c00;">置換</span>' : '追加') + '</td>';
+          hHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(e.changeHandle || '残す') + '</td>';
+          hHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(e.reason || '') + '</td>';
+          hHtml += '<td style="padding:6px 8px; border:1px solid #ddd;"><button onclick="editSpecialWeekEntry(\'' + e.patient_id + '\')" style="padding:2px 8px; font-size:11px; cursor:pointer;">編集</button></td>';
+          hHtml += '</tr>';
+        });
+        headerBody.innerHTML = hHtml;
+      }
+
+      // 明細テーブル
+      var allDetails = [];
+      entries.forEach(function(e) {
+        (e.details || []).forEach(function(d) {
+          d._parentId = e.special_id;
+          allDetails.push(d);
+        });
+      });
+
+      if (allDetails.length === 0) {
+        detailBody.innerHTML = '<tr><td colspan="10" style="padding:12px; text-align:center; color:#666;">この週の明細データはありません</td></tr>';
+      } else {
+        var dHtml = '';
+        allDetails.forEach(function(d) {
+          dHtml += '<tr>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd; font-family:monospace; font-size:10px;">' + escapeHtml(d._parentId || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(d.dateStr || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(d.rowLabel || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(d.timeType || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(d.start || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(d.end || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(d.earliest || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(d.latest || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + (d.svcMin || '') + '</td>';
+          dHtml += '<td style="padding:6px 8px; border:1px solid #ddd;">' + escapeHtml(d.note || '') + '</td>';
+          dHtml += '</tr>';
+        });
+        detailBody.innerHTML = dHtml;
+      }
+    }
+
+    function editSpecialWeekEntry(patientId) {
+      // ウィザードを開いてこの患者を選択
+      closeSpecialWeekTab();
+      openSpecialWeekWizard();
+      // 対象週を設定
+      specialWeekMonday = new Date(specialWeekTabMonday);
+      updateSpecialWeekDisplay();
+      // 患者を選択
+      setTimeout(function() {
+        var sel = document.getElementById('specialWeekPatientSelect');
+        if (sel) {
+          sel.value = patientId;
+          onSpecialWeekPatientChange();
+        }
+      }, 300);
     }
   </script>
 </body>
