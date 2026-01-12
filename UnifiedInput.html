@@ -2754,11 +2754,16 @@
         var th = document.createElement('td');
         th.className = 'row-header';
 
-        // 特別1行に「+」ボタンを追加
+        // 特別1行に「+」ボタン、特別2/3に「−」ボタンを追加
         if (rowIdx === 2) {
           th.innerHTML = ROW_LABELS[rowIdx] + ' <button type="button" onclick="addSpecialRow()" style="margin-left:4px;padding:0 6px;font-size:12px;cursor:pointer;" title="特別2を追加">+</button>';
         } else if (rowIdx === 3) {
-          th.innerHTML = ROW_LABELS[rowIdx] + ' <button type="button" onclick="addSpecialRow()" style="margin-left:4px;padding:0 6px;font-size:12px;cursor:pointer;" title="特別3を追加">+</button>';
+          th.innerHTML = ROW_LABELS[rowIdx] +
+            ' <button type="button" onclick="addSpecialRow()" style="margin-left:4px;padding:0 6px;font-size:12px;cursor:pointer;" title="特別3を追加">+</button>' +
+            '<button type="button" onclick="removeSpecialRow(2)" style="margin-left:2px;padding:0 6px;font-size:12px;cursor:pointer;color:#c00;" title="特別2を非表示">−</button>';
+        } else if (rowIdx === 4) {
+          th.innerHTML = ROW_LABELS[rowIdx] +
+            ' <button type="button" onclick="removeSpecialRow(3)" style="margin-left:4px;padding:0 6px;font-size:12px;cursor:pointer;color:#c00;" title="特別3を非表示">−</button>';
         } else {
           th.textContent = ROW_LABELS[rowIdx];
         }
@@ -2826,6 +2831,21 @@
         specialWeekVisibleRows++;
         var row = document.getElementById('swRow_' + (specialWeekVisibleRows + 1));
         if (row) row.style.display = '';
+      }
+    }
+
+    function removeSpecialRow(rowNum) {
+      // rowNum: 2=特別2, 3=特別3
+      if (rowNum === 3 && specialWeekVisibleRows >= 3) {
+        var row3 = document.getElementById('swRow_4');
+        if (row3) row3.style.display = 'none';
+        specialWeekVisibleRows = 2;
+      } else if (rowNum === 2 && specialWeekVisibleRows >= 2) {
+        var row2 = document.getElementById('swRow_3');
+        var row3 = document.getElementById('swRow_4');
+        if (row2) row2.style.display = 'none';
+        if (row3) row3.style.display = 'none';
+        specialWeekVisibleRows = 1;
       }
     }
 
