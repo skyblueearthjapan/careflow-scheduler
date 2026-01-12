@@ -4420,6 +4420,7 @@ function api_getSpecialWeekContext_(payload) {
         break;
       }
     }
+    if (!patient) throw new Error('患者が見つかりません: ' + patientId);
   }
 
   // 日付配列を生成
@@ -4631,9 +4632,40 @@ function api_getSpecialWeekContext_(payload) {
   };
 }
 
-// 後方互換性のためのラッパー
+// 後方互換性のためのラッパー（ウィザード用形式に変換）
 function api_getSpecialWeekWizardData(weekStartStr, patientId) {
-  return api_getSpecialWeekContext_({ weekStartStr: weekStartStr, patient_id: patientId });
+  var result = api_getSpecialWeekContext_({ weekStartStr: weekStartStr, patient_id: patientId });
+
+  // ウィザードが期待する形式に変換
+  var specialRows = [];
+  (result.specialEntries || []).forEach(function(entry) {
+    (entry.details || []).forEach(function(d) {
+      specialRows.push({
+        dateStr: d.dateStr,
+        rowLabel: d.rowLabel,
+        mode: entry.mode,
+        reason: entry.reason,
+        timeType: d.timeType,
+        earliest: d.earliest,
+        latest: d.latest,
+        svcMin: d.svcMin,
+        start: d.start,
+        end: d.end,
+        note: d.note
+      });
+    });
+  });
+
+  return {
+    weekStartStr: result.weekStartStr,
+    weekEndStr: result.weekEndStr,
+    patientId: result.patient ? result.patient.patient_id : patientId,
+    patientName: result.patient ? result.patient.patient_name : '',
+    days: result.days,
+    normalByDate: result.normalByDate,
+    changesByDate: result.changeByDate,  // 複数形に変換
+    specialRows: specialRows
+  };
 }
 
 // ============================================================
