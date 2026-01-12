@@ -4515,8 +4515,11 @@ function api_getSpecialWeekContext_(payload) {
       var pid = r[cIdx.pid];
       var d = r[cIdx.date];
       if (String(pid||'') !== String(patientId)) return;
-      if (!(d instanceof Date)) return;
-      var ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+
+      // 日付をより柔軟に解析（Date型でなくても対応）
+      var dObj = (d instanceof Date) ? d : parseDateLoose_(d);
+      if (!dObj) return;
+      var ds = Utilities.formatDate(dObj, tz, 'yyyy/MM/dd');
       if (ds < startStr || ds > endStr) return;
 
       var op = String(r[cIdx.op]||'').trim();

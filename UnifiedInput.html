@@ -2579,6 +2579,9 @@
       var panel = document.getElementById('specialWeekWizardPanel');
       panel.classList.add('active');
 
+      // 特別行の表示状態をリセット
+      specialWeekVisibleRows = 1;
+
       var today = new Date();
       specialWeekState.weekStart = getWeekStartMonday(today);
       updateSpecialWeekDisplay();
@@ -2722,23 +2725,43 @@
       tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#999; padding:20px;">患者を選択してください</td></tr>';
     }
 
+    // 特別行の表示状態（初期は特別1のみ表示）
+    var specialWeekVisibleRows = 1; // 1=特別1のみ, 2=特別1-2, 3=特別1-3
+
     function renderSpecialWeekGrid() {
       var tbody = document.getElementById('specialWeekGridBody');
       tbody.innerHTML = '';
 
       var ROW_LABELS = ['通常', '個別変更', '特別1', '特別2', '特別3'];
 
-      // specialRows を dateStr|rowLabel でマップ化
+      // 既存データがあれば特別2,3も表示
       var spMap = {};
       (specialWeekState.specialRows || []).forEach(function(r) {
         spMap[r.dateStr + '|' + r.rowLabel] = r;
+        // データがあれば行を表示
+        if (r.rowLabel === '特別2' && specialWeekVisibleRows < 2) specialWeekVisibleRows = 2;
+        if (r.rowLabel === '特別3' && specialWeekVisibleRows < 3) specialWeekVisibleRows = 3;
       });
 
       for (var rowIdx = 0; rowIdx < ROW_LABELS.length; rowIdx++) {
         var tr = document.createElement('tr');
+        tr.id = 'swRow_' + rowIdx;
+
+        // 特別2(rowIdx=3), 特別3(rowIdx=4)は条件付き表示
+        if (rowIdx === 3 && specialWeekVisibleRows < 2) tr.style.display = 'none';
+        if (rowIdx === 4 && specialWeekVisibleRows < 3) tr.style.display = 'none';
+
         var th = document.createElement('td');
         th.className = 'row-header';
-        th.textContent = ROW_LABELS[rowIdx];
+
+        // 特別1行に「+」ボタンを追加
+        if (rowIdx === 2) {
+          th.innerHTML = ROW_LABELS[rowIdx] + ' <button type="button" onclick="addSpecialRow()" style="margin-left:4px;padding:0 6px;font-size:12px;cursor:pointer;" title="特別2を追加">+</button>';
+        } else if (rowIdx === 3) {
+          th.innerHTML = ROW_LABELS[rowIdx] + ' <button type="button" onclick="addSpecialRow()" style="margin-left:4px;padding:0 6px;font-size:12px;cursor:pointer;" title="特別3を追加">+</button>';
+        } else {
+          th.textContent = ROW_LABELS[rowIdx];
+        }
         tr.appendChild(th);
 
         for (var dayIdx = 0; dayIdx < 7; dayIdx++) {
@@ -2795,6 +2818,14 @@
           tr.appendChild(td);
         }
         tbody.appendChild(tr);
+      }
+    }
+
+    function addSpecialRow() {
+      if (specialWeekVisibleRows < 3) {
+        specialWeekVisibleRows++;
+        var row = document.getElementById('swRow_' + (specialWeekVisibleRows + 1));
+        if (row) row.style.display = '';
       }
     }
 
