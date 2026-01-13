@@ -4256,12 +4256,12 @@ function createEventRequestSheet() {
 // ============================================================
 
 function ensureSpecialWeekSheets_(ss) {
-  // ヘッダシート
+  // ヘッダシート（状態・週終了日を追加）
   var headerName = '特別訪問週間_ヘッダ';
   var headerSh = ss.getSheetByName(headerName);
   if (!headerSh) headerSh = ss.insertSheet(headerName);
   if (headerSh.getLastRow() === 0) {
-    var hCols = ['special_id','週開始日','patient_id','患者名','モード','個別変更扱い','理由','登録日時'];
+    var hCols = ['special_id','週開始日','週終了日','patient_id','患者名','モード','個別変更扱い','理由','状態','登録日時'];
     headerSh.getRange(1,1,1,hCols.length).setValues([hCols]);
     headerSh.setFrozenRows(1);
   }
@@ -4650,11 +4650,13 @@ function api_getSpecialWeekContext_(payload) {
     var hIdx = {
       specialId: hHeader.indexOf('special_id'),
       weekStart: hHeader.indexOf('週開始日'),
+      weekEnd: hHeader.indexOf('週終了日'),
       pid: hHeader.indexOf('patient_id'),
       pname: hHeader.indexOf('患者名'),
       mode: hHeader.indexOf('モード'),
       changeHandle: hHeader.indexOf('個別変更扱い'),
       reason: hHeader.indexOf('理由'),
+      status: hHeader.indexOf('状態'),
     };
 
     // 明細を読み込み（新旧両フォーマット対応）
@@ -4709,8 +4711,14 @@ function api_getSpecialWeekContext_(payload) {
       });
     }
 
-    // ヘッダをフィルタして明細を結合
+    // ヘッダをフィルタして明細を結合（状態=有効のみ）
     hData.forEach(function(r) {
+      // 状態チェック（「有効」のみ採用、列が無い場合は全て採用）
+      if (hIdx.status >= 0) {
+        var status = String(r[hIdx.status] || '').trim();
+        if (status && status !== '有効') return;
+      }
+
       // patient_id指定時はフィルタ
       if (patientId && String(r[hIdx.pid]||'') !== String(patientId)) return;
 
@@ -4723,14 +4731,21 @@ function api_getSpecialWeekContext_(payload) {
       var spId = r[hIdx.specialId];
       var details = detailMap[spId] || [];
 
+      // 週終了日を取得
+      var we = hIdx.weekEnd >= 0 ? r[hIdx.weekEnd] : null;
+      var weObj = we ? ((we instanceof Date) ? we : parseDateLoose_(we)) : null;
+      var weStr = weObj ? Utilities.formatDate(weObj, tz, 'yyyy/MM/dd') : wsStr;
+
       specialEntries.push({
         special_id: spId,
         patient_id: r[hIdx.pid],
         patient_name: r[hIdx.pname] || '',
         weekStartStr: wsStr,
+        weekEndStr: weStr,
         mode: r[hIdx.mode] || '追加',
         changeHandle: r[hIdx.changeHandle] || '残す',
         reason: r[hIdx.reason] || '',
+        status: hIdx.status >= 0 ? (r[hIdx.status] || '有効') : '有効',
         details: details
       });
     });
@@ -4856,18 +4871,26 @@ function api_saveSpecialWeekWizard(payload) {
     }
   }
 
-  // 新規ヘッダ追加
+  // 新規ヘッダ追加（週終了日・状態を追加）
   var now = new Date();
   var specialId = 'SP_' + Utilities.getUuid();
 
+  // 週終了日を計算（週開始日 + 6日）
+  var weekStartDate = parseDateLoose_(weekStartStr);
+  var weekEndDate = new Date(weekStartDate);
+  weekEndDate.setDate(weekEndDate.getDate() + 6);
+
+  // ヘッダ列順: special_id, 週開始日, 週終了日, patient_id, 患者名, モード, 個別変更扱い, 理由, 状態, 登録日時
   var newHeaderRow = [
     specialId,
-    parseDateLoose_(weekStartStr),
+    weekStartDate,
+    weekEndDate,
     pid,
     payload.patientName || '',
     payload.mode || '追加',
     payload.changeHandle || '残す',
     payload.reason || '',
+    '有効',
     now
   ];
   headerSh.getRange(headerSh.getLastRow() + 1, 1, 1, newHeaderRow.length).setValues([newHeaderRow]);
@@ -4951,6 +4974,12 @@ function applySpecialWeekToWeeklyRequests_(ss, weeklyRequests, weeklyMap, weekSt
   var startStr = Utilities.formatDate(weekStart, tz, 'yyyy/MM/dd');
   var endStr   = Utilities.formatDate(weekEnd,   tz, 'yyyy/MM/dd');
 
+  // 日付範囲の重なりチェック関数
+  function rangesOverlap(aStartStr, aEndStr, bStartStr, bEndStr) {
+    if (!aStartStr || !aEndStr) return false;
+    return !(aEndStr < bStartStr || aStartStr > bEndStr);
+  }
+
   // ヘッダシート読み込み
   var hValues = headerSh.getDataRange().getValues();
   var hHeader = hValues[0];
@@ -4958,21 +4987,40 @@ function applySpecialWeekToWeeklyRequests_(ss, weeklyRequests, weeklyMap, weekSt
   var hIdx = {
     specialId: hHeader.indexOf('special_id'),
     weekStart: hHeader.indexOf('週開始日'),
+    weekEnd: hHeader.indexOf('週終了日'),
     pid: hHeader.indexOf('patient_id'),
     pname: hHeader.indexOf('患者名'),
     mode: hHeader.indexOf('モード'),
     changeHandle: hHeader.indexOf('個別変更扱い'),
     reason: hHeader.indexOf('理由'),
+    status: hHeader.indexOf('状態'),
   };
 
-  // 対象週のヘッダをマップ化
+  // 対象週のヘッダをマップ化（状態=有効のみ、週範囲が重なるもの）
   var headerMap = {};
   hData.forEach(function(r) {
+    // 状態チェック（「有効」のみ採用、列が無い場合は全て採用）
+    if (hIdx.status >= 0) {
+      var status = String(r[hIdx.status] || '').trim();
+      if (status && status !== '有効') return;
+    }
+
     var ws = r[hIdx.weekStart];
     var wsObj = (ws instanceof Date) ? ws : parseDateLoose_(ws);
     if (!wsObj) return;
     var wsStr = Utilities.formatDate(wsObj, tz, 'yyyy/MM/dd');
-    if (wsStr !== startStr) return;
+
+    // 週終了日を取得（無ければ週開始日+6日）
+    var we = hIdx.weekEnd >= 0 ? r[hIdx.weekEnd] : null;
+    var weObj = we ? ((we instanceof Date) ? we : parseDateLoose_(we)) : null;
+    if (!weObj) {
+      weObj = new Date(wsObj);
+      weObj.setDate(weObj.getDate() + 6);
+    }
+    var weStr = Utilities.formatDate(weObj, tz, 'yyyy/MM/dd');
+
+    // 週範囲の重なりチェック
+    if (!rangesOverlap(wsStr, weStr, startStr, endStr)) return;
 
     var spId = r[hIdx.specialId];
     headerMap[spId] = {
