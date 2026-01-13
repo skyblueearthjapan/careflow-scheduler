@@ -3938,35 +3938,107 @@ function 週間リクエストを生成_(ss) {
       weeklyMap[key].push(req);
     });
 
-    // 個別変更リクエストの適用
+    // ============================================================
+    // 個別変更リクエストの適用（堅牢版）
+    // - 日付が文字でも拾う
+    // - ヘッダーの表記ゆれに強い
+    // - 操作値の表記ゆれ（空白等）を吸収
+    // ============================================================
     if (changeSheet) {
       const cValues = changeSheet.getDataRange().getValues();
       if (cValues.length > 1) {
-        const cHeader = cValues[0], cData = cValues.slice(1);
-        const cIdx = { patient_id: cHeader.indexOf('patient_id'), name: cHeader.indexOf('患者名'),
-                       date: cHeader.indexOf('日付'), op: cHeader.indexOf('操作（キャンセル/時間変更/追加）'),
-                       newStart: cHeader.indexOf('新開始時刻'), newEnd: cHeader.indexOf('新終了時刻'),
-                       note: cHeader.indexOf('備考'), regAt: cHeader.indexOf('登録日時') };
+        const cHeaderRaw = cValues[0];
+        const cHeader = cHeaderRaw.map(x => String(x || '').trim());
+        const cData = cValues.slice(1);
 
-        const changeMap = {};
+        function findHeaderIdx_(headers, target) {
+          // 完全一致
+          let i = headers.indexOf(target);
+          if (i >= 0) return i;
+          // 部分一致（target を含む or target が含む）
+          for (let k = 0; k < headers.length; k++) {
+            const h = String(headers[k] || '').trim();
+            if (!h) continue;
+            if (h.indexOf(target) >= 0 || target.indexOf(h) >= 0) return k;
+          }
+          return -1;
+        }
+
+        const cIdx = {
+          patient_id: findHeaderIdx_(cHeader, 'patient_id'),
+          name:       findHeaderIdx_(cHeader, '患者名'),
+          date:       findHeaderIdx_(cHeader, '日付'),
+          op:         findHeaderIdx_(cHeader, '操作'), // ←「操作（...）」に固定しない
+          newStart:   findHeaderIdx_(cHeader, '新開始'),
+          newEnd:     findHeaderIdx_(cHeader, '新終了'),
+          note:       findHeaderIdx_(cHeader, '備考'),
+          regAt:      findHeaderIdx_(cHeader, '登録日時')
+        };
+
+        // 必須列チェック（最低限）
+        if (cIdx.patient_id < 0 || cIdx.date < 0 || cIdx.op < 0) {
+          throw new Error(
+            '個別変更リクエストのヘッダーが不足しています。\n' +
+            '必須: patient_id / 日付 / 操作\n' +
+            '現在のヘッダー: ' + cHeader.join(', ')
+          );
+        }
+
+        const changeMap = {}; // key: pid|yyyy/MM/dd -> latest record
+
         cData.forEach((row, idxRow) => {
-          const pid = row[cIdx.patient_id], op = row[cIdx.op], d = row[cIdx.date];
-          if (!pid || !op || !(d instanceof Date)) return;
+          const pid = row[cIdx.patient_id];
+          if (!pid) return;
+
+          // op 正規化（空白吸収＆表記ゆれの最小対応）
+          let op = row[cIdx.op];
+          op = String(op || '').trim();
+          if (!op) return;
+          // 表記ゆれ補正（必要なら増やせます）
+          if (op === '取消') op = 'キャンセル';
+
+          const dRaw = row[cIdx.date];
+          const d = parseDateLoose_(dRaw);
+          if (!d) return;
+
           const dateStr = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
           if (dateStr < weekStartStr || dateStr > weekEndStr) return;
-          const key = pid + '|' + dateStr;
-          let sortKey = cIdx.regAt !== -1 && row[cIdx.regAt] instanceof Date ? row[cIdx.regAt].getTime() : idxRow;
-          const change = { pid, op, date: d, dateStr, newStart: row[cIdx.newStart], newEnd: row[cIdx.newEnd],
-                          note: row[cIdx.note], patient_name: row[cIdx.name], sortKey };
+
+          const key = String(pid).trim() + '|' + dateStr;
+
+          let sortKey = idxRow;
+          if (cIdx.regAt >= 0) {
+            const r = parseDateLoose_(row[cIdx.regAt]);
+            if (r) sortKey = r.getTime();
+          }
+
+          const change = {
+            pid: String(pid).trim(),
+            op: op,
+            date: d,
+            dateStr: dateStr,
+            newStart: (cIdx.newStart >= 0 ? row[cIdx.newStart] : ''),
+            newEnd:   (cIdx.newEnd >= 0 ? row[cIdx.newEnd] : ''),
+            note:     (cIdx.note >= 0 ? row[cIdx.note] : ''),
+            patient_name: (cIdx.name >= 0 ? row[cIdx.name] : ''),
+            sortKey: sortKey
+          };
+
           if (!changeMap[key] || sortKey > changeMap[key].sortKey) changeMap[key] = change;
         });
+
+        // console.log('[ChangeRequest] picked=', Object.keys(changeMap).length, 'week=', weekStartStr, '-', weekEndStr);
 
         Object.keys(changeMap).forEach(key => {
           const ch = changeMap[key];
           const matches = weeklyMap[ch.pid + '|' + ch.dateStr] || [];
 
           if (ch.op === 'キャンセル') {
-            matches.forEach(req => { req.changeType = 'キャンセル'; if (ch.note) req.note = ch.note; });
+            matches.forEach(req => {
+              req.changeType = 'キャンセル';
+              if (ch.note) req.note = ch.note;
+            });
+
           } else if (ch.op === '時間変更') {
             matches.forEach(req => {
               if (ch.newStart) req.start = ch.newStart;
@@ -3976,23 +4048,29 @@ function 週間リクエストを生成_(ss) {
               req.changeType = '変更';
               if (ch.note) req.note = ch.note;
             });
+
           } else if (ch.op === '追加') {
             const baseInfo = patientInfoMap[ch.pid] || {};
             const weekdayStr = indexToYoubi[ch.date.getDay()];
-            let startTime = ch.newStart || baseInfo.startPref, endTime = ch.newEnd || baseInfo.endPref;
-            const svcMin = baseInfo.svcMin || '', timeTypeRaw = baseInfo.timeType;
-            const win = makeTimeWindow(timeTypeRaw, startTime, endTime, svcMin);
+            let startTime = ch.newStart || baseInfo.startPref;
+            let endTime   = ch.newEnd   || baseInfo.endPref;
+            const svcMin  = baseInfo.svcMin || '';
+            const win = makeTimeWindow(baseInfo.timeType, startTime, endTime, svcMin);
+
             const newReq = {
               date: ch.date, dateStr: ch.dateStr, weekdayStr: weekdayStr,
               patient_id: ch.pid, patient_name: ch.patient_name || baseInfo.name || '',
-              area: baseInfo.area || '', start: win.start, end: win.end,
+              area: baseInfo.area || '',
+              start: win.start, end: win.end,
               svcMin: svcMin, needStaff: baseInfo.needStaff || 1,
               specifiedIds: baseInfo.staffIds || '', specifiedType: baseInfo.staffType || '', ngStaffIds: baseInfo.ngStaffIds || '',
               sexLimit: baseInfo.sexLimit || '', contPref: baseInfo.contPref || '',
-              changeType: '追加', note: ch.note || baseInfo.note || '',
+              changeType: '追加',
+              note: ch.note || baseInfo.note || '',
               prevStaffId: '', prevStaffName: '', prevDate: null,
               timeType: win.timeType, earliest: win.earliest, latest: win.latest
             };
+
             weeklyRequests.push(newReq);
             const mapKey = ch.pid + '|' + ch.dateStr;
             if (!weeklyMap[mapKey]) weeklyMap[mapKey] = [];
