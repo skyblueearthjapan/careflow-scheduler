@@ -4941,7 +4941,8 @@ function api_getSpecialWeekWizardData(weekStartStr, patientId) {
     days: result.days,
     normalByDate: result.normalByDate,
     changesByDate: result.changeByDate,  // 複数形に変換
-    specialRows: specialRows
+    specialRows: specialRows,
+    specialEntries: result.specialEntries  // シートUI用（ヘッダ+明細構造）
   };
 }
 
