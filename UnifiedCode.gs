@@ -2913,6 +2913,9 @@ function 割当結果を作成_(ss) {
     var dayStart = (shift.shiftStartMin != null ? shift.shiftStartMin : 540);
     var dayEnd   = (shift.shiftEndMin   != null ? shift.shiftEndMin   : 1080);
 
+    // ★暫定ガード：訪問看護は基本 09:00 以降とする（8時台吸着の防止）
+    dayStart = Math.max(dayStart, 9 * 60);
+
     // 可動訪問を「隙間」に詰める
     flexes.sort(function(aIdx,bIdx){
       var aS = rowStartMin_(resultRows[aIdx]);
@@ -2948,9 +2951,21 @@ function 割当結果を作成_(ss) {
       var svcMin = Number(row[10]) || 0;
       if (!svcMin) svcMin = 30;
 
-      // 希望時間帯
+      // 希望時間帯（列12/13：希望最早/希望最遅）
       var earliestMin = toMinutes(row[12]);
       var latestMin   = toMinutes(row[13]);
+
+      // ★ここが肝：希望最早/最遅が取れない or 空扱いのときは timeType で補完して必ず守る
+      var tt = String(row[11] || '').trim(); // 時間タイプ
+      if (earliestMin == null || latestMin == null) {
+        if (tt === '午前') { earliestMin = 9 * 60;  latestMin = 12 * 60; }
+        else if (tt === '午後') { earliestMin = 13 * 60; latestMin = 17 * 60; }
+        else if (tt === '終日') { earliestMin = 9 * 60;  latestMin = 18 * 60; }
+        // '時間帯' は本来 12/13 に入る想定なので、両方nullなら「補完せず」＝制約なし扱いのまま
+      }
+
+      // ★安全ガード：earliestMin が dayStart より前なら dayStart に引き上げる
+      if (earliestMin != null) earliestMin = Math.max(earliestMin, dayStart);
 
       var placed = false;
 
@@ -3065,6 +3080,8 @@ function 割当結果を作成_(ss) {
         var shift = getStaffShift_(staffId);
         var shiftS = shift.shiftStartMin != null ? shift.shiftStartMin : 540;
         var shiftE = shift.shiftEndMin != null ? shift.shiftEndMin : 1080;
+        // ★暫定ガード：訪問看護は基本 09:00 以降とする（8時台吸着の防止）
+        shiftS = Math.max(shiftS, 9 * 60);
         return (shiftE - shiftS >= svcMin) ? { ok: true, startMin: shiftS } : { ok: false };
       }
 
@@ -3085,6 +3102,9 @@ function 割当結果を作成_(ss) {
       var shift2 = getStaffShift_(staffId);
       var dayStart = shift2.shiftStartMin != null ? shift2.shiftStartMin : 540;
       var dayEnd = shift2.shiftEndMin != null ? shift2.shiftEndMin : 1080;
+
+      // ★暫定ガード：訪問看護は基本 09:00 以降とする（8時台吸着の防止）
+      dayStart = Math.max(dayStart, 9 * 60);
 
       var gaps = [];
       var cursor = dayStart;
@@ -3336,6 +3356,9 @@ function 割当結果を作成_(ss) {
       var shift = getStaffShift_(staffId);
       var dayStart = (shift.shiftStartMin != null ? shift.shiftStartMin : 540);
       var dayEnd   = (shift.shiftEndMin   != null ? shift.shiftEndMin   : 1080);
+
+      // ★暫定ガード：訪問看護は基本 09:00 以降とする（8時台吸着の防止）
+      dayStart = Math.max(dayStart, 9 * 60);
 
       // "隙間"を作成（アンカー前後にバッファを確保）
       var gaps = [];
