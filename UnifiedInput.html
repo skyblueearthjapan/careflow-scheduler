@@ -503,12 +503,15 @@
         <button class="refresh-btn" id="refreshBtn" onclick="reloadCurrentSheet()">更新</button>
       </div>
       <div id="mainContent">
-        <div class="table-container">
-          <table class="data-table" id="dataTable">
-            <thead><tr><th>読み込み中...</th></tr></thead>
-            <tbody></tbody>
-          </table>
+        <div id="normalTableArea">
+          <div class="table-container">
+            <table class="data-table" id="dataTable">
+              <thead><tr><th>読み込み中...</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
+        <div id="specialWeekArea" style="display:none;"></div>
       </div>
     </div>
 
@@ -711,7 +714,20 @@
           tab.classList.toggle('active', tab.getAttribute('data-sheet') === currentSheetName);
         });
       }
-      loadSheet(currentSheetName);
+      // 特別訪問週間の場合は専用ロードを呼ぶ
+      if (currentSheetName === '特別訪問週間') {
+        isSpecialWeekMode = true;
+        document.getElementById('normalTableArea').style.display = 'none';
+        document.getElementById('specialWeekArea').style.display = 'block';
+        if (!specialWeekSheetState.weekMonday) {
+          specialWeekSheetState.weekMonday = getMonday(new Date());
+        }
+        setupSpecialWeekStatusBar();
+        document.getElementById('geoGroup').style.display = 'none';
+        loadSpecialWeekSheetData();
+      } else {
+        loadSheet(currentSheetName);
+      }
     });
 
     window.addEventListener('beforeunload', function(e) {
@@ -731,6 +747,9 @@
       localStorage.setItem('unifiedInput_lastSheet', sheetName);
       resetState();
       restoreNormalStatusBar();
+      // エリア切り替え（固定DOM）
+      document.getElementById('normalTableArea').style.display = 'block';
+      document.getElementById('specialWeekArea').style.display = 'none';
       loadSheet(sheetName);
     }
 
@@ -747,6 +766,10 @@
       isSpecialWeekMode = true;
       localStorage.setItem('unifiedInput_lastSheet', '特別訪問週間');
       resetState();
+
+      // エリア切り替え（固定DOM - 通常テーブルを隠し、特別訪問週間エリアを表示）
+      document.getElementById('normalTableArea').style.display = 'none';
+      document.getElementById('specialWeekArea').style.display = 'block';
 
       // 週初期化
       if (!specialWeekSheetState.weekMonday) {
@@ -855,7 +878,8 @@
     }
 
     function renderSpecialWeekSheetTables() {
-      var mainContent = document.getElementById('mainContent');
+      // 固定DOMの #specialWeekArea に描画（mainContent.innerHTML差し替えをやめる）
+      var specialWeekArea = document.getElementById('specialWeekArea');
       var entries = specialWeekSheetState.headers;
       var details = specialWeekSheetState.details;
       var selectedId = specialWeekSheetState.selectedHeaderId;
@@ -927,7 +951,7 @@
       html += '</tbody></table></div></div>';
 
       html += '</div>';
-      mainContent.innerHTML = html;
+      specialWeekArea.innerHTML = html;
     }
 
     function selectSpecialWeekHeader(specialId) {
