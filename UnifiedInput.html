@@ -1307,6 +1307,8 @@
       if (staffOptions.length === 0) {
         html += '<span style="color:#999;">スタッフデータなし</span>';
       } else {
+        // 「選択なし（クリア）」ボタンを追加
+        html += '<div style="margin-bottom:4px;"><button type="button" onclick="this.parentElement.parentElement.querySelectorAll(\'input[type=checkbox]\').forEach(function(cb){cb.checked=false;});" style="font-size:11px; padding:2px 6px; cursor:pointer;">選択なし（クリア）</button></div>';
         staffOptions.forEach(function(staff) {
           var checked = selected.indexOf(staff.id) >= 0 ? ' checked' : '';
           html += '<label><input type="checkbox" value="' + escapeHtml(staff.id) + '"' + checked + '>' + escapeHtml(staff.label) + '</label>';
@@ -2067,10 +2069,12 @@
         case 'staffMultiSelect':
           var selectedStaff = currentVal ? currentVal.split(',') : [];
           if (staffOptions.length === 0) return '<div style="color:#999;">スタッフデータがありません</div>';
-          return '<div class="wizard-checkboxes" style="max-height:120px; overflow-y:auto;">' + staffOptions.map(function(s) {
-            var checked = selectedStaff.indexOf(s.id) >= 0 ? ' checked' : '';
-            return '<label><input type="checkbox" value="' + escapeHtml(s.id) + '"' + checked + '>' + escapeHtml(s.label) + '</label>';
-          }).join('') + '</div>';
+          return '<div class="wizard-checkboxes" style="max-height:120px; overflow-y:auto;">' +
+            '<div style="margin-bottom:4px;"><button type="button" onclick="this.parentElement.parentElement.querySelectorAll(\'input[type=checkbox]\').forEach(function(cb){cb.checked=false;});" style="font-size:11px; padding:2px 6px; cursor:pointer;">選択なし（クリア）</button></div>' +
+            staffOptions.map(function(s) {
+              var checked = selectedStaff.indexOf(s.id) >= 0 ? ' checked' : '';
+              return '<label><input type="checkbox" value="' + escapeHtml(s.id) + '"' + checked + '>' + escapeHtml(s.label) + '</label>';
+            }).join('') + '</div>';
         case 'patientSelect':
           if (patientOptions.length === 0) return '<div style="color:#999;">患者データがありません</div>';
           return '<select id="wizardInput"><option value="">-- 選択 --</option>' + patientOptions.map(function(p) {
