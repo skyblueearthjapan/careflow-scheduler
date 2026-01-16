@@ -554,6 +554,9 @@ function audit_getOrLoadDataset_(weekStartStr) {
   // ロード
   var dataset = audit_loadWeekDataset_(weekStartStr);
 
+  // Expected（期待）を生成してデータセットに付与
+  audit_enrichDatasetWithExpected_(dataset);
+
   // キャッシュに保存（Phase3で有効化）
   // try {
   //   cache.put(cacheKey, JSON.stringify(dataset), AUDIT_CONFIG.CACHE_TTL_SEC);

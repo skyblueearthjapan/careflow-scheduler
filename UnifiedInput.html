@@ -242,16 +242,45 @@
     .audit-info-item .label { color: var(--color-text-light); }
     .audit-info-item .value { font-weight: 500; }
     .audit-day-row {
-      display: flex; align-items: flex-start; gap: 12px; padding: 10px;
-      border: 1px solid var(--color-border); border-radius: 6px; margin-bottom: 8px;
+      border: 1px solid var(--color-border); border-radius: 6px; margin-bottom: 12px;
+      overflow: hidden;
     }
-    .audit-day-row .date { font-weight: 600; min-width: 80px; }
-    .audit-day-row .status-icon { font-size: 16px; }
-    .audit-day-row .status-icon.ok { color: #4CAF50; }
-    .audit-day-row .status-icon.warn { color: #FF9800; }
-    .audit-day-row .status-icon.ng { color: #F44336; }
-    .audit-day-row .details { flex: 1; font-size: 12px; }
-    .audit-day-row .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+    .audit-day-header {
+      display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+      background: var(--color-bg); border-bottom: 1px solid var(--color-border);
+    }
+    .audit-day-header .date { font-weight: 600; min-width: 80px; }
+    .audit-day-header .status-icon { font-size: 18px; font-weight: bold; }
+    .audit-day-header .status-icon.ok { color: #4CAF50; }
+    .audit-day-header .status-icon.warn { color: #FF9800; }
+    .audit-day-header .status-icon.ng { color: #F44336; }
+    .audit-day-body { padding: 12px; font-size: 12px; }
+    .audit-day-body .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+    .audit-compare-section { margin-bottom: 10px; }
+    .audit-compare-label { font-weight: 600; color: var(--color-text-light); margin-bottom: 4px; font-size: 11px; text-transform: uppercase; }
+    .audit-expected-item, .audit-actual-item { padding: 4px 8px; background: #FAFAFA; border-radius: 4px; margin-bottom: 4px; }
+    .audit-source-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+    .audit-source-badge.source-master { background: #E8F5E9; color: #2E7D32; }
+    .audit-source-badge.source-change { background: #FFF3E0; color: #E65100; }
+    .audit-source-badge.source-special { background: #F3E5F5; color: #7B1FA2; }
+    .audit-time-type { color: #666; font-size: 11px; }
+    .audit-cancelled-badge { background: #FFCDD2; color: #C62828; font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+    .audit-unassigned-badge { background: #FFCDD2; color: #C62828; font-size: 10px; padding: 2px 4px; border-radius: 2px; }
+    .audit-staff-name { color: #666; }
+    .audit-check-item { padding: 4px 8px; border-radius: 4px; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+    .audit-check-item.check-ok { background: #E8F5E9; }
+    .audit-check-item.check-warn { background: #FFF3E0; }
+    .audit-check-item.check-ng { background: #FFEBEE; }
+    .audit-check-icon { font-weight: bold; width: 14px; text-align: center; }
+    .check-ok .audit-check-icon { color: #4CAF50; }
+    .check-warn .audit-check-icon { color: #FF9800; }
+    .check-ng .audit-check-icon { color: #F44336; }
+    .audit-diff { color: #666; font-size: 11px; }
+    .audit-additional-info { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--color-border); }
+    .audit-info-badge { font-size: 10px; padding: 3px 8px; border-radius: 4px; }
+    .audit-info-badge.change { background: #FFF3E0; color: #E65100; }
+    .audit-info-badge.special { background: #F3E5F5; color: #7B1FA2; }
+    .audit-info-badge.event { background: #E3F2FD; color: #1565C0; }
     .audit-tag {
       font-size: 10px; padding: 2px 6px; border-radius: 4px;
       background: var(--color-bg); border: 1px solid var(--color-border);
@@ -3593,55 +3622,103 @@
 
       // 日別判定
       html += '<div class="audit-section">';
-      html += '<div class="audit-section-title">合否判定（週間）</div>';
+      html += '<div class="audit-section-title">合否判定（週間）- Expected vs Actual</div>';
       (data.dayJudgements || []).forEach(function(dj) {
         var statusClass = dj.status.toLowerCase();
         var statusIcon = dj.status === 'OK' ? '○' : (dj.status === 'WARN' ? '△' : '×');
 
         html += '<div class="audit-day-row">';
+        html += '<div class="audit-day-header">';
         html += '<span class="date">' + dj.dateStr.substring(5) + ' (' + dj.youbi + ')</span>';
         html += '<span class="status-icon ' + statusClass + '">' + statusIcon + '</span>';
-        html += '<div class="details">';
+        html += '</div>';
+        html += '<div class="audit-day-body">';
 
+        // Expected（期待）セクション
+        html += '<div class="audit-compare-section">';
+        html += '<div class="audit-compare-label">期待 (Expected):</div>';
+        if (dj.hasExpected) {
+          dj.expectedVisits.forEach(function(exp) {
+            var sourceLabel = exp.source;
+            if (exp.op) sourceLabel += '/' + exp.op;
+            var sourceClass = exp.source === 'MASTER' ? 'source-master' : (exp.source.indexOf('SPECIAL') >= 0 ? 'source-special' : 'source-change');
+
+            html += '<div class="audit-expected-item">';
+            html += '<span class="audit-source-badge ' + sourceClass + '">' + sourceLabel + '</span> ';
+            html += '<span class="audit-time-type">[' + (exp.timeType || '時間帯') + ']</span> ';
+            if (exp.timeType === '固定') {
+              html += '<span>' + (exp.startStr || '-') + '-' + (exp.endStr || '-') + '</span>';
+            } else {
+              html += '<span>' + (exp.earliestStr || '-') + '〜' + (exp.latestStr || '-') + '</span>';
+            }
+            if (exp.isCancelled) {
+              html += ' <span class="audit-cancelled-badge">キャンセル</span>';
+            }
+            html += '</div>';
+          });
+        } else {
+          html += '<div style="color:#999;font-size:12px;">期待なし</div>';
+        }
+        html += '</div>';
+
+        // Actual（実績）セクション
+        html += '<div class="audit-compare-section">';
+        html += '<div class="audit-compare-label">実績 (Actual):</div>';
         if (dj.hasActual) {
-          html += '<div>実績: ';
-          dj.actuals.forEach(function(a, i) {
-            if (i > 0) html += ', ';
-            html += a.startStr + '-' + a.endStr;
-            if (a.staffName) html += ' (' + a.staffName + ')';
-            if (a.isUnassigned) html += ' <span style="color:#F44336;">[未割当]</span>';
+          dj.actuals.forEach(function(a) {
+            html += '<div class="audit-actual-item">';
+            html += '<span>' + a.startStr + '-' + a.endStr + '</span>';
+            if (a.staffName) html += ' <span class="audit-staff-name">(' + a.staffName + ')</span>';
+            if (a.isUnassigned) html += ' <span class="audit-unassigned-badge">[未割当]</span>';
+            html += '</div>';
+          });
+        } else {
+          html += '<div style="color:#999;font-size:12px;">実績なし</div>';
+        }
+        html += '</div>';
+
+        // チェック詳細（判定理由）
+        if (dj.checks && dj.checks.length > 0) {
+          html += '<div class="audit-compare-section">';
+          html += '<div class="audit-compare-label">判定詳細:</div>';
+          dj.checks.forEach(function(check) {
+            var checkClass = check.status === 'NG' ? 'check-ng' : (check.status === 'WARN' ? 'check-warn' : 'check-ok');
+            html += '<div class="audit-check-item ' + checkClass + '">';
+            html += '<span class="audit-check-icon">' + (check.status === 'OK' ? '✓' : (check.status === 'WARN' ? '!' : '✗')) + '</span> ';
+            html += '<span>' + (check.reason || check.type) + '</span>';
+            if (check.diffMin && check.diffMin !== 0) {
+              html += ' <span class="audit-diff">(' + (check.diffMin > 0 ? '+' : '') + check.diffMin + '分)</span>';
+            }
+            html += '</div>';
           });
           html += '</div>';
-        } else {
-          html += '<div style="color:#999;">実績なし</div>';
         }
 
-        if (dj.hasChange) {
-          html += '<div style="color:#FF9800;">変更: ' + dj.change.op;
-          if (dj.change.newStartStr || dj.change.newEndStr) {
-            html += ' ' + dj.change.newStartStr + '-' + dj.change.newEndStr;
+        // 追加情報（変更・特別・イベント）
+        var hasAdditionalInfo = dj.hasChange || dj.hasSpecial || dj.hasEvents;
+        if (hasAdditionalInfo) {
+          html += '<div class="audit-additional-info">';
+          if (dj.hasChange) {
+            html += '<div class="audit-info-badge change">変更: ' + dj.change.op;
+            if (dj.change.newStartStr || dj.change.newEndStr) {
+              html += ' ' + (dj.change.newStartStr || '') + '-' + (dj.change.newEndStr || '');
+            }
+            html += '</div>';
+          }
+          if (dj.hasSpecial) {
+            dj.specials.forEach(function(sp) {
+              html += '<div class="audit-info-badge special">' + sp.mode + ': ' + sp.rowLabel + ' (' + sp.timeType + ')</div>';
+            });
+          }
+          if (dj.hasEvents) {
+            dj.events.forEach(function(ev) {
+              html += '<div class="audit-info-badge event">イベント: ' + ev.startStr + '-' + ev.endStr + ' ' + ev.title + '</div>';
+            });
           }
           html += '</div>';
         }
 
-        if (dj.hasSpecial) {
-          html += '<div style="color:#9C27B0;">特別: ';
-          dj.specials.forEach(function(sp, i) {
-            if (i > 0) html += ', ';
-            html += sp.mode + '(' + sp.timeType + ')';
-          });
-          html += '</div>';
-        }
-
-        if (dj.hasEvents) {
-          html += '<div style="color:#2196F3;">イベント: ';
-          dj.events.forEach(function(ev, i) {
-            if (i > 0) html += ', ';
-            html += ev.startStr + '-' + ev.endStr + ' ' + ev.title;
-          });
-          html += '</div>';
-        }
-
+        // タグ
         if (dj.tags && dj.tags.length > 0) {
           html += '<div class="tags">';
           dj.tags.forEach(function(tag) {

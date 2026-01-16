@@ -2,7 +2,7 @@
  * 監査（合否判定）ビュー - サービス層（API）
  *
  * フロントエンドから呼び出されるAPIエンドポイント
- * Phase 1: 暫定版判定ロジック（Actualの有無で判定）
+ * Phase 2: Expected vs Actual 本番版判定ロジック
  */
 
 // ============================================================
@@ -80,6 +80,7 @@ function audit_getConfig() {
 function audit_buildWeekSummary_(dataset) {
   var cellSummary = {};   // sdKey -> items[]
   var patientSummary = {}; // pid -> summary
+  var expectedByPidDate = dataset.expectedByPidDate || {};
 
   // 実績（Actual）から患者×日×スタッフを抽出
   var actualPlanMap = dataset.actualPlanMap;
@@ -93,8 +94,8 @@ function audit_buildWeekSummary_(dataset) {
       var dateStr = actual.dateStr;
       var staffId = actual.staffId || '_UNASSIGNED_';
 
-      // 暫定判定（Phase 1）
-      var judgement = audit_judgePatientDay_Phase1_(dataset, pid, dateStr);
+      // 本番判定（Phase 2）: Expected vs Actual
+      var judgement = audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr);
 
       // セルサマリに追加
       var sdKey = audit_makeSdKey_(staffId, dateStr);
@@ -146,6 +147,60 @@ function audit_buildWeekSummary_(dataset) {
     });
   }
 
+  // Expected-only（実績がない期待）もチェック
+  for (var expKey in expectedByPidDate) {
+    var dayExpected = expectedByPidDate[expKey];
+    if (!dayExpected || dayExpected.visits.length === 0) continue;
+
+    // キャンセル期待のみの場合はスキップ（実績なしでOK）
+    var activeExpects = dayExpected.visits.filter(function(e) { return !e.isCancelled; });
+    if (activeExpects.length === 0) continue;
+
+    // 実績があるかチェック
+    var actuals = dataset.actualPlanMap[expKey] || [];
+    if (actuals.length > 0) continue;  // 実績があれば上のループで処理済み
+
+    // 実績がない場合 → MISSING_ACTUAL
+    var parts = expKey.split('|');
+    var pid = parts[0];
+    var dateStr = parts[1];
+
+    var judgement = audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr);
+
+    // 患者サマリを更新
+    var master = dataset.patientMasterMap[pid];
+    if (!patientSummary[pid]) {
+      patientSummary[pid] = {
+        pid: pid,
+        pname: master ? master.name : '',
+        overallStatus: AUDIT_STATUS.OK,
+        okCount: 0,
+        warnCount: 0,
+        ngCount: 0,
+        reasons: []
+      };
+    }
+
+    // カウント更新
+    if (judgement.status === AUDIT_STATUS.NG) {
+      patientSummary[pid].ngCount++;
+      patientSummary[pid].overallStatus = AUDIT_STATUS.NG;
+      if (judgement.tags.length > 0) {
+        patientSummary[pid].reasons.push(dateStr + ': ' + judgement.tags.join(', '));
+      }
+    } else if (judgement.status === AUDIT_STATUS.WARN) {
+      patientSummary[pid].warnCount++;
+      if (patientSummary[pid].overallStatus !== AUDIT_STATUS.NG) {
+        patientSummary[pid].overallStatus = AUDIT_STATUS.WARN;
+      }
+      if (judgement.tags.length > 0) {
+        patientSummary[pid].reasons.push(dateStr + ': ' + judgement.tags.join(', '));
+      }
+    } else {
+      patientSummary[pid].okCount++;
+    }
+  }
+
   // スタッフ一覧を取得（表示用）
   var staffList = [];
   for (var staffId in dataset.staffMasterMap) {
@@ -183,6 +238,7 @@ function audit_buildWeekSummary_(dataset) {
 function audit_buildCellDetail_(dataset, staffId, dateStr) {
   var sdKey = audit_makeSdKey_(staffId, dateStr);
   var items = [];
+  var expectedByPidDate = dataset.expectedByPidDate || {};
 
   // 実績から該当スタッフ×日の患者を抽出
   var actualPlanMap = dataset.actualPlanMap;
@@ -193,7 +249,7 @@ function audit_buildCellDetail_(dataset, staffId, dateStr) {
       if (actual.dateStr !== dateStr) return;
       if ((actual.staffId || '_UNASSIGNED_') !== staffId) return;
 
-      var judgement = audit_judgePatientDay_Phase1_(dataset, actual.pid, dateStr);
+      var judgement = audit_judgePatientDay_(dataset, expectedByPidDate, actual.pid, dateStr);
 
       items.push({
         pid: actual.pid,
@@ -236,6 +292,7 @@ function audit_buildCellDetail_(dataset, staffId, dateStr) {
 function audit_buildPatientDetail_(dataset, pid) {
   var master = dataset.patientMasterMap[pid] || null;
   var weekDates = dataset.weekDates;
+  var expectedByPidDate = dataset.expectedByPidDate || {};
 
   // その週の個別変更を収集
   var changes = [];
@@ -285,8 +342,10 @@ function audit_buildPatientDetail_(dataset, pid) {
   // 日別判定
   var dayJudgements = [];
   weekDates.forEach(function(wd) {
-    var judgement = audit_judgePatientDay_Phase1_(dataset, pid, wd.dateStr);
     var key = audit_makePdKey_(pid, wd.dateStr);
+
+    // 本番判定（Phase 2）: Expected vs Actual
+    var judgement = audit_judgePatientDay_(dataset, expectedByPidDate, pid, wd.dateStr);
 
     // その日の実績
     var dayActuals = dataset.actualPlanMap[key] || [];
@@ -294,11 +353,33 @@ function audit_buildPatientDetail_(dataset, pid) {
     var dayEvents = dataset.eventMap[key] || [];
     var daySpecials = dataset.specialWeekMap[key] || [];
 
+    // その日のExpected
+    var dayExpected = expectedByPidDate[key];
+    var expectedVisits = dayExpected ? dayExpected.visits : [];
+
     dayJudgements.push({
       dateStr: wd.dateStr,
       youbi: wd.youbi,
       status: judgement.status,
       tags: judgement.tags,
+      checks: judgement.checks,  // 詳細チェック結果を追加
+      hasExpected: expectedVisits.length > 0,
+      expectedCount: expectedVisits.length,
+      expectedVisits: expectedVisits.map(function(exp) {
+        return {
+          expected_id: exp.expected_id,
+          source: exp.source,
+          op: exp.op,
+          isCancelled: exp.isCancelled,
+          timeType: exp.timeType,
+          startStr: audit_minToTimeStr_(exp.startMin),
+          endStr: audit_minToTimeStr_(exp.endMin),
+          earliestStr: audit_minToTimeStr_(exp.earliestMin),
+          latestStr: audit_minToTimeStr_(exp.latestMin),
+          svcMin: exp.svcMin,
+          note: exp.note
+        };
+      }),
       hasActual: dayActuals.length > 0,
       actualCount: dayActuals.length,
       actuals: dayActuals.map(function(a) {
@@ -338,7 +419,8 @@ function audit_buildPatientDetail_(dataset, pid) {
           earliestStr: audit_minToTimeStr_(sp.earliestMin),
           latestStr: audit_minToTimeStr_(sp.latestMin)
         };
-      })
+      }),
+      expectedMeta: dayExpected ? dayExpected.meta : null
     });
   });
 
@@ -396,11 +478,12 @@ function audit_buildPatientDetail_(dataset, pid) {
 }
 
 // ============================================================
-// 判定ロジック（Phase 1: 暫定版）
+// 判定ロジック（Phase 1: 暫定版）※非推奨、Phase 2ではAuditJudge.gsを使用
 // ============================================================
 
 /**
  * Phase 1 暫定判定：Actualの有無で判定
+ * @deprecated Phase 2以降は audit_judgePatientDay_ (AuditJudge.gs) を使用
  * @param {Object} dataset
  * @param {string} pid
  * @param {string} dateStr
