@@ -220,7 +220,9 @@ function audit_buildWeekSummary_(dataset) {
     weekDates: dataset.weekDates,
     staffList: staffList,
     cellSummary: cellSummary,
-    patientSummary: patientSummary
+    patientSummary: patientSummary,
+    warnings: dataset.warnings || [],
+    fromCache: dataset.fromCache || false
   };
 }
 

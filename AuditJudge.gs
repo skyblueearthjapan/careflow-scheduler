@@ -194,7 +194,7 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
 }
 
 /**
- * 時間窓チェック
+ * 時間窓チェック（説明力強化版）
  */
 function audit_checkTimeWindow_(expected, actual, bufferMin) {
   var timeType = expected.timeType || '時間帯';
@@ -213,36 +213,56 @@ function audit_checkTimeWindow_(expected, actual, bufferMin) {
       endMin: actual.endMin
     },
     diffMin: 0,
-    reason: ''
+    reason: '',
+    explanation: ''  // 詳細説明（クライアント向け）
   };
+
+  // 時刻文字列を生成（説明用）
+  var actualStartStr = audit_minToTimeStr_(actual.startMin);
+  var actualEndStr = audit_minToTimeStr_(actual.endMin);
 
   if (actual.startMin === null || actual.endMin === null) {
     result.status = AUDIT_STATUS.WARN;
     result.reason = '実績の時刻が不明';
+    result.explanation = '実績データに時刻が設定されていません';
     return result;
   }
 
   if (timeType === '固定') {
     // 固定: 開始時刻のずれで判定
+    var expStartStr = audit_minToTimeStr_(expected.startMin);
+
     if (expected.startMin !== null) {
       var diff = actual.startMin - expected.startMin;
       result.diffMin = diff;
 
       if (Math.abs(diff) <= bufferMin) {
-        result.status = (diff === 0) ? AUDIT_STATUS.OK : AUDIT_STATUS.WARN;
-        result.reason = (diff === 0) ? '' : '開始時刻が' + diff + '分ずれ';
+        if (diff === 0) {
+          result.status = AUDIT_STATUS.OK;
+          result.reason = '';
+          result.explanation = '固定時刻(' + expStartStr + ')通りに訪問';
+        } else {
+          result.status = AUDIT_STATUS.WARN;
+          result.reason = '開始時刻が' + diff + '分ずれ';
+          result.explanation = '固定(' + expStartStr + ')希望だが実績は' + actualStartStr + '開始（' + (diff > 0 ? '+' : '') + diff + '分）';
+        }
       } else {
         result.status = AUDIT_STATUS.NG;
-        result.reason = '開始時刻が' + diff + '分ずれ（バッファ超過）';
+        result.reason = '開始時刻が' + diff + '分ずれ（バッファ±' + bufferMin + '分超過）';
+        result.explanation = '固定(' + expStartStr + ')希望だが実績は' + actualStartStr + '開始 → バッファ(' + bufferMin + '分)を超えてNG';
       }
     }
   } else {
     // 時間帯/午前/午後/終日: 範囲内かどうかで判定
     var earliest = expected.earliestMin;
     var latest = expected.latestMin;
+    var earliestStr = audit_minToTimeStr_(earliest);
+    var latestStr = audit_minToTimeStr_(latest);
+    var rangeStr = (earliestStr || '?') + '〜' + (latestStr || '?');
 
     if (earliest === null && latest === null) {
       // 範囲が不明 → OK扱い
+      result.explanation = timeType + '（範囲不明のためOK扱い）';
       return result;
     }
 
@@ -260,12 +280,17 @@ function audit_checkTimeWindow_(expected, actual, bufferMin) {
 
     if (startInRange && endInRange) {
       result.status = AUDIT_STATUS.OK;
+      result.explanation = timeType + '(' + rangeStr + ')希望内で訪問(' + actualStartStr + '-' + actualEndStr + ')';
     } else if (startOk && endOk) {
       result.status = AUDIT_STATUS.WARN;
-      result.reason = '期待範囲外だがバッファ内';
+      var diffStr = (result.diffMin > 0 ? '+' : '') + result.diffMin + '分';
+      result.reason = '期待範囲外だがバッファ内(' + diffStr + ')';
+      result.explanation = timeType + '(' + rangeStr + ')希望だが実績' + actualStartStr + '-' + actualEndStr + ' → 範囲外(' + diffStr + ')だがバッファ内';
     } else {
       result.status = AUDIT_STATUS.NG;
-      result.reason = '期待範囲外（バッファ超過）';
+      var diffStr = (result.diffMin > 0 ? '+' : '') + result.diffMin + '分';
+      result.reason = '期待範囲外（バッファ超過 ' + diffStr + '）';
+      result.explanation = timeType + '(' + rangeStr + ')希望だが実績' + actualStartStr + '-' + actualEndStr + ' → バッファ(' + bufferMin + '分)を超えてNG';
     }
   }
 

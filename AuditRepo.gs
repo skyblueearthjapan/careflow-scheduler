@@ -40,13 +40,33 @@ function audit_loadWeekDataset_(weekStartStr) {
     d.setDate(d.getDate() + 1);
   }
 
-  // 各データをロード
-  var patientMasterMap = audit_loadPatientMaster_(ss, tz);
-  var staffMasterMap = audit_loadStaffMaster_(ss, tz);
-  var changeMap = audit_loadChangeRequests_(ss, tz, weekStartStrNorm, weekEndStr);
-  var eventMap = audit_loadPatientLinkedEvents_(ss, tz, weekStartStrNorm, weekEndStr);
-  var specialWeekMap = audit_loadSpecialWeek_(ss, tz, weekStartStrNorm, weekEndStr);
-  var actualPlanMap = audit_loadActualPlans_(ss, tz, weekStartStrNorm, weekEndStr);
+  // 警告を収集
+  var warnings = [];
+
+  // 各データをロード（エラー時は空を返す）
+  var patientMasterMap = audit_safeLoad_(function() {
+    return audit_loadPatientMaster_(ss, tz);
+  }, '患者マスタ', warnings);
+
+  var staffMasterMap = audit_safeLoad_(function() {
+    return audit_loadStaffMaster_(ss, tz);
+  }, 'スタッフマスタ', warnings);
+
+  var changeMap = audit_safeLoad_(function() {
+    return audit_loadChangeRequests_(ss, tz, weekStartStrNorm, weekEndStr);
+  }, '個別変更リクエスト', warnings);
+
+  var eventMap = audit_safeLoad_(function() {
+    return audit_loadPatientLinkedEvents_(ss, tz, weekStartStrNorm, weekEndStr);
+  }, 'イベントリクエスト', warnings);
+
+  var specialWeekMap = audit_safeLoad_(function() {
+    return audit_loadSpecialWeek_(ss, tz, weekStartStrNorm, weekEndStr);
+  }, '特別訪問週間', warnings);
+
+  var actualPlanMap = audit_safeLoad_(function() {
+    return audit_loadActualPlans_(ss, tz, weekStartStrNorm, weekEndStr);
+  }, '割当結果', warnings);
 
   return {
     weekStartStr: weekStartStrNorm,
@@ -59,8 +79,29 @@ function audit_loadWeekDataset_(weekStartStr) {
     eventMap: eventMap,
     specialWeekMap: specialWeekMap,
     actualPlanMap: actualPlanMap,
+    warnings: warnings,
     loadedAt: new Date()
   };
+}
+
+/**
+ * 安全にデータをロード（エラー時は空オブジェクトを返し、警告を記録）
+ * @param {Function} loadFn - ロード関数
+ * @param {string} sourceName - データソース名（警告用）
+ * @param {Array} warnings - 警告配列
+ * @return {Object}
+ */
+function audit_safeLoad_(loadFn, sourceName, warnings) {
+  try {
+    return loadFn();
+  } catch (e) {
+    warnings.push({
+      type: 'LOAD_ERROR',
+      source: sourceName,
+      message: e.message || String(e)
+    });
+    return {};
+  }
 }
 
 // ============================================================
@@ -541,15 +582,22 @@ function audit_getOrLoadDataset_(weekStartStr) {
   var cacheKey = AUDIT_CONFIG.CACHE_KEY_PREFIX + weekStartStr.replace(/\//g, '');
   var cache = CacheService.getScriptCache();
 
-  // キャッシュから取得を試みる（Phase3で有効化）
-  // var cached = cache.get(cacheKey);
-  // if (cached) {
-  //   try {
-  //     return JSON.parse(cached);
-  //   } catch (e) {
-  //     // パース失敗時は再ロード
-  //   }
-  // }
+  // キャッシュから取得を試みる
+  try {
+    var cached = cache.get(cacheKey);
+    if (cached) {
+      var parsed = JSON.parse(cached);
+      // キャッシュにExpectedがなければ再生成
+      if (!parsed.expectedByPidDate) {
+        audit_enrichDatasetWithExpected_(parsed);
+      }
+      parsed.fromCache = true;
+      return parsed;
+    }
+  } catch (e) {
+    // パース失敗時は再ロード
+    console.log('Cache parse error, reloading: ' + e.message);
+  }
 
   // ロード
   var dataset = audit_loadWeekDataset_(weekStartStr);
@@ -557,12 +605,82 @@ function audit_getOrLoadDataset_(weekStartStr) {
   // Expected（期待）を生成してデータセットに付与
   audit_enrichDatasetWithExpected_(dataset);
 
-  // キャッシュに保存（Phase3で有効化）
-  // try {
-  //   cache.put(cacheKey, JSON.stringify(dataset), AUDIT_CONFIG.CACHE_TTL_SEC);
-  // } catch (e) {
-  //   // キャッシュ保存失敗は無視（サイズ超過等）
-  // }
+  // キャッシュに保存（サイズ超過時は分割保存を試みる）
+  audit_saveToCache_(cache, cacheKey, dataset);
 
+  dataset.fromCache = false;
   return dataset;
+}
+
+/**
+ * データセットをキャッシュに保存
+ * GAS CacheServiceは100KB制限があるため、サイズ超過時は主要部分のみ保存
+ * @param {Cache} cache
+ * @param {string} cacheKey
+ * @param {Object} dataset
+ */
+function audit_saveToCache_(cache, cacheKey, dataset) {
+  try {
+    var json = JSON.stringify(dataset);
+    var sizeKB = json.length / 1024;
+
+    if (sizeKB <= 95) {
+      // 100KB以下なら直接保存
+      cache.put(cacheKey, json, AUDIT_CONFIG.CACHE_TTL_SEC);
+    } else {
+      // サイズ超過時はExpectedを除いた基本データのみ保存
+      var lightDataset = {
+        weekStartStr: dataset.weekStartStr,
+        weekEndStr: dataset.weekEndStr,
+        weekDates: dataset.weekDates,
+        tz: dataset.tz,
+        patientMasterMap: dataset.patientMasterMap,
+        staffMasterMap: dataset.staffMasterMap,
+        changeMap: dataset.changeMap,
+        eventMap: dataset.eventMap,
+        specialWeekMap: dataset.specialWeekMap,
+        actualPlanMap: dataset.actualPlanMap,
+        loadedAt: dataset.loadedAt
+        // expectedByPidDate は除外（再生成可能なため）
+      };
+      var lightJson = JSON.stringify(lightDataset);
+      if (lightJson.length / 1024 <= 95) {
+        cache.put(cacheKey, lightJson, AUDIT_CONFIG.CACHE_TTL_SEC);
+      }
+      // それでも大きい場合はキャッシュを諦める
+    }
+  } catch (e) {
+    // キャッシュ保存失敗は無視（サイズ超過等）
+    console.log('Cache save error (ignored): ' + e.message);
+  }
+}
+
+/**
+ * 監査データセットキャッシュをクリア
+ * @param {string} weekStartStr - 特定週のみクリア（省略時は全クリア）
+ */
+function audit_clearCache(weekStartStr) {
+  var cache = CacheService.getScriptCache();
+
+  if (weekStartStr) {
+    var cacheKey = AUDIT_CONFIG.CACHE_KEY_PREFIX + weekStartStr.replace(/\//g, '');
+    cache.remove(cacheKey);
+  } else {
+    // 全キャッシュクリア（スクリプトキャッシュ全体）
+    // 注意: 他の機能のキャッシュも消える
+    // cache.removeAll([]); // 引数が必要なため使えない
+    // 代替として、最近4週間分を消す
+    var today = new Date();
+    for (var i = -2; i <= 2; i++) {
+      var d = new Date(today);
+      d.setDate(d.getDate() + i * 7);
+      var weekStart = audit_getWeekStart_(d);
+      var tz = SpreadsheetApp.openById(SPREADSHEET_ID).getSpreadsheetTimeZone();
+      var dateStr = audit_formatDateStr_(weekStart, tz);
+      if (dateStr) {
+        var key = AUDIT_CONFIG.CACHE_KEY_PREFIX + dateStr.replace(/\//g, '');
+        cache.remove(key);
+      }
+    }
+  }
 }
