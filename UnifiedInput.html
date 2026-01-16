@@ -161,6 +161,105 @@
     .unused-column { background: #f5f5f0 !important; color: #888; }
     .unused-mark { color: #e67e22; font-weight: bold; font-size: 10px; vertical-align: super; cursor: help; }
     /* ============================================================
+       監査（合否判定）ビュー
+       ============================================================ */
+    .audit-controls {
+      display: flex; align-items: center; gap: 16px; padding: 12px 0;
+      border-bottom: 1px solid var(--color-border); margin-bottom: 12px;
+    }
+    .audit-controls label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .audit-controls input[type="date"] {
+      padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 6px; font-size: 13px;
+    }
+    .audit-legend { font-size: 12px; color: var(--color-text-light); margin-left: auto; }
+    .audit-ok { color: #4CAF50; font-weight: bold; }
+    .audit-warn { color: #FF9800; font-weight: bold; }
+    .audit-ng { color: #F44336; font-weight: bold; }
+    .audit-main { display: flex; gap: 16px; flex: 1; overflow: hidden; }
+    .audit-week-view { flex: 1; overflow: auto; border: 1px solid var(--color-green-light); border-radius: 8px; }
+    .audit-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    .audit-table th {
+      position: sticky; top: 0; background: var(--color-blue); color: var(--color-white);
+      padding: 10px 12px; text-align: center; font-weight: 600; border: 1px solid var(--color-blue-dark);
+      white-space: nowrap; z-index: 10; min-width: 100px;
+    }
+    .audit-table th:first-child { min-width: 120px; text-align: left; }
+    .audit-table td {
+      border: 1px solid var(--color-border); padding: 8px; vertical-align: top;
+      background: var(--color-white); cursor: pointer; min-height: 60px;
+    }
+    .audit-table td:first-child { font-weight: 500; background: var(--color-bg); }
+    .audit-table td:hover { background: var(--color-blue-light); }
+    .audit-cell-summary { display: flex; gap: 8px; font-size: 11px; justify-content: center; }
+    .audit-cell-summary .ok { color: #4CAF50; }
+    .audit-cell-summary .warn { color: #FF9800; }
+    .audit-cell-summary .ng { color: #F44336; }
+    .audit-detail-panel {
+      width: 320px; border: 1px solid var(--color-border); border-radius: 8px;
+      background: var(--color-white); display: flex; flex-direction: column; overflow: hidden;
+    }
+    .audit-detail-header {
+      background: var(--color-green); color: var(--color-white); padding: 10px 14px;
+      display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 13px;
+    }
+    .audit-close-btn {
+      background: none; border: none; color: inherit; font-size: 18px; cursor: pointer; padding: 0 4px;
+    }
+    .audit-close-btn:hover { opacity: 0.7; }
+    .audit-detail-content { flex: 1; overflow-y: auto; padding: 12px; }
+    .audit-patient-item {
+      display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px;
+      border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    .audit-patient-item:hover { background: var(--color-blue-light); }
+    .audit-patient-item .status { font-size: 14px; }
+    .audit-patient-item .status.ok { color: #4CAF50; }
+    .audit-patient-item .status.warn { color: #FF9800; }
+    .audit-patient-item .status.ng { color: #F44336; }
+    .audit-patient-item .name { flex: 1; }
+    .audit-patient-item .tags { font-size: 10px; color: var(--color-text-light); }
+    .audit-patient-modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .audit-modal-content {
+      background: var(--color-white); border-radius: 12px; width: 90%; max-width: 700px;
+      max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .audit-modal-header {
+      background: var(--color-green); color: var(--color-white); padding: 14px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-weight: 600; font-size: 15px; border-radius: 12px 12px 0 0;
+    }
+    .audit-modal-body { flex: 1; overflow-y: auto; padding: 20px; }
+    .audit-section { margin-bottom: 20px; }
+    .audit-section-title {
+      font-size: 13px; font-weight: 600; color: var(--color-text);
+      border-bottom: 2px solid var(--color-green); padding-bottom: 6px; margin-bottom: 10px;
+    }
+    .audit-info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .audit-info-item { font-size: 12px; }
+    .audit-info-item .label { color: var(--color-text-light); }
+    .audit-info-item .value { font-weight: 500; }
+    .audit-day-row {
+      display: flex; align-items: flex-start; gap: 12px; padding: 10px;
+      border: 1px solid var(--color-border); border-radius: 6px; margin-bottom: 8px;
+    }
+    .audit-day-row .date { font-weight: 600; min-width: 80px; }
+    .audit-day-row .status-icon { font-size: 16px; }
+    .audit-day-row .status-icon.ok { color: #4CAF50; }
+    .audit-day-row .status-icon.warn { color: #FF9800; }
+    .audit-day-row .status-icon.ng { color: #F44336; }
+    .audit-day-row .details { flex: 1; font-size: 12px; }
+    .audit-day-row .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+    .audit-tag {
+      font-size: 10px; padding: 2px 6px; border-radius: 4px;
+      background: var(--color-bg); border: 1px solid var(--color-border);
+    }
+    .audit-tag.ok { background: #E8F5E9; border-color: #4CAF50; color: #2E7D32; }
+    .audit-tag.warn { background: #FFF3E0; border-color: #FF9800; color: #E65100; }
+    .audit-tag.ng { background: #FFEBEE; border-color: #F44336; color: #C62828; }
+    /* ============================================================
        チャットウィザード
        ============================================================ */
     .wizard-panel {
@@ -512,6 +611,39 @@
           </div>
         </div>
         <div id="specialWeekArea" style="display:none;"></div>
+        <div id="auditArea" style="display:none;">
+          <div class="audit-controls">
+            <label>週開始日:
+              <input type="date" id="auditWeekStart" onchange="loadAuditData()">
+            </label>
+            <button class="refresh-btn" onclick="loadAuditData()">更新</button>
+            <span class="audit-legend">凡例: <span class="audit-ok">○OK</span> <span class="audit-warn">△WARN</span> <span class="audit-ng">×NG</span></span>
+          </div>
+          <div class="audit-main">
+            <div class="audit-week-view">
+              <table class="audit-table" id="auditWeekTable">
+                <thead><tr><th>スタッフ</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="audit-detail-panel" id="auditDetailPanel" style="display:none;">
+              <div class="audit-detail-header">
+                <span id="auditDetailTitle">セル詳細</span>
+                <button class="audit-close-btn" onclick="closeAuditDetail()">×</button>
+              </div>
+              <div class="audit-detail-content" id="auditDetailContent"></div>
+            </div>
+          </div>
+          <div class="audit-patient-modal" id="auditPatientModal" style="display:none;">
+            <div class="audit-modal-content">
+              <div class="audit-modal-header">
+                <span id="auditModalTitle">患者詳細</span>
+                <button class="audit-close-btn" onclick="closeAuditPatientModal()">×</button>
+              </div>
+              <div class="audit-modal-body" id="auditModalBody"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -559,6 +691,7 @@
       <button class="tab-btn" data-sheet="イベントリクエスト" onclick="showSheet('イベントリクエスト', this)">イベント</button>
       <button class="tab-btn" data-sheet="スタッフ同行割付" onclick="showSheet('スタッフ同行割付', this)">同行割付</button>
       <button class="tab-btn" data-sheet="特別訪問週間" onclick="showSpecialWeekSheet(this)">特別訪問週間</button>
+      <button class="tab-btn" data-sheet="監査" onclick="showAuditView(this)">監査</button>
     </div>
     <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
   </div>
@@ -3126,6 +3259,441 @@
         })
         .input_saveSpecialWeekWizard(payload);
     }
+
+    // ============================================================
+    // 監査（合否判定）ビュー
+    // ============================================================
+    var isAuditMode = false;
+    var auditState = {
+      weekStartStr: null,
+      data: null,
+      selectedCell: null
+    };
+
+    function showAuditView(btn) {
+      if (isDirty && !confirm('未保存の変更があります。破棄してよろしいですか？')) return;
+
+      // タブ切り替え
+      document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+
+      // モード切り替え
+      isSpecialWeekMode = false;
+      isAuditMode = true;
+
+      // エリア表示切替
+      document.getElementById('normalTableArea').style.display = 'none';
+      document.getElementById('specialWeekArea').style.display = 'none';
+      document.getElementById('auditArea').style.display = 'flex';
+      document.getElementById('auditArea').style.flexDirection = 'column';
+      document.getElementById('auditArea').style.flex = '1';
+
+      // 右パネルを非表示（監査は読み取り専用）
+      document.querySelector('.right-panel').style.display = 'none';
+
+      // ステータスバー更新
+      document.getElementById('statusText').textContent = '監査ビュー';
+      document.getElementById('infoSheetName').textContent = '監査';
+
+      // 週開始日を初期化（今週の月曜）
+      var today = new Date();
+      var day = today.getDay();
+      var diff = (day === 0) ? -6 : 1 - day;
+      var monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      var dateInput = document.getElementById('auditWeekStart');
+      dateInput.value = formatDateISO(monday);
+
+      loadAuditData();
+    }
+
+    function formatDateISO(d) {
+      var y = d.getFullYear();
+      var m = ('0' + (d.getMonth() + 1)).slice(-2);
+      var dd = ('0' + d.getDate()).slice(-2);
+      return y + '-' + m + '-' + dd;
+    }
+
+    function formatDateSlash(d) {
+      var y = d.getFullYear();
+      var m = ('0' + (d.getMonth() + 1)).slice(-2);
+      var dd = ('0' + d.getDate()).slice(-2);
+      return y + '/' + m + '/' + dd;
+    }
+
+    function loadAuditData() {
+      var dateInput = document.getElementById('auditWeekStart');
+      var dateVal = dateInput.value;
+      if (!dateVal) return;
+
+      var parts = dateVal.split('-');
+      var weekStartStr = parts[0] + '/' + parts[1] + '/' + parts[2];
+      auditState.weekStartStr = weekStartStr;
+
+      document.getElementById('statusText').textContent = '監査データ読み込み中...';
+      document.getElementById('statusText').className = 'status-text loading';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.error) {
+            document.getElementById('statusText').textContent = 'エラー: ' + result.error;
+            document.getElementById('statusText').className = 'status-text error';
+            return;
+          }
+          auditState.data = result;
+          renderAuditWeekView(result);
+          document.getElementById('statusText').textContent = '監査ビュー: ' + weekStartStr + ' 〜 ' + (result.weekEndStr || '');
+          document.getElementById('statusText').className = 'status-text';
+        })
+        .withFailureHandler(function(e) {
+          document.getElementById('statusText').textContent = 'エラー: ' + (e.message || String(e));
+          document.getElementById('statusText').className = 'status-text error';
+        })
+        .audit_getWeekSummary(weekStartStr);
+    }
+
+    function renderAuditWeekView(data) {
+      var table = document.getElementById('auditWeekTable');
+      var thead = table.querySelector('thead');
+      var tbody = table.querySelector('tbody');
+
+      // ヘッダー行（曜日）
+      var weekDates = data.weekDates || [];
+      var headerHtml = '<tr><th>スタッフ</th>';
+      var youbiLabels = { 'Mon': '月', 'Tue': '火', 'Wed': '水', 'Thu': '木', 'Fri': '金', 'Sat': '土', 'Sun': '日' };
+      weekDates.forEach(function(wd) {
+        var label = youbiLabels[wd.youbi] || wd.youbi;
+        var dateLabel = wd.dateStr.substring(5);
+        headerHtml += '<th>' + label + '<br><small>' + dateLabel + '</small></th>';
+      });
+      headerHtml += '</tr>';
+      thead.innerHTML = headerHtml;
+
+      // スタッフ行
+      var staffList = data.staffList || [];
+      var cellSummary = data.cellSummary || {};
+      var bodyHtml = '';
+
+      staffList.forEach(function(staff) {
+        bodyHtml += '<tr>';
+        bodyHtml += '<td>' + staff.name + '<br><small>' + staff.staffId + '</small></td>';
+
+        weekDates.forEach(function(wd) {
+          var sdKey = staff.staffId + '|' + wd.dateStr;
+          var items = cellSummary[sdKey] || [];
+
+          var okCount = 0, warnCount = 0, ngCount = 0;
+          items.forEach(function(item) {
+            if (item.status === 'OK') okCount++;
+            else if (item.status === 'WARN') warnCount++;
+            else if (item.status === 'NG') ngCount++;
+          });
+
+          var cellContent = '';
+          if (items.length > 0) {
+            cellContent = '<div class="audit-cell-summary">';
+            if (okCount > 0) cellContent += '<span class="ok">○' + okCount + '</span>';
+            if (warnCount > 0) cellContent += '<span class="warn">△' + warnCount + '</span>';
+            if (ngCount > 0) cellContent += '<span class="ng">×' + ngCount + '</span>';
+            cellContent += '</div>';
+          } else {
+            cellContent = '<span style="color:#ccc;">-</span>';
+          }
+
+          bodyHtml += '<td onclick="showAuditCellDetail(\'' + staff.staffId + '\', \'' + wd.dateStr + '\')">' + cellContent + '</td>';
+        });
+
+        bodyHtml += '</tr>';
+      });
+
+      // 未割当行
+      bodyHtml += '<tr>';
+      bodyHtml += '<td style="color:#F44336;">未割当</td>';
+      weekDates.forEach(function(wd) {
+        var sdKey = '_UNASSIGNED_|' + wd.dateStr;
+        var items = cellSummary[sdKey] || [];
+
+        var cellContent = '';
+        if (items.length > 0) {
+          cellContent = '<div class="audit-cell-summary"><span class="ng">×' + items.length + '</span></div>';
+        } else {
+          cellContent = '<span style="color:#ccc;">-</span>';
+        }
+
+        bodyHtml += '<td onclick="showAuditCellDetail(\'_UNASSIGNED_\', \'' + wd.dateStr + '\')">' + cellContent + '</td>';
+      });
+      bodyHtml += '</tr>';
+
+      tbody.innerHTML = bodyHtml;
+    }
+
+    function showAuditCellDetail(staffId, dateStr) {
+      auditState.selectedCell = { staffId: staffId, dateStr: dateStr };
+
+      var panel = document.getElementById('auditDetailPanel');
+      var content = document.getElementById('auditDetailContent');
+      var title = document.getElementById('auditDetailTitle');
+
+      var staffName = staffId;
+      if (staffId === '_UNASSIGNED_') {
+        staffName = '未割当';
+      } else if (auditState.data && auditState.data.staffList) {
+        var s = auditState.data.staffList.find(function(x) { return x.staffId === staffId; });
+        if (s) staffName = s.name;
+      }
+
+      title.textContent = staffName + ' / ' + dateStr;
+      content.innerHTML = '<div style="text-align:center;color:#999;">読み込み中...</div>';
+      panel.style.display = 'flex';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.error) {
+            content.innerHTML = '<div style="color:#F44336;">エラー: ' + result.error + '</div>';
+            return;
+          }
+          renderAuditCellDetail(result);
+        })
+        .withFailureHandler(function(e) {
+          content.innerHTML = '<div style="color:#F44336;">エラー: ' + (e.message || String(e)) + '</div>';
+        })
+        .audit_getCellDetail(staffId, dateStr, auditState.weekStartStr);
+    }
+
+    function renderAuditCellDetail(data) {
+      var content = document.getElementById('auditDetailContent');
+      var items = data.items || [];
+
+      if (items.length === 0) {
+        content.innerHTML = '<div style="text-align:center;color:#999;">この日の訪問はありません</div>';
+        return;
+      }
+
+      var html = '';
+      items.forEach(function(item) {
+        var statusClass = item.status.toLowerCase();
+        var statusIcon = item.status === 'OK' ? '○' : (item.status === 'WARN' ? '△' : '×');
+
+        html += '<div class="audit-patient-item" onclick="showAuditPatientDetail(\'' + item.pid + '\')">';
+        html += '<span class="status ' + statusClass + '">' + statusIcon + '</span>';
+        html += '<span class="name">' + (item.pname || item.pid) + '</span>';
+        html += '<span style="font-size:11px;color:#666;">' + (item.startStr || '') + '-' + (item.endStr || '') + '</span>';
+        html += '</div>';
+
+        if (item.tags && item.tags.length > 0) {
+          html += '<div style="margin:-4px 0 8px 28px;"><span class="tags">';
+          item.tags.forEach(function(tag) {
+            var tagClass = '';
+            if (tag.indexOf('CONFLICT') >= 0 || tag.indexOf('UNASSIGNED') >= 0 || tag.indexOf('CANCELLED_BUT') >= 0 || tag.indexOf('OUT_OF') >= 0) {
+              tagClass = 'ng';
+            } else if (tag.indexOf('DIFF') >= 0 || tag.indexOf('MISSING') >= 0 || tag.indexOf('EXTRA') >= 0) {
+              tagClass = 'warn';
+            } else {
+              tagClass = 'ok';
+            }
+            html += '<span class="audit-tag ' + tagClass + '">' + tag + '</span> ';
+          });
+          html += '</span></div>';
+        }
+      });
+
+      content.innerHTML = html;
+    }
+
+    function closeAuditDetail() {
+      document.getElementById('auditDetailPanel').style.display = 'none';
+      auditState.selectedCell = null;
+    }
+
+    function showAuditPatientDetail(pid) {
+      var modal = document.getElementById('auditPatientModal');
+      var body = document.getElementById('auditModalBody');
+      var title = document.getElementById('auditModalTitle');
+
+      title.textContent = '患者詳細: ' + pid;
+      body.innerHTML = '<div style="text-align:center;color:#999;padding:40px;">読み込み中...</div>';
+      modal.style.display = 'flex';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.error) {
+            body.innerHTML = '<div style="color:#F44336;padding:20px;">エラー: ' + result.error + '</div>';
+            return;
+          }
+          renderAuditPatientDetail(result);
+        })
+        .withFailureHandler(function(e) {
+          body.innerHTML = '<div style="color:#F44336;padding:20px;">エラー: ' + (e.message || String(e)) + '</div>';
+        })
+        .audit_getPatientDetail(pid, auditState.weekStartStr);
+    }
+
+    function renderAuditPatientDetail(data) {
+      var body = document.getElementById('auditModalBody');
+      var title = document.getElementById('auditModalTitle');
+
+      title.textContent = '患者詳細: ' + (data.pname || data.pid);
+
+      var html = '';
+
+      // 患者マスタ情報
+      if (data.master) {
+        html += '<div class="audit-section">';
+        html += '<div class="audit-section-title">患者マスタ</div>';
+        html += '<div class="audit-info-grid">';
+        html += '<div class="audit-info-item"><span class="label">時間タイプ:</span> <span class="value">' + (data.master.timeType || '-') + '</span></div>';
+        html += '<div class="audit-info-item"><span class="label">希望曜日:</span> <span class="value">' + (data.master.prefDays && data.master.prefDays.length > 0 ? data.master.prefDays.join(',') : '-') + '</span></div>';
+        html += '<div class="audit-info-item"><span class="label">曜日NG:</span> <span class="value">' + (data.master.ngDays && data.master.ngDays.length > 0 ? data.master.ngDays.join(',') : '-') + '</span></div>';
+        html += '<div class="audit-info-item"><span class="label">希望時間:</span> <span class="value">' + (data.master.startPrefStr || '-') + ' - ' + (data.master.endPrefStr || '-') + '</span></div>';
+        html += '<div class="audit-info-item"><span class="label">サービス:</span> <span class="value">' + (data.master.svcMin || '-') + '分</span></div>';
+        html += '</div></div>';
+      }
+
+      // 個別変更
+      if (data.changes && data.changes.length > 0) {
+        html += '<div class="audit-section">';
+        html += '<div class="audit-section-title">個別変更リクエスト</div>';
+        data.changes.forEach(function(ch) {
+          html += '<div style="font-size:12px;margin-bottom:6px;padding:6px;background:#FFF3E0;border-radius:4px;">';
+          html += '<strong>' + ch.dateStr + '</strong> ' + ch.op;
+          if (ch.newStartStr || ch.newEndStr) {
+            html += ' (' + (ch.newStartStr || '') + '-' + (ch.newEndStr || '') + ')';
+          }
+          if (ch.note) html += ' <span style="color:#666;">' + ch.note + '</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      // 特別訪問週間
+      if (data.specialWeek) {
+        html += '<div class="audit-section">';
+        html += '<div class="audit-section-title">特別訪問週間 (' + data.specialWeek.modes.join('/') + ')</div>';
+        data.specialWeek.details.forEach(function(sp) {
+          html += '<div style="font-size:12px;margin-bottom:4px;">';
+          html += '<strong>' + sp.dateStr + '</strong> ' + sp.rowLabel + ' ' + sp.timeType;
+          if (sp.startStr || sp.endStr) html += ' ' + sp.startStr + '-' + sp.endStr;
+          else if (sp.earliestStr || sp.latestStr) html += ' ' + sp.earliestStr + '-' + sp.latestStr;
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      // イベント
+      if (data.events && data.events.length > 0) {
+        html += '<div class="audit-section">';
+        html += '<div class="audit-section-title">患者紐づきイベント</div>';
+        data.events.forEach(function(ev) {
+          html += '<div style="font-size:12px;margin-bottom:4px;padding:6px;background:#E3F2FD;border-radius:4px;">';
+          html += '<strong>' + ev.dateStr + '</strong> ' + ev.startStr + '-' + ev.endStr + ' ' + ev.title;
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      // 日別判定
+      html += '<div class="audit-section">';
+      html += '<div class="audit-section-title">合否判定（週間）</div>';
+      (data.dayJudgements || []).forEach(function(dj) {
+        var statusClass = dj.status.toLowerCase();
+        var statusIcon = dj.status === 'OK' ? '○' : (dj.status === 'WARN' ? '△' : '×');
+
+        html += '<div class="audit-day-row">';
+        html += '<span class="date">' + dj.dateStr.substring(5) + ' (' + dj.youbi + ')</span>';
+        html += '<span class="status-icon ' + statusClass + '">' + statusIcon + '</span>';
+        html += '<div class="details">';
+
+        if (dj.hasActual) {
+          html += '<div>実績: ';
+          dj.actuals.forEach(function(a, i) {
+            if (i > 0) html += ', ';
+            html += a.startStr + '-' + a.endStr;
+            if (a.staffName) html += ' (' + a.staffName + ')';
+            if (a.isUnassigned) html += ' <span style="color:#F44336;">[未割当]</span>';
+          });
+          html += '</div>';
+        } else {
+          html += '<div style="color:#999;">実績なし</div>';
+        }
+
+        if (dj.hasChange) {
+          html += '<div style="color:#FF9800;">変更: ' + dj.change.op;
+          if (dj.change.newStartStr || dj.change.newEndStr) {
+            html += ' ' + dj.change.newStartStr + '-' + dj.change.newEndStr;
+          }
+          html += '</div>';
+        }
+
+        if (dj.hasSpecial) {
+          html += '<div style="color:#9C27B0;">特別: ';
+          dj.specials.forEach(function(sp, i) {
+            if (i > 0) html += ', ';
+            html += sp.mode + '(' + sp.timeType + ')';
+          });
+          html += '</div>';
+        }
+
+        if (dj.hasEvents) {
+          html += '<div style="color:#2196F3;">イベント: ';
+          dj.events.forEach(function(ev, i) {
+            if (i > 0) html += ', ';
+            html += ev.startStr + '-' + ev.endStr + ' ' + ev.title;
+          });
+          html += '</div>';
+        }
+
+        if (dj.tags && dj.tags.length > 0) {
+          html += '<div class="tags">';
+          dj.tags.forEach(function(tag) {
+            var tagClass = '';
+            if (tag.indexOf('CONFLICT') >= 0 || tag.indexOf('UNASSIGNED') >= 0 || tag.indexOf('CANCELLED_BUT') >= 0 || tag.indexOf('OUT_OF') >= 0) {
+              tagClass = 'ng';
+            } else if (tag.indexOf('DIFF') >= 0 || tag.indexOf('MISSING') >= 0 || tag.indexOf('EXTRA') >= 0) {
+              tagClass = 'warn';
+            } else {
+              tagClass = 'ok';
+            }
+            html += '<span class="audit-tag ' + tagClass + '">' + tag + '</span> ';
+          });
+          html += '</div>';
+        }
+
+        html += '</div></div>';
+      });
+      html += '</div>';
+
+      body.innerHTML = html;
+    }
+
+    function closeAuditPatientModal() {
+      document.getElementById('auditPatientModal').style.display = 'none';
+    }
+
+    // 監査モードから他のシートに戻る時の処理
+    var originalShowSheet = showSheet;
+    showSheet = function(sheetName, btn) {
+      if (isAuditMode) {
+        isAuditMode = false;
+        document.getElementById('auditArea').style.display = 'none';
+        document.getElementById('normalTableArea').style.display = 'block';
+        document.querySelector('.right-panel').style.display = 'flex';
+        closeAuditDetail();
+        closeAuditPatientModal();
+      }
+      originalShowSheet(sheetName, btn);
+    };
+
+    var originalShowSpecialWeekSheet = showSpecialWeekSheet;
+    showSpecialWeekSheet = function(btn) {
+      if (isAuditMode) {
+        isAuditMode = false;
+        document.getElementById('auditArea').style.display = 'none';
+        document.querySelector('.right-panel').style.display = 'flex';
+        closeAuditDetail();
+        closeAuditPatientModal();
+      }
+      originalShowSpecialWeekSheet(btn);
+    };
 
   </script>
 </body>
