@@ -988,6 +988,7 @@
     // 監査（合否判定）ビュー
     // ============================================================
     var isAuditMode = false;
+    var auditLoading = false; // ローディングガード（多重呼び出し防止）
     var auditState = {
       weekStartStr: null,
       data: null,
@@ -996,6 +997,12 @@
     };
 
     function showAuditView() {
+      // 既に監査モードでデータがある場合は表示のみ
+      if (isAuditMode && auditState.data) {
+        console.log('showAuditView: 既に監査モード、データあり');
+        return;
+      }
+
       // タブの選択状態を解除
       document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) { b.classList.remove('active'); });
 
@@ -1014,14 +1021,16 @@
       // ステータスバー更新
       setStatus('', '監査ビュー');
 
-      // 週開始日を初期化（今週の月曜）
-      var today = new Date();
-      var day = today.getDay();
-      var diff = (day === 0) ? -6 : 1 - day;
-      var monday = new Date(today);
-      monday.setDate(today.getDate() + diff);
+      // 週開始日を初期化（今週の月曜）- 初回のみ
       var dateInput = document.getElementById('auditWeekStart');
-      dateInput.value = formatDateISO(monday);
+      if (!dateInput.value) {
+        var today = new Date();
+        var day = today.getDay();
+        var diff = (day === 0) ? -6 : 1 - day;
+        var monday = new Date(today);
+        monday.setDate(today.getDate() + diff);
+        dateInput.value = formatDateISO(monday);
+      }
 
       loadAuditData();
     }
@@ -1041,6 +1050,12 @@
     }
 
     function loadAuditData() {
+      // 多重呼び出し防止
+      if (auditLoading) {
+        console.log('loadAuditData: 既にロード中のためスキップ');
+        return;
+      }
+
       var dateInput = document.getElementById('auditWeekStart');
       var dateVal = dateInput.value;
       if (!dateVal) {
@@ -1052,11 +1067,13 @@
       var weekStartStr = parts[0] + '/' + parts[1] + '/' + parts[2];
       auditState.weekStartStr = weekStartStr;
 
+      auditLoading = true; // ローディング開始
       console.log('loadAuditData: 開始', weekStartStr);
       setStatus('loading', '監査データ読み込み中...');
 
       google.script.run
         .withSuccessHandler(function(result) {
+          auditLoading = false; // ローディング終了
           console.log('loadAuditData: GAS応答受信', result ? 'OK' : 'null');
           try {
             if (!result) {
@@ -1080,6 +1097,7 @@
           }
         })
         .withFailureHandler(function(e) {
+          auditLoading = false; // ローディング終了
           console.error('loadAuditData: GASエラー', e);
           setStatus('error', 'サーバーエラー: ' + (e.message || String(e)));
         })
