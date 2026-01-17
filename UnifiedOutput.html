@@ -285,6 +285,20 @@
       background: var(--color-yellow);
     }
 
+    .action-btn.audit {
+      background: var(--color-green);
+      color: var(--color-white);
+      box-shadow: 0 2px 4px rgba(106, 168, 79, 0.3);
+    }
+    .action-btn.audit:hover:not(:disabled) {
+      background: var(--color-green-dark);
+      transform: translateY(-1px);
+    }
+    .action-btn.audit.active {
+      background: var(--color-green-dark);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
     .action-btn .spinner {
       display: none;
       width: 14px;
@@ -661,6 +675,14 @@
         </button>
       </div>
 
+      <div class="button-group">
+        <div class="button-group-title">監査</div>
+        <button class="action-btn audit" id="auditNavBtn" onclick="showAuditView()">
+          <span class="icon">✓</span>
+          監査ビューを開く
+        </button>
+      </div>
+
       <div class="log-section">
         <div class="log-title">
           <span>最近の実行ログ</span>
@@ -679,7 +701,6 @@
       <button class="tab-btn" data-tab="assignResult" onclick="showTab('assignResult', this)">割当結果</button>
       <button class="tab-btn" data-tab="assignNg" onclick="showTab('assignNg', this)">割当不可</button>
       <button class="tab-btn" data-tab="routeSummary" onclick="showTab('routeSummary', this)">ルートサマリ</button>
-      <button class="tab-btn" data-tab="audit" onclick="showAuditView(this)">監査</button>
     </div>
     <div class="tabs-right">
       <a class="nav-link" id="inputLink" onclick="goToInput()">入力管理画面へ →</a>
@@ -716,6 +737,15 @@
     // タブ切替
     // ============================================================
     function showTab(tabKey, btn) {
+      // 監査モードからの復帰処理
+      if (isAuditMode) {
+        isAuditMode = false;
+        document.getElementById('auditArea').style.display = 'none';
+        document.getElementById('mainContent').style.display = 'block';
+        var navBtn = document.getElementById('auditNavBtn');
+        if (navBtn) navBtn.classList.remove('active');
+      }
+
       document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) {
         b.classList.remove('active');
       });
@@ -965,10 +995,13 @@
       filter: 'all'
     };
 
-    function showAuditView(btn) {
-      // タブ切り替え
+    function showAuditView() {
+      // タブの選択状態を解除
       document.querySelectorAll('.tabs-left .tab-btn').forEach(function(b) { b.classList.remove('active'); });
-      btn.classList.add('active');
+
+      // ナビボタンをアクティブに
+      var navBtn = document.getElementById('auditNavBtn');
+      if (navBtn) navBtn.classList.add('active');
 
       // モード切り替え
       isAuditMode = true;
