@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+      padding: 16px;
+      background: #f5f5f5;
+    }
+    h2 {
+      color: #333;
+      font-size: 18px;
+      margin-bottom: 16px;
+      border-bottom: 2px solid #4285f4;
+      padding-bottom: 8px;
+    }
+    .section {
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .section-title {
+      font-weight: bold;
+      color: #444;
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+      color: #666;
+    }
+    select, input {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 8px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    .btn-primary {
+      background: #4285f4;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #3367d6;
+    }
+    .btn-success {
+      background: #34a853;
+      color: white;
+    }
+    .btn-success:hover {
+      background: #2d8e47;
+    }
+    .btn-warning {
+      background: #fbbc04;
+      color: #333;
+    }
+    .btn-warning:hover {
+      background: #f0a800;
+    }
+    .btn-danger {
+      background: #ea4335;
+      color: white;
+    }
+    .btn-danger:hover {
+      background: #d33426;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #resultArea {
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 12px;
+      min-height: 80px;
+      white-space: pre-wrap;
+      font-size: 13px;
+      color: #333;
+    }
+    #statusIndicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    .status-ready { background: #34a853; }
+    .status-busy { background: #fbbc04; }
+    .status-error { background: #ea4335; }
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+    .loading.show {
+      display: block;
+    }
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #4285f4;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <h2>カイポケ自動化</h2>
+
+  <!-- サーバー状態 -->
+  <div class="section">
+    <div class="section-title">
+      <span id="statusIndicator" class="status-error"></span>
+      <span id="statusText">確認中...</span>
+    </div>
+    <button class="btn-primary" onclick="refreshStatus()">状態を更新</button>
+  </div>
+
+  <!-- 月選択 -->
+  <div class="section">
+    <div class="section-title">対象月</div>
+    <select id="targetMonth">
+      <option value="2026-01">2026年1月</option>
+      <option value="2026-02">2026年2月</option>
+      <option value="2026-03">2026年3月</option>
+      <option value="2026-04">2026年4月</option>
+      <option value="2026-05">2026年5月</option>
+      <option value="2026-06">2026年6月</option>
+      <option value="2026-07">2026年7月</option>
+      <option value="2026-08">2026年8月</option>
+      <option value="2026-09">2026年9月</option>
+      <option value="2026-10">2026年10月</option>
+      <option value="2026-11">2026年11月</option>
+      <option value="2026-12">2026年12月</option>
+    </select>
+
+    <label>対象週の開始日（差分適用時に必要）</label>
+    <input type="date" id="weekStart" value="2026-01-20">
+  </div>
+
+  <!-- 操作ボタン -->
+  <div class="section">
+    <div class="section-title">自動化操作</div>
+
+    <button class="btn-primary" onclick="onExpandClick()">
+      1. 月間スケジュール展開
+    </button>
+
+    <button class="btn-success" onclick="onExportClick()">
+      2. CSV出力（Driveに保存）
+    </button>
+
+    <button class="btn-warning" onclick="onDiffClick()">
+      3. 差分確認（プレビュー）
+    </button>
+
+    <button class="btn-danger" onclick="onApplyClick()">
+      4. 差分適用（カイポケに反映）
+    </button>
+  </div>
+
+  <!-- ローディング表示 -->
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <div id="loadingText">処理中...</div>
+  </div>
+
+  <!-- 結果表示 -->
+  <div class="section">
+    <div class="section-title">実行結果</div>
+    <div id="resultArea">ボタンをクリックして操作を開始してください</div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 初期化
+    // ==========================================
+    window.onload = function() {
+      // 現在の月をデフォルト選択
+      var now = new Date();
+      var currentMonth = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2);
+      var monthSelect = document.getElementById("targetMonth");
+      for (var i = 0; i < monthSelect.options.length; i++) {
+        if (monthSelect.options[i].value === currentMonth) {
+          monthSelect.selectedIndex = i;
+          break;
+        }
+      }
+      // 週開始日も今月の20日に設定
+      document.getElementById("weekStart").value = currentMonth + "-20";
+
+      refreshStatus();
+    };
+
+    // ==========================================
+    // UI操作
+    // ==========================================
+    function showLoading(message) {
+      document.getElementById("loading").className = "loading show";
+      document.getElementById("loadingText").innerText = message || "処理中...";
+      disableAllButtons(true);
+    }
+
+    function hideLoading() {
+      document.getElementById("loading").className = "loading";
+      disableAllButtons(false);
+    }
+
+    function disableAllButtons(disabled) {
+      var buttons = document.querySelectorAll("button");
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = disabled;
+      }
+    }
+
+    function showResult(message, isError) {
+      var area = document.getElementById("resultArea");
+      area.innerText = message;
+      area.style.color = isError ? "#ea4335" : "#333";
+    }
+
+    function getSelectedMonth() {
+      return document.getElementById("targetMonth").value;
+    }
+
+    function getWeekStart() {
+      return document.getElementById("weekStart").value;
+    }
+
+    // ==========================================
+    // サーバー状態確認
+    // ==========================================
+    function refreshStatus() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          var indicator = document.getElementById("statusIndicator");
+          var text = document.getElementById("statusText");
+
+          if (result.status === "ready") {
+            indicator.className = "status-ready";
+            text.innerText = result.message;
+          } else if (result.status === "busy") {
+            indicator.className = "status-busy";
+            text.innerText = result.message;
+          } else {
+            indicator.className = "status-error";
+            text.innerText = result.message;
+          }
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById("statusIndicator").className = "status-error";
+          document.getElementById("statusText").innerText = "エラー: " + error.message;
+        })
+        .checkServerStatus();
+    }
+
+    // ==========================================
+    // 月間スケジュール展開
+    // ==========================================
+    function onExpandClick() {
+      if (!confirm("月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）")) {
+        return;
+      }
+
+      showLoading("月間スケジュール展開中...\n（61名分、約2〜5分かかります）");
+      showResult("処理開始...");
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          showResult(result.message, !result.success);
+          refreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showResult("エラー: " + error.message, true);
+          refreshStatus();
+        })
+        .runExpand(getSelectedMonth());
+    }
+
+    // ==========================================
+    // CSV出力
+    // ==========================================
+    function onExportClick() {
+      if (!confirm("CSVを出力してGoogle Driveに保存しますか？")) {
+        return;
+      }
+
+      showLoading("CSV出力中...");
+      showResult("処理開始...");
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          showResult(result.message, !result.success);
+          refreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showResult("エラー: " + error.message, true);
+          refreshStatus();
+        })
+        .runExport(getSelectedMonth());
+    }
+
+    // ==========================================
+    // 差分確認
+    // ==========================================
+    function onDiffClick() {
+      var weekStart = getWeekStart();
+      if (!weekStart) {
+        alert("対象週の開始日を入力してください");
+        return;
+      }
+
+      showLoading("差分確認中...");
+      showResult("処理開始...");
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          showResult(result.message, !result.success);
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showResult("エラー: " + error.message, true);
+        })
+        .checkDiff(getSelectedMonth(), weekStart);
+    }
+
+    // ==========================================
+    // 差分適用
+    // ==========================================
+    function onApplyClick() {
+      var weekStart = getWeekStart();
+      if (!weekStart) {
+        alert("対象週の開始日を入力してください");
+        return;
+      }
+
+      if (!confirm("差分をカイポケに適用しますか？\n\n※ この操作は取り消せません")) {
+        return;
+      }
+
+      showLoading("差分適用中...");
+      showResult("処理開始...");
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          showResult(result.message, !result.success);
+          refreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showResult("エラー: " + error.message, true);
+          refreshStatus();
+        })
+        .runApply(getSelectedMonth(), weekStart);
+    }
+  </script>
+</body>
+</html>
