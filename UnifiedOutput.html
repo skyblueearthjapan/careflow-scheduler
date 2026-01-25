@@ -1031,12 +1031,11 @@
         dateInput.value = formatDateISO(monday);
       }
 
-      // weekStartStrを先に設定（refreshAuditDataで必要）
-      var parts = dateInput.value.split('-');
-      auditState.weekStartStr = parts[0] + '/' + parts[1] + '/' + parts[2];
+      // リトライカウントをリセット
+      auditRetryCount = 0;
 
-      // 初回はキャッシュクリア＋再取得（空応答エラー防止）
-      refreshAuditData();
+      // データ読み込み（リトライ機能付き）
+      loadAuditData();
     }
 
     function formatDateISO(d) {
@@ -1052,6 +1051,9 @@
       var dd = ('0' + d.getDate()).slice(-2);
       return y + '/' + m + '/' + dd;
     }
+
+    var auditRetryCount = 0;
+    var AUDIT_MAX_RETRY = 3;
 
     function loadAuditData() {
       // 多重呼び出し防止
@@ -1072,8 +1074,8 @@
       auditState.weekStartStr = weekStartStr;
 
       auditLoading = true; // ローディング開始
-      console.log('loadAuditData: 開始', weekStartStr);
-      setStatus('loading', '監査データ読み込み中...');
+      console.log('loadAuditData: 開始', weekStartStr, '(リトライ:', auditRetryCount, ')');
+      setStatus('loading', '監査データ読み込み中...' + (auditRetryCount > 0 ? ' (リトライ ' + auditRetryCount + ')' : ''));
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -1081,9 +1083,20 @@
           console.log('loadAuditData: GAS応答受信', result ? 'OK' : 'null');
           try {
             if (!result) {
-              setStatus('error', 'エラー: サーバーから空の応答');
+              // null応答時はリトライ
+              if (auditRetryCount < AUDIT_MAX_RETRY) {
+                auditRetryCount++;
+                console.log('loadAuditData: null応答、リトライ', auditRetryCount);
+                setTimeout(function() {
+                  loadAuditData();
+                }, 800 * auditRetryCount); // リトライ間隔を増やす
+                return;
+              }
+              auditRetryCount = 0;
+              setStatus('error', 'エラー: サーバーから空の応答（リトライ上限）');
               return;
             }
+            auditRetryCount = 0; // 成功したらリセット
             if (result.error) {
               setStatus('error', 'エラー: ' + result.error);
               return;
@@ -1096,12 +1109,14 @@
             setStatus('success', '監査ビュー: ' + weekStartStr + ' 〜 ' + (result.weekEndStr || ''));
             console.log('loadAuditData: 描画完了');
           } catch (renderErr) {
+            auditRetryCount = 0;
             console.error('loadAuditData: 描画エラー', renderErr);
             setStatus('error', '描画エラー: ' + (renderErr.message || String(renderErr)));
           }
         })
         .withFailureHandler(function(e) {
           auditLoading = false; // ローディング終了
+          auditRetryCount = 0;
           console.error('loadAuditData: GASエラー', e);
           setStatus('error', 'サーバーエラー: ' + (e.message || String(e)));
         })
