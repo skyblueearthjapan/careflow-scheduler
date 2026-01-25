@@ -1031,7 +1031,12 @@
         dateInput.value = formatDateISO(monday);
       }
 
-      loadAuditData();
+      // weekStartStrを先に設定（refreshAuditDataで必要）
+      var parts = dateInput.value.split('-');
+      auditState.weekStartStr = parts[0] + '/' + parts[1] + '/' + parts[2];
+
+      // 初回はキャッシュクリア＋再取得（空応答エラー防止）
+      refreshAuditData();
     }
 
     function formatDateISO(d) {
@@ -1104,14 +1109,32 @@
     }
 
     function refreshAuditData() {
+      // 多重呼び出し防止
+      if (auditLoading) {
+        console.log('refreshAuditData: 既にロード中のためスキップ');
+        return;
+      }
+
       if (!auditState.weekStartStr) {
         loadAuditData();
         return;
       }
-      setStatus('loading', 'キャッシュクリア中...');
+
+      auditLoading = true;
+      setStatus('loading', 'キャッシュクリア＆再読込中...');
+      console.log('refreshAuditData: キャッシュクリア開始', auditState.weekStartStr);
+
       google.script.run
-        .withSuccessHandler(function() { loadAuditData(); })
-        .withFailureHandler(function(e) { loadAuditData(); })
+        .withSuccessHandler(function() {
+          console.log('refreshAuditData: キャッシュクリア完了、データ取得開始');
+          auditLoading = false; // loadAuditDataで再設定される
+          loadAuditData();
+        })
+        .withFailureHandler(function(e) {
+          console.warn('refreshAuditData: キャッシュクリア失敗、データ取得試行', e);
+          auditLoading = false;
+          loadAuditData();
+        })
         .audit_clearCache(auditState.weekStartStr);
     }
 
