@@ -1783,13 +1783,22 @@
     }
 
     // ============================================================
-    // カイポケ自動化サイドバー
+    // カイポケ自動化（出力画面へ遷移）
     // ============================================================
     function openKaipokeRpaSidebar() {
-      google.script.run
-        .withSuccessHandler(function() {})
-        .withFailureHandler(function(e) { showToast('error', 'サイドバーの表示に失敗しました: ' + e.message); })
-        .showKaipokeRpaSidebar();
+      // カイポケ自動化は出力画面のモーダルで実行するため、出力画面へ遷移
+      var targetUrl;
+      if (baseUrl) {
+        targetUrl = baseUrl + '?page=output&kaipoke=1';
+      } else {
+        var currentUrl = window.location.href;
+        targetUrl = currentUrl.split('?')[0] + '?page=output&kaipoke=1';
+      }
+      try {
+        window.top.location.href = targetUrl;
+      } catch (e) {
+        window.location.href = targetUrl;
+      }
     }
 
     // ============================================================

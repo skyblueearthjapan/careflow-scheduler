@@ -570,6 +570,66 @@
     .audit-tag.ok { background: var(--color-green-light); border-color: var(--color-green); color: var(--color-green-dark); }
     .audit-tag.warn { background: var(--color-orange-light); border-color: var(--color-orange); color: var(--color-orange-dark); }
     .audit-tag.ng { background: rgba(232, 139, 139, 0.3); border-color: var(--color-error); color: var(--color-error); }
+
+    /* ============================================================
+       カイポケ自動化モーダル
+       ============================================================ */
+    .kaipoke-modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .kaipoke-modal.show { display: flex; }
+    .kaipoke-modal-content {
+      background: var(--color-white); border-radius: 12px; width: 400px; max-width: 90%;
+      max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .kaipoke-modal-header {
+      background: var(--color-blue); color: var(--color-white); padding: 14px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-weight: 600; font-size: 15px; border-radius: 12px 12px 0 0;
+    }
+    .kaipoke-modal-body { flex: 1; overflow-y: auto; padding: 20px; }
+    .kaipoke-section {
+      background: var(--color-bg); border-radius: 8px; padding: 16px; margin-bottom: 16px;
+    }
+    .kaipoke-section-title { font-weight: 600; color: var(--color-text); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .kaipoke-status-indicator {
+      width: 12px; height: 12px; border-radius: 50%; display: inline-block;
+    }
+    .kaipoke-status-indicator.ready { background: var(--color-success); }
+    .kaipoke-status-indicator.busy { background: var(--color-orange); }
+    .kaipoke-status-indicator.error { background: var(--color-error); }
+    .kaipoke-input-group { margin-bottom: 12px; }
+    .kaipoke-input-group label { display: block; font-size: 12px; color: var(--color-text-light); margin-bottom: 4px; }
+    .kaipoke-input-group select, .kaipoke-input-group input {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 6px;
+      font-size: 13px; box-sizing: border-box;
+    }
+    .kaipoke-btn {
+      width: 100%; padding: 12px; margin-bottom: 8px; border: none; border-radius: 8px;
+      cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;
+    }
+    .kaipoke-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .kaipoke-btn.primary { background: var(--color-blue); color: var(--color-white); }
+    .kaipoke-btn.primary:hover:not(:disabled) { background: var(--color-blue-dark); }
+    .kaipoke-btn.success { background: var(--color-success); color: var(--color-white); }
+    .kaipoke-btn.success:hover:not(:disabled) { background: var(--color-green-dark); }
+    .kaipoke-btn.warning { background: var(--color-orange); color: var(--color-white); }
+    .kaipoke-btn.warning:hover:not(:disabled) { background: var(--color-orange-dark); }
+    .kaipoke-btn.danger { background: var(--color-error); color: var(--color-white); }
+    .kaipoke-btn.danger:hover:not(:disabled) { background: #c0392b; }
+    .kaipoke-result {
+      background: var(--color-white); border: 1px solid var(--color-border); border-radius: 6px;
+      padding: 12px; min-height: 60px; white-space: pre-wrap; font-size: 12px; color: var(--color-text);
+    }
+    .kaipoke-result.error { color: var(--color-error); }
+    .kaipoke-loading { display: none; text-align: center; padding: 16px; }
+    .kaipoke-loading.show { display: block; }
+    .kaipoke-spinner {
+      border: 3px solid var(--color-border); border-top-color: var(--color-blue);
+      border-radius: 50%; width: 30px; height: 30px; animation: spin 0.8s linear infinite;
+      margin: 0 auto 10px;
+    }
   </style>
 </head>
 <body>
@@ -682,6 +742,14 @@
         </button>
       </div>
 
+      <div class="button-group">
+        <div class="button-group-title">カイポケ連携</div>
+        <button class="action-btn secondary" onclick="openKaipokeModal()">
+          <span class="icon">🤖</span>
+          カイポケ自動化
+        </button>
+      </div>
+
       <div class="log-section">
         <div class="log-title">
           <span>最近の実行ログ</span>
@@ -709,6 +777,60 @@
   <!-- トースト -->
   <div class="toast" id="toast"></div>
 
+  <!-- カイポケ自動化モーダル -->
+  <div class="kaipoke-modal" id="kaipokeModal">
+    <div class="kaipoke-modal-content">
+      <div class="kaipoke-modal-header">
+        <span>カイポケ自動化</span>
+        <button class="audit-close-btn" onclick="closeKaipokeModal()">×</button>
+      </div>
+      <div class="kaipoke-modal-body">
+        <!-- サーバー状態 -->
+        <div class="kaipoke-section">
+          <div class="kaipoke-section-title">
+            <span class="kaipoke-status-indicator error" id="kaipokeStatusIndicator"></span>
+            <span id="kaipokeStatusText">確認中...</span>
+          </div>
+          <button class="kaipoke-btn primary" onclick="kaipokeRefreshStatus()">状態を更新</button>
+        </div>
+
+        <!-- 月選択 -->
+        <div class="kaipoke-section">
+          <div class="kaipoke-section-title">対象設定</div>
+          <div class="kaipoke-input-group">
+            <label>対象月</label>
+            <select id="kaipokeTargetMonth"></select>
+          </div>
+          <div class="kaipoke-input-group">
+            <label>対象週の開始日（差分適用時に必要）</label>
+            <input type="date" id="kaipokeWeekStart">
+          </div>
+        </div>
+
+        <!-- 操作ボタン -->
+        <div class="kaipoke-section">
+          <div class="kaipoke-section-title">自動化操作</div>
+          <button class="kaipoke-btn primary" onclick="kaipokeExpand()">1. 月間スケジュール展開</button>
+          <button class="kaipoke-btn success" onclick="kaipokeExport()">2. CSV出力（Driveに保存）</button>
+          <button class="kaipoke-btn warning" onclick="kaipokeDiff()">3. 差分確認（プレビュー）</button>
+          <button class="kaipoke-btn danger" onclick="kaipokeApply()">4. 差分適用（カイポケに反映）</button>
+        </div>
+
+        <!-- ローディング -->
+        <div class="kaipoke-loading" id="kaipokeLoading">
+          <div class="kaipoke-spinner"></div>
+          <div id="kaipokeLoadingText">処理中...</div>
+        </div>
+
+        <!-- 結果表示 -->
+        <div class="kaipoke-section">
+          <div class="kaipoke-section-title">実行結果</div>
+          <div class="kaipoke-result" id="kaipokeResult">ボタンをクリックして操作を開始してください</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     var baseUrl = '';
     var currentTab = 'weekView';
@@ -730,6 +852,12 @@
 
       loadWeekView();
       loadLogs();
+
+      // kaipoke=1 パラメータがある場合はカイポケモーダルを自動で開く
+      var urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('kaipoke') === '1') {
+        setTimeout(function() { openKaipokeModal(); }, 500);
+      }
     });
 
     // ============================================================
@@ -1516,6 +1644,186 @@
       }
       originalShowTab(tabKey, btn);
     };
+
+    // ============================================================
+    // カイポケ自動化モーダル
+    // ============================================================
+    var kaipokeModalInitialized = false;
+
+    function openKaipokeModal() {
+      var modal = document.getElementById('kaipokeModal');
+      modal.classList.add('show');
+
+      if (!kaipokeModalInitialized) {
+        kaipokeInitialize();
+        kaipokeModalInitialized = true;
+      }
+    }
+
+    function closeKaipokeModal() {
+      document.getElementById('kaipokeModal').classList.remove('show');
+    }
+
+    function kaipokeInitialize() {
+      // 月選択オプションを生成
+      var select = document.getElementById('kaipokeTargetMonth');
+      var now = new Date();
+      var year = now.getFullYear();
+      select.innerHTML = '';
+      for (var m = 1; m <= 12; m++) {
+        var val = year + '-' + ('0' + m).slice(-2);
+        var opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = year + '年' + m + '月';
+        select.appendChild(opt);
+      }
+      // 現在の月を選択
+      var currentMonth = year + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+      select.value = currentMonth;
+
+      // 週開始日を設定
+      document.getElementById('kaipokeWeekStart').value = currentMonth + '-20';
+
+      // ステータス確認
+      kaipokeRefreshStatus();
+    }
+
+    function kaipokeShowLoading(message) {
+      document.getElementById('kaipokeLoading').className = 'kaipoke-loading show';
+      document.getElementById('kaipokeLoadingText').innerText = message || '処理中...';
+      kaipokeDisableButtons(true);
+    }
+
+    function kaipokeHideLoading() {
+      document.getElementById('kaipokeLoading').className = 'kaipoke-loading';
+      kaipokeDisableButtons(false);
+    }
+
+    function kaipokeDisableButtons(disabled) {
+      var modal = document.getElementById('kaipokeModal');
+      var buttons = modal.querySelectorAll('.kaipoke-btn');
+      buttons.forEach(function(btn) { btn.disabled = disabled; });
+    }
+
+    function kaipokeShowResult(message, isError) {
+      var area = document.getElementById('kaipokeResult');
+      area.innerText = message;
+      area.className = 'kaipoke-result' + (isError ? ' error' : '');
+    }
+
+    function kaipokeGetMonth() {
+      return document.getElementById('kaipokeTargetMonth').value;
+    }
+
+    function kaipokeGetWeekStart() {
+      return document.getElementById('kaipokeWeekStart').value;
+    }
+
+    function kaipokeRefreshStatus() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          var indicator = document.getElementById('kaipokeStatusIndicator');
+          var text = document.getElementById('kaipokeStatusText');
+          indicator.className = 'kaipoke-status-indicator';
+          if (result.status === 'ready') {
+            indicator.classList.add('ready');
+            text.innerText = result.message;
+          } else if (result.status === 'busy') {
+            indicator.classList.add('busy');
+            text.innerText = result.message;
+          } else {
+            indicator.classList.add('error');
+            text.innerText = result.message;
+          }
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('kaipokeStatusIndicator').className = 'kaipoke-status-indicator error';
+          document.getElementById('kaipokeStatusText').innerText = 'エラー: ' + error.message;
+        })
+        .checkServerStatus();
+    }
+
+    function kaipokeExpand() {
+      if (!confirm('月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）')) return;
+      kaipokeShowLoading('月間スケジュール展開中...\n（約2〜5分かかります）');
+      kaipokeShowResult('処理開始...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          kaipokeHideLoading();
+          kaipokeShowResult(result.message, !result.success);
+          kaipokeRefreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          kaipokeHideLoading();
+          kaipokeShowResult('エラー: ' + error.message, true);
+          kaipokeRefreshStatus();
+        })
+        .runExpand(kaipokeGetMonth());
+    }
+
+    function kaipokeExport() {
+      if (!confirm('CSVを出力してGoogle Driveに保存しますか？')) return;
+      kaipokeShowLoading('CSV出力中...');
+      kaipokeShowResult('処理開始...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          kaipokeHideLoading();
+          kaipokeShowResult(result.message, !result.success);
+          kaipokeRefreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          kaipokeHideLoading();
+          kaipokeShowResult('エラー: ' + error.message, true);
+          kaipokeRefreshStatus();
+        })
+        .runExport(kaipokeGetMonth());
+    }
+
+    function kaipokeDiff() {
+      var weekStart = kaipokeGetWeekStart();
+      if (!weekStart) { alert('対象週の開始日を入力してください'); return; }
+      kaipokeShowLoading('差分確認中...');
+      kaipokeShowResult('処理開始...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          kaipokeHideLoading();
+          kaipokeShowResult(result.message, !result.success);
+        })
+        .withFailureHandler(function(error) {
+          kaipokeHideLoading();
+          kaipokeShowResult('エラー: ' + error.message, true);
+        })
+        .checkDiff(kaipokeGetMonth(), weekStart);
+    }
+
+    function kaipokeApply() {
+      var weekStart = kaipokeGetWeekStart();
+      if (!weekStart) { alert('対象週の開始日を入力してください'); return; }
+      if (!confirm('差分をカイポケに適用しますか？\n\n※ この操作は取り消せません')) return;
+      kaipokeShowLoading('差分適用中...');
+      kaipokeShowResult('処理開始...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          kaipokeHideLoading();
+          kaipokeShowResult(result.message, !result.success);
+          kaipokeRefreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          kaipokeHideLoading();
+          kaipokeShowResult('エラー: ' + error.message, true);
+          kaipokeRefreshStatus();
+        })
+        .runApply(kaipokeGetMonth(), weekStart);
+    }
+
+    // モーダル外クリックで閉じる
+    document.getElementById('kaipokeModal').addEventListener('click', function(e) {
+      if (e.target === this) closeKaipokeModal();
+    });
   </script>
 
 </body>
