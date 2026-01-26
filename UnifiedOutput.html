@@ -997,6 +997,10 @@
 
       <div class="button-group">
         <div class="button-group-title">カイポケ連携</div>
+        <button class="action-btn primary" onclick="exportKaipokeCsv()">
+          <span class="icon">📤</span>
+          CSV出力
+        </button>
         <button class="action-btn secondary" onclick="openKaipokeModal()">
           <span class="icon">🤖</span>
           カイポケ自動化
@@ -2112,6 +2116,53 @@
       }
       originalShowTab(tabKey, btn);
     };
+
+    // ============================================================
+    // カイポケCSV出力
+    // ============================================================
+
+    function exportKaipokeCsv() {
+      // 週を指定するかどうか確認
+      var weekStartStr = null;
+      var useWeek = confirm('現在の週のデータのみ出力しますか？\n\n「OK」→ 現在週のみ\n「キャンセル」→ 全データ');
+
+      if (useWeek) {
+        // 監査ビューの週開始日があれば使用
+        if (auditState && auditState.weekStartStr) {
+          weekStartStr = auditState.weekStartStr;
+        } else {
+          // なければ今週の月曜日を計算
+          var today = new Date();
+          var day = today.getDay();
+          var diff = today.getDate() - day + (day === 0 ? -6 : 1); // 月曜日に調整
+          var monday = new Date(today.setDate(diff));
+          var yyyy = monday.getFullYear();
+          var mm = ('0' + (monday.getMonth() + 1)).slice(-2);
+          var dd = ('0' + monday.getDate()).slice(-2);
+          weekStartStr = yyyy + '/' + mm + '/' + dd;
+        }
+      }
+
+      var msg = weekStartStr ? 'CSV出力中... (' + weekStartStr + '〜)' : 'CSV出力中... (全データ)';
+      showToast(msg, 'info', 10000);
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            var message = result.message + '\n\nファイルを開きますか？';
+            if (confirm(message)) {
+              window.open(result.url, '_blank');
+            }
+            showToast('CSV出力完了: ' + result.fileName, 'success');
+          } else {
+            showToast('CSV出力失敗', 'error');
+          }
+        })
+        .withFailureHandler(function(e) {
+          showToast('エラー: ' + (e.message || String(e)), 'error');
+        })
+        .kaipoke_exportCsv(weekStartStr);
+    }
 
     // ============================================================
     // カイポケ自動化モーダル
