@@ -686,6 +686,145 @@
     .audit-checks-details { margin-top: 8px; }
 
     /* ============================================================
+       週間カレンダービュー（患者詳細用）
+       ============================================================ */
+    .audit-week-overview {
+      margin-bottom: 16px;
+    }
+    .audit-week-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--color-green);
+    }
+    .audit-week-title {
+      font-size: 14px; font-weight: 600; color: var(--color-text);
+    }
+    .audit-week-legend {
+      display: flex; gap: 12px; font-size: 11px;
+    }
+    .audit-week-legend-item {
+      display: flex; align-items: center; gap: 4px;
+    }
+    .audit-week-legend-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+    .audit-week-legend-dot.ok { background: var(--color-green); }
+    .audit-week-legend-dot.warn { background: var(--color-orange); }
+    .audit-week-legend-dot.ng { background: var(--color-error); }
+
+    .audit-week-calendar {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 8px;
+    }
+    .audit-week-day {
+      border: 2px solid var(--color-border);
+      border-radius: 8px;
+      padding: 10px 8px;
+      text-align: center;
+      background: var(--color-white);
+      min-height: 90px;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.2s;
+    }
+    .audit-week-day.no-visit {
+      background: var(--color-bg);
+      opacity: 0.6;
+    }
+    .audit-week-day.status-ok {
+      border-color: var(--color-green);
+      background: rgba(144, 238, 144, 0.1);
+    }
+    .audit-week-day.status-warn {
+      border-color: var(--color-orange);
+      background: rgba(255, 193, 7, 0.1);
+      cursor: pointer;
+    }
+    .audit-week-day.status-warn:hover {
+      box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+      transform: translateY(-2px);
+    }
+    .audit-week-day.status-ng {
+      border-color: var(--color-error);
+      background: rgba(232, 139, 139, 0.15);
+      cursor: pointer;
+    }
+    .audit-week-day.status-ng:hover {
+      box-shadow: 0 4px 12px rgba(232, 139, 139, 0.3);
+      transform: translateY(-2px);
+    }
+    .audit-week-day-date {
+      font-size: 12px; color: var(--color-text-light);
+      margin-bottom: 2px;
+    }
+    .audit-week-day-youbi {
+      font-size: 14px; font-weight: 600; color: var(--color-text);
+      margin-bottom: 8px;
+    }
+    .audit-week-day-status {
+      font-size: 24px; font-weight: bold; margin-bottom: 6px;
+    }
+    .audit-week-day-status.ok { color: var(--color-green-dark); }
+    .audit-week-day-status.warn { color: var(--color-orange-dark); }
+    .audit-week-day-status.ng { color: var(--color-error); }
+    .audit-week-day-time {
+      font-size: 11px; color: var(--color-text);
+      margin-bottom: 2px;
+    }
+    .audit-week-day-staff {
+      font-size: 10px; color: var(--color-text-light);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .audit-week-day-novisit {
+      font-size: 11px; color: var(--color-text-light);
+      margin-top: auto;
+    }
+    .audit-week-day-click-hint {
+      font-size: 10px; color: var(--color-text-light);
+      margin-top: auto; padding-top: 4px;
+    }
+    .audit-week-day.status-warn .audit-week-day-click-hint,
+    .audit-week-day.status-ng .audit-week-day-click-hint {
+      color: inherit; opacity: 0.7;
+    }
+
+    /* 日別詳細ビュー（ドリルダウン後） */
+    .audit-day-detail-view {
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .audit-back-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--color-bg); border: 1px solid var(--color-border);
+      border-radius: 6px; padding: 8px 14px; cursor: pointer;
+      font-size: 12px; color: var(--color-text); font-weight: 500;
+      margin-bottom: 16px; transition: all 0.2s;
+    }
+    .audit-back-btn:hover {
+      background: var(--color-border);
+    }
+    .audit-day-detail-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; margin-bottom: 16px;
+      border-radius: 8px; background: var(--color-bg);
+    }
+    .audit-day-detail-header.status-ok { background: rgba(144, 238, 144, 0.2); border-left: 4px solid var(--color-green); }
+    .audit-day-detail-header.status-warn { background: rgba(255, 193, 7, 0.2); border-left: 4px solid var(--color-orange); }
+    .audit-day-detail-header.status-ng { background: rgba(232, 139, 139, 0.2); border-left: 4px solid var(--color-error); }
+    .audit-day-detail-date {
+      font-size: 18px; font-weight: 600;
+    }
+    .audit-day-detail-status {
+      font-size: 20px; font-weight: bold;
+    }
+    .audit-day-detail-status.ok { color: var(--color-green-dark); }
+    .audit-day-detail-status.warn { color: var(--color-orange-dark); }
+    .audit-day-detail-status.ng { color: var(--color-error); }
+
+    /* ============================================================
        カイポケ自動化モーダル
        ============================================================ */
     .kaipoke-modal {
@@ -1616,15 +1755,32 @@
         .audit_getPatientDetail(pid, auditState.weekStartStr);
     }
 
+    // 患者詳細データを保持する変数
+    var currentPatientDetailData = null;
+
     function renderAuditPatientDetail(data) {
+      // データを保持
+      currentPatientDetailData = data;
+      // 週間概要ビューを表示
+      renderAuditWeekOverview(data);
+    }
+
+    // 曜日の日本語表示マップ
+    var youbiJapanese = {
+      'Mon': '月', 'Tue': '火', 'Wed': '水', 'Thu': '木', 'Fri': '金', 'Sat': '土', 'Sun': '日'
+    };
+
+    // 週間概要ビューを描画
+    function renderAuditWeekOverview(data) {
       var body = document.getElementById('auditModalBody');
       var title = document.getElementById('auditModalTitle');
       title.textContent = '患者詳細: ' + (data.pname || data.pid);
+
       var html = '';
 
       // 患者マスタ情報（折りたたみ可能なサマリ）
       if (data.master) {
-        html += '<details class="audit-section audit-collapsible" open>';
+        html += '<details class="audit-section audit-collapsible">';
         html += '<summary class="audit-section-title clickable">基本情報（マスタ）</summary>';
         html += '<div class="audit-info-grid">';
         html += '<div class="audit-info-item"><span class="label">時間タイプ:</span> <span class="value">' + (data.master.timeType || '-') + '</span></div>';
@@ -1643,6 +1799,86 @@
         }
         html += '</div></details>';
       }
+
+      // 週間カレンダービュー
+      html += '<div class="audit-week-overview">';
+      html += '<div class="audit-week-header">';
+      html += '<div class="audit-week-title">週間スケジュール</div>';
+      html += '<div class="audit-week-legend">';
+      html += '<div class="audit-week-legend-item"><span class="audit-week-legend-dot ok"></span>OK</div>';
+      html += '<div class="audit-week-legend-item"><span class="audit-week-legend-dot warn"></span>WARN</div>';
+      html += '<div class="audit-week-legend-item"><span class="audit-week-legend-dot ng"></span>NG</div>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div class="audit-week-calendar">';
+
+      // 曜日順に並べる（月〜日）
+      var dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      var djByYoubi = {};
+      (data.dayJudgements || []).forEach(function(dj) {
+        djByYoubi[dj.youbi] = dj;
+      });
+
+      dayOrder.forEach(function(youbi) {
+        var dj = djByYoubi[youbi];
+        if (dj) {
+          // 訪問がある日
+          var statusClass = dj.status.toLowerCase();
+          var statusIcon = dj.status === 'OK' ? '○' : (dj.status === 'WARN' ? '△' : '×');
+          var isClickable = dj.status === 'NG' || dj.status === 'WARN';
+
+          html += '<div class="audit-week-day status-' + statusClass + '"';
+          if (isClickable) {
+            html += ' onclick="showAuditDayDetail(\'' + dj.dateStr + '\')"';
+          }
+          html += '>';
+          html += '<div class="audit-week-day-date">' + dj.dateStr.substring(5) + '</div>';
+          html += '<div class="audit-week-day-youbi">' + youbiJapanese[youbi] + '</div>';
+          html += '<div class="audit-week-day-status ' + statusClass + '">' + statusIcon + '</div>';
+
+          // 訪問時間を表示
+          if (dj.hasActual && dj.actuals && dj.actuals.length > 0) {
+            dj.actuals.forEach(function(a) {
+              html += '<div class="audit-week-day-time">' + a.startStr + '-' + a.endStr + '</div>';
+              if (a.staffName) {
+                html += '<div class="audit-week-day-staff">' + a.staffName + '</div>';
+              }
+            });
+          } else if (dj.hasExpected && dj.expectedVisits && dj.expectedVisits.length > 0) {
+            // 期待はあるが実績なし
+            dj.expectedVisits.forEach(function(exp) {
+              if (!exp.isCancelled) {
+                if (exp.timeType === '固定') {
+                  html += '<div class="audit-week-day-time">' + (exp.startStr || '-') + '-' + (exp.endStr || '-') + '</div>';
+                } else {
+                  html += '<div class="audit-week-day-time">' + (exp.earliestStr || '-') + '〜' + (exp.latestStr || '-') + '</div>';
+                }
+              }
+            });
+          }
+
+          // クリックヒント
+          if (isClickable) {
+            var violationInfo = '';
+            if (dj.conditionAnalysis && dj.conditionAnalysis.violationCount > 0) {
+              violationInfo = 'NG:' + dj.conditionAnalysis.ngCount + ' WARN:' + dj.conditionAnalysis.warnCount;
+            }
+            html += '<div class="audit-week-day-click-hint">' + (violationInfo || 'クリックで詳細') + '</div>';
+          }
+
+          html += '</div>';
+        } else {
+          // 訪問がない日
+          html += '<div class="audit-week-day no-visit">';
+          html += '<div class="audit-week-day-date">-</div>';
+          html += '<div class="audit-week-day-youbi">' + youbiJapanese[youbi] + '</div>';
+          html += '<div class="audit-week-day-novisit">訪問なし</div>';
+          html += '</div>';
+        }
+      });
+
+      html += '</div></div>';
 
       // 個別変更サマリ（週全体）
       if (data.changes && data.changes.length > 0) {
@@ -1674,174 +1910,188 @@
         html += '</details>';
       }
 
-      // 日別判定（メインセクション）
-      html += '<div class="audit-section"><div class="audit-section-title">日別監査結果</div>';
-      (data.dayJudgements || []).forEach(function(dj) {
-        var statusClass = dj.status.toLowerCase();
-        var statusIcon = dj.status === 'OK' ? '○' : (dj.status === 'WARN' ? '△' : '×');
-        var violationSummary = '';
-        if (dj.conditionAnalysis && dj.conditionAnalysis.violationCount > 0) {
-          violationSummary = ' <span class="violation-summary">(NG:' + dj.conditionAnalysis.ngCount + ' WARN:' + dj.conditionAnalysis.warnCount + ')</span>';
-        }
+      body.innerHTML = html;
+    }
 
-        html += '<div class="audit-day-row status-' + statusClass + '">';
-        html += '<div class="audit-day-header">';
-        html += '<span class="date">' + dj.dateStr.substring(5) + ' (' + dj.youbi + ')</span>';
-        html += '<span class="status-icon ' + statusClass + '">' + statusIcon + '</span>';
-        html += violationSummary;
-        html += '</div>';
-        html += '<div class="audit-day-body">';
+    // 日別詳細ビューを表示
+    function showAuditDayDetail(dateStr) {
+      if (!currentPatientDetailData) return;
 
-        // === この日の条件（新セクション） ===
-        if (dj.conditionAnalysis && dj.conditionAnalysis.conditions && dj.conditionAnalysis.conditions.length > 0) {
-          html += '<details class="audit-conditions-section" open>';
-          html += '<summary class="audit-subsection-title clickable">この日の条件</summary>';
-          html += '<div class="audit-conditions-grid">';
-
-          // カテゴリごとにグループ化
-          var categories = {};
-          dj.conditionAnalysis.conditions.forEach(function(cond) {
-            if (!categories[cond.category]) categories[cond.category] = [];
-            categories[cond.category].push(cond);
-          });
-
-          var categoryLabels = {
-            'TIME': '時間条件',
-            'DAY': '曜日条件',
-            'STAFF': 'スタッフ条件',
-            'EVENT': 'イベント',
-            'CHANGE': '個別変更',
-            'SPECIAL': '特別訪問週間'
-          };
-
-          var categoryIcons = {
-            'TIME': '⏰',
-            'DAY': '📅',
-            'STAFF': '👤',
-            'EVENT': '📌',
-            'CHANGE': '✏️',
-            'SPECIAL': '🗓️'
-          };
-
-          for (var cat in categories) {
-            html += '<div class="audit-condition-category">';
-            html += '<div class="category-header">' + (categoryIcons[cat] || '') + ' ' + (categoryLabels[cat] || cat) + '</div>';
-            categories[cat].forEach(function(cond) {
-              var severityClass = 'severity-' + cond.severity.toLowerCase();
-              var statusIcon = '';
-              if (cond.status === 'NG') statusIcon = '<span class="cond-status-icon ng">✗</span>';
-              else if (cond.status === 'WARN') statusIcon = '<span class="cond-status-icon warn">!</span>';
-              else if (cond.status === 'OK') statusIcon = '<span class="cond-status-icon ok">✓</span>';
-
-              html += '<div class="audit-condition-item ' + severityClass + ' status-' + (cond.status || 'unknown').toLowerCase() + '">';
-              html += statusIcon;
-              html += '<span class="cond-label">' + cond.label + '</span>';
-              html += '<span class="cond-severity-badge ' + severityClass + '">' + (cond.severity === 'CRITICAL' ? '必須' : (cond.severity === 'WARNING' ? '推奨' : '情報')) + '</span>';
-              html += '<div class="cond-detail">';
-              html += '<span class="cond-expected">期待: ' + (cond.expected || '-') + '</span>';
-              if (cond.actual) html += ' → <span class="cond-actual">実績: ' + cond.actual + '</span>';
-              html += '</div>';
-              if (cond.diffDetail) {
-                html += '<div class="cond-diff-detail ' + (cond.status === 'NG' ? 'diff-ng' : 'diff-warn') + '">' + cond.diffDetail + '</div>';
-              }
-              html += '</div>';
-            });
-            html += '</div>';
-          }
-          html += '</div></details>';
-        }
-
-        // === 条件違反サマリ（NGとWARNのみ強調表示） ===
-        if (dj.conditionAnalysis && dj.conditionAnalysis.violations && dj.conditionAnalysis.violations.length > 0) {
-          html += '<div class="audit-violations-section">';
-          html += '<div class="audit-subsection-title violations-title">条件違反</div>';
-          dj.conditionAnalysis.violations.forEach(function(v) {
-            var vClass = v.status === 'NG' ? 'violation-ng' : 'violation-warn';
-            var vIcon = v.status === 'NG' ? '✗' : '!';
-            html += '<div class="audit-violation-item ' + vClass + '">';
-            html += '<span class="violation-icon">' + vIcon + '</span>';
-            html += '<span class="violation-label">' + v.label + '</span>';
-            html += '<span class="violation-severity">[' + (v.severity === 'CRITICAL' ? '必須条件' : '推奨条件') + ']</span>';
-            if (v.diffDetail) html += '<div class="violation-detail">' + v.diffDetail + '</div>';
-            html += '</div>';
-          });
-          html += '</div>';
-        }
-
-        // === 期待と実績の比較 ===
-        html += '<details class="audit-compare-details">';
-        html += '<summary class="audit-subsection-title clickable">期待 vs 実績</summary>';
-
-        // Expected
-        html += '<div class="audit-compare-section"><div class="audit-compare-label">期待 (Expected):</div>';
-        if (dj.hasExpected) {
-          dj.expectedVisits.forEach(function(exp) {
-            var sourceLabel = exp.source;
-            if (exp.op) sourceLabel += '/' + exp.op;
-            var sourceClass = exp.source === 'MASTER' ? 'source-master' : (exp.source.indexOf('SPECIAL') >= 0 ? 'source-special' : 'source-change');
-            html += '<div class="audit-expected-item">';
-            html += '<span class="audit-source-badge ' + sourceClass + '">' + sourceLabel + '</span> ';
-            html += '<span class="audit-time-type">[' + (exp.timeType || '時間帯') + ']</span> ';
-            if (exp.timeType === '固定') {
-              html += '<span>' + (exp.startStr || '-') + '-' + (exp.endStr || '-') + '</span>';
-            } else {
-              html += '<span>' + (exp.earliestStr || '-') + '〜' + (exp.latestStr || '-') + '</span>';
-            }
-            if (exp.isCancelled) html += ' <span class="audit-cancelled-badge">キャンセル</span>';
-            html += '</div>';
-          });
-        } else {
-          html += '<div style="color:#999;font-size:12px;">期待なし</div>';
-        }
-        html += '</div>';
-
-        // Actual
-        html += '<div class="audit-compare-section"><div class="audit-compare-label">実績 (Actual):</div>';
-        if (dj.hasActual) {
-          dj.actuals.forEach(function(a) {
-            html += '<div class="audit-actual-item">';
-            html += '<span>' + a.startStr + '-' + a.endStr + '</span>';
-            if (a.staffName) html += ' <span class="audit-staff-name">(' + a.staffName + ')</span>';
-            if (a.isUnassigned) html += ' <span class="audit-unassigned-badge">[未割当]</span>';
-            html += '</div>';
-          });
-        } else {
-          html += '<div style="color:#999;font-size:12px;">実績なし</div>';
-        }
-        html += '</div>';
-        html += '</details>';
-
-        // チェック詳細（従来のもの、折りたたみ）
-        if (dj.checks && dj.checks.length > 0) {
-          html += '<details class="audit-checks-details">';
-          html += '<summary class="audit-subsection-title clickable">判定詳細（技術情報）</summary>';
-          dj.checks.forEach(function(check) {
-            var checkClass = check.status === 'NG' ? 'check-ng' : (check.status === 'WARN' ? 'check-warn' : 'check-ok');
-            html += '<div class="audit-check-item ' + checkClass + '">';
-            html += '<span class="audit-check-icon">' + (check.status === 'OK' ? '✓' : (check.status === 'WARN' ? '!' : '✗')) + '</span> ';
-            html += '<span>' + (check.explanation || check.reason || check.type) + '</span>';
-            if (check.diffMin && check.diffMin !== 0) {
-              html += ' <span class="audit-diff">(' + (check.diffMin > 0 ? '+' : '') + check.diffMin + '分)</span>';
-            }
-            html += '</div>';
-          });
-          html += '</details>';
-        }
-
-        // タグ（コンパクト表示）
-        if (dj.tags && dj.tags.length > 0) {
-          html += '<div class="tags">';
-          dj.tags.forEach(function(tag) {
-            var tagClass = '';
-            if (tag.indexOf('CONFLICT') >= 0 || tag.indexOf('UNASSIGNED') >= 0 || tag.indexOf('CANCELLED_BUT') >= 0 || tag.indexOf('OUT_OF') >= 0) tagClass = 'ng';
-            else if (tag.indexOf('DIFF') >= 0 || tag.indexOf('MISSING') >= 0 || tag.indexOf('EXTRA') >= 0) tagClass = 'warn';
-            else tagClass = 'ok';
-            html += '<span class="audit-tag ' + tagClass + '">' + tag + '</span> ';
-          });
-          html += '</div>';
-        }
-        html += '</div></div>';
+      var dj = null;
+      (currentPatientDetailData.dayJudgements || []).forEach(function(d) {
+        if (d.dateStr === dateStr) dj = d;
       });
+      if (!dj) return;
+
+      var body = document.getElementById('auditModalBody');
+      var title = document.getElementById('auditModalTitle');
+      title.textContent = '患者詳細: ' + (currentPatientDetailData.pname || currentPatientDetailData.pid) + ' - ' + dateStr;
+
+      var html = '';
+      var statusClass = dj.status.toLowerCase();
+      var statusIcon = dj.status === 'OK' ? '○' : (dj.status === 'WARN' ? '△' : '×');
+
+      // 戻るボタン
+      html += '<button class="audit-back-btn" onclick="renderAuditWeekOverview(currentPatientDetailData)">';
+      html += '← 週間概要に戻る';
+      html += '</button>';
+
+      // 日付とステータスヘッダー
+      html += '<div class="audit-day-detail-view">';
+      html += '<div class="audit-day-detail-header status-' + statusClass + '">';
+      html += '<span class="audit-day-detail-date">' + dj.dateStr + ' (' + youbiJapanese[dj.youbi] + ')</span>';
+      html += '<span class="audit-day-detail-status ' + statusClass + '">' + statusIcon + ' ' + dj.status + '</span>';
+      html += '</div>';
+
+      // === 条件違反サマリ（NGとWARNのみ強調表示） ===
+      if (dj.conditionAnalysis && dj.conditionAnalysis.violations && dj.conditionAnalysis.violations.length > 0) {
+        html += '<div class="audit-violations-section">';
+        html += '<div class="audit-subsection-title violations-title">条件違反</div>';
+        dj.conditionAnalysis.violations.forEach(function(v) {
+          var vClass = v.status === 'NG' ? 'violation-ng' : 'violation-warn';
+          var vIcon = v.status === 'NG' ? '✗' : '!';
+          html += '<div class="audit-violation-item ' + vClass + '">';
+          html += '<span class="violation-icon">' + vIcon + '</span>';
+          html += '<span class="violation-label">' + v.label + '</span>';
+          html += '<span class="violation-severity">[' + (v.severity === 'CRITICAL' ? '必須条件' : '推奨条件') + ']</span>';
+          if (v.diffDetail) html += '<div class="violation-detail">' + v.diffDetail + '</div>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      // === この日の条件 ===
+      if (dj.conditionAnalysis && dj.conditionAnalysis.conditions && dj.conditionAnalysis.conditions.length > 0) {
+        html += '<details class="audit-conditions-section" open>';
+        html += '<summary class="audit-subsection-title clickable">この日の条件</summary>';
+        html += '<div class="audit-conditions-grid">';
+
+        // カテゴリごとにグループ化
+        var categories = {};
+        dj.conditionAnalysis.conditions.forEach(function(cond) {
+          if (!categories[cond.category]) categories[cond.category] = [];
+          categories[cond.category].push(cond);
+        });
+
+        var categoryLabels = {
+          'TIME': '時間条件',
+          'DAY': '曜日条件',
+          'STAFF': 'スタッフ条件',
+          'EVENT': 'イベント',
+          'CHANGE': '個別変更',
+          'SPECIAL': '特別訪問週間'
+        };
+
+        var categoryIcons = {
+          'TIME': '⏰',
+          'DAY': '📅',
+          'STAFF': '👤',
+          'EVENT': '📌',
+          'CHANGE': '✏️',
+          'SPECIAL': '🗓️'
+        };
+
+        for (var cat in categories) {
+          html += '<div class="audit-condition-category">';
+          html += '<div class="category-header">' + (categoryIcons[cat] || '') + ' ' + (categoryLabels[cat] || cat) + '</div>';
+          categories[cat].forEach(function(cond) {
+            var severityClass = 'severity-' + cond.severity.toLowerCase();
+            var condStatusIcon = '';
+            if (cond.status === 'NG') condStatusIcon = '<span class="cond-status-icon ng">✗</span>';
+            else if (cond.status === 'WARN') condStatusIcon = '<span class="cond-status-icon warn">!</span>';
+            else if (cond.status === 'OK') condStatusIcon = '<span class="cond-status-icon ok">✓</span>';
+
+            html += '<div class="audit-condition-item ' + severityClass + ' status-' + (cond.status || 'unknown').toLowerCase() + '">';
+            html += condStatusIcon;
+            html += '<span class="cond-label">' + cond.label + '</span>';
+            html += '<span class="cond-severity-badge ' + severityClass + '">' + (cond.severity === 'CRITICAL' ? '必須' : (cond.severity === 'WARNING' ? '推奨' : '情報')) + '</span>';
+            html += '<div class="cond-detail">';
+            html += '<span class="cond-expected">期待: ' + (cond.expected || '-') + '</span>';
+            if (cond.actual) html += ' → <span class="cond-actual">実績: ' + cond.actual + '</span>';
+            html += '</div>';
+            if (cond.diffDetail) {
+              html += '<div class="cond-diff-detail ' + (cond.status === 'NG' ? 'diff-ng' : 'diff-warn') + '">' + cond.diffDetail + '</div>';
+            }
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+        html += '</div></details>';
+      }
+
+      // === 期待と実績の比較 ===
+      html += '<details class="audit-compare-details" open>';
+      html += '<summary class="audit-subsection-title clickable">期待 vs 実績</summary>';
+
+      // Expected
+      html += '<div class="audit-compare-section"><div class="audit-compare-label">期待 (Expected):</div>';
+      if (dj.hasExpected) {
+        dj.expectedVisits.forEach(function(exp) {
+          var sourceLabel = exp.source;
+          if (exp.op) sourceLabel += '/' + exp.op;
+          var sourceClass = exp.source === 'MASTER' ? 'source-master' : (exp.source.indexOf('SPECIAL') >= 0 ? 'source-special' : 'source-change');
+          html += '<div class="audit-expected-item">';
+          html += '<span class="audit-source-badge ' + sourceClass + '">' + sourceLabel + '</span> ';
+          html += '<span class="audit-time-type">[' + (exp.timeType || '時間帯') + ']</span> ';
+          if (exp.timeType === '固定') {
+            html += '<span>' + (exp.startStr || '-') + '-' + (exp.endStr || '-') + '</span>';
+          } else {
+            html += '<span>' + (exp.earliestStr || '-') + '〜' + (exp.latestStr || '-') + '</span>';
+          }
+          if (exp.isCancelled) html += ' <span class="audit-cancelled-badge">キャンセル</span>';
+          html += '</div>';
+        });
+      } else {
+        html += '<div style="color:#999;font-size:12px;">期待なし</div>';
+      }
+      html += '</div>';
+
+      // Actual
+      html += '<div class="audit-compare-section"><div class="audit-compare-label">実績 (Actual):</div>';
+      if (dj.hasActual) {
+        dj.actuals.forEach(function(a) {
+          html += '<div class="audit-actual-item">';
+          html += '<span>' + a.startStr + '-' + a.endStr + '</span>';
+          if (a.staffName) html += ' <span class="audit-staff-name">(' + a.staffName + ')</span>';
+          if (a.isUnassigned) html += ' <span class="audit-unassigned-badge">[未割当]</span>';
+          html += '</div>';
+        });
+      } else {
+        html += '<div style="color:#999;font-size:12px;">実績なし</div>';
+      }
+      html += '</div>';
+      html += '</details>';
+
+      // チェック詳細（従来のもの、折りたたみ）
+      if (dj.checks && dj.checks.length > 0) {
+        html += '<details class="audit-checks-details">';
+        html += '<summary class="audit-subsection-title clickable">判定詳細（技術情報）</summary>';
+        dj.checks.forEach(function(check) {
+          var checkClass = check.status === 'NG' ? 'check-ng' : (check.status === 'WARN' ? 'check-warn' : 'check-ok');
+          html += '<div class="audit-check-item ' + checkClass + '">';
+          html += '<span class="audit-check-icon">' + (check.status === 'OK' ? '✓' : (check.status === 'WARN' ? '!' : '✗')) + '</span> ';
+          html += '<span>' + (check.explanation || check.reason || check.type) + '</span>';
+          if (check.diffMin && check.diffMin !== 0) {
+            html += ' <span class="audit-diff">(' + (check.diffMin > 0 ? '+' : '') + check.diffMin + '分)</span>';
+          }
+          html += '</div>';
+        });
+        html += '</details>';
+      }
+
+      // タグ（コンパクト表示）
+      if (dj.tags && dj.tags.length > 0) {
+        html += '<div class="tags" style="margin-top:12px;">';
+        dj.tags.forEach(function(tag) {
+          var tagClass = '';
+          if (tag.indexOf('CONFLICT') >= 0 || tag.indexOf('UNASSIGNED') >= 0 || tag.indexOf('CANCELLED_BUT') >= 0 || tag.indexOf('OUT_OF') >= 0) tagClass = 'ng';
+          else if (tag.indexOf('DIFF') >= 0 || tag.indexOf('MISSING') >= 0 || tag.indexOf('EXTRA') >= 0) tagClass = 'warn';
+          else tagClass = 'ok';
+          html += '<span class="audit-tag ' + tagClass + '">' + tag + '</span> ';
+        });
+        html += '</div>';
+      }
+
       html += '</div>';
       body.innerHTML = html;
     }
