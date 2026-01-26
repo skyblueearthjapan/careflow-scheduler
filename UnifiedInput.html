@@ -563,10 +563,6 @@
         <div class="operation-group-title">位置情報</div>
         <button class="operation-btn" id="btnUpdateGeo" onclick="onUpdateGeo()" disabled><span class="icon">📍</span>位置情報を更新</button>
       </div>
-      <div class="operation-group">
-        <div class="operation-group-title">カイポケ連携</div>
-        <button class="operation-btn" onclick="openKaipokeRpaSidebar()"><span class="icon">🤖</span>カイポケ自動化</button>
-      </div>
       <div class="info-section">
         <div class="info-item"><span class="label">表示中:</span><span id="infoSheetName">-</span></div>
         <div class="info-item"><span class="label">行数:</span><span id="infoRowCount">-</span></div>
@@ -1814,25 +1810,6 @@
       if (isDirty && !confirm('未保存の変更があります。破棄して移動しますか？')) return;
       var targetUrl = baseUrl ? baseUrl + '?page=output' : window.location.href.split('?')[0] + '?page=output';
       try { window.top.location.href = targetUrl; } catch (e) { window.location.href = targetUrl; }
-    }
-
-    // ============================================================
-    // カイポケ自動化（出力画面へ遷移）
-    // ============================================================
-    function openKaipokeRpaSidebar() {
-      // カイポケ自動化は出力画面のモーダルで実行するため、出力画面へ遷移
-      var targetUrl;
-      if (baseUrl) {
-        targetUrl = baseUrl + '?page=output&kaipoke=1';
-      } else {
-        var currentUrl = window.location.href;
-        targetUrl = currentUrl.split('?')[0] + '?page=output&kaipoke=1';
-      }
-      try {
-        window.top.location.href = targetUrl;
-      } catch (e) {
-        window.location.href = targetUrl;
-      }
     }
 
     // ============================================================
