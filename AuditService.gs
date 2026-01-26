@@ -359,12 +359,35 @@ function audit_buildPatientDetail_(dataset, pid) {
     var dayExpected = expectedByPidDate[key];
     var expectedVisits = dayExpected ? dayExpected.visits : [];
 
+    // 条件分析（新機能）
+    var conditionAnalysis = audit_analyzeConditions_(dataset, pid, wd.dateStr, wd.youbi);
+    var conditionResults = audit_evaluateConditions_(conditionAnalysis, dayActuals, dataset);
+
+    // 条件を重要度でソート（CRITICAL > WARNING > INFO）
+    var severityOrder = { 'CRITICAL': 0, 'WARNING': 1, 'INFO': 2 };
+    conditionResults.sort(function(a, b) {
+      return (severityOrder[a.severity] || 2) - (severityOrder[b.severity] || 2);
+    });
+
+    // 条件違反のサマリ（NG/WARNのみ抽出）
+    var violations = conditionResults.filter(function(r) {
+      return r.status === AUDIT_STATUS.NG || r.status === AUDIT_STATUS.WARN;
+    });
+
     dayJudgements.push({
       dateStr: wd.dateStr,
       youbi: wd.youbi,
       status: judgement.status,
       tags: judgement.tags,
       checks: judgement.checks,  // 詳細チェック結果を追加
+      // 新しい条件分析情報
+      conditionAnalysis: {
+        conditions: conditionResults,
+        violations: violations,
+        violationCount: violations.length,
+        ngCount: violations.filter(function(v) { return v.status === AUDIT_STATUS.NG; }).length,
+        warnCount: violations.filter(function(v) { return v.status === AUDIT_STATUS.WARN; }).length
+      },
       hasExpected: expectedVisits.length > 0,
       expectedCount: expectedVisits.length,
       expectedVisits: expectedVisits.map(function(exp) {
@@ -578,18 +601,4 @@ function audit_judgePatientDay_Phase1_(dataset, pid, dateStr) {
   return { status: status, tags: tags };
 }
 
-/**
- * 時間帯の重なりを判定
- * @param {number} start1
- * @param {number} end1
- * @param {number} start2
- * @param {number} end2
- * @return {boolean}
- */
-function audit_isTimeOverlap_(start1, end1, start2, end2) {
-  if (start1 === null || end1 === null || start2 === null || end2 === null) {
-    return false;
-  }
-  // 重なる条件: start1 < end2 && start2 < end1
-  return start1 < end2 && start2 < end1;
-}
+// 注: audit_isTimeOverlap_ は AuditJudge.gs で定義されています
