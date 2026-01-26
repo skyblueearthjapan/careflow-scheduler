@@ -40,7 +40,11 @@ var KAIPOKE_DIFF_CONFIG = {
 function kaipoke_detectDiff(weekStartStr, options) {
   options = options || { includeAccompany: true };
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ssId = PropertiesService.getScriptProperties().getProperty('SS_ID');
+  if (!ssId) {
+    throw new Error('スプレッドシートIDが設定されていません（SS_ID）');
+  }
+  var ss = SpreadsheetApp.openById(ssId);
 
   // 外部（カイポケ）データ取得
   var external = kaipoke_getNormalizedData(weekStartStr);

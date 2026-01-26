@@ -47,7 +47,11 @@ var KAIPOKE_CONFIG = {
  * @param {string} yearMonth - 対象年月（"2026/01"形式）
  */
 function kaipoke_importFromRawSheet(yearMonth) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ssId = PropertiesService.getScriptProperties().getProperty('SS_ID');
+  if (!ssId) {
+    throw new Error('スプレッドシートIDが設定されていません（SS_ID）');
+  }
+  var ss = SpreadsheetApp.openById(ssId);
   var rawSheet = ss.getSheetByName(KAIPOKE_CONFIG.SHEET_CSV_RAW);
 
   if (!rawSheet) {
@@ -98,7 +102,11 @@ function kaipoke_showImportDialog() {
  * @return {Array} 正規化レコード配列
  */
 function kaipoke_getNormalizedData(weekStartStr) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ssId = PropertiesService.getScriptProperties().getProperty('SS_ID');
+  if (!ssId) {
+    throw new Error('スプレッドシートIDが設定されていません（SS_ID）');
+  }
+  var ss = SpreadsheetApp.openById(ssId);
   var sheet = ss.getSheetByName(KAIPOKE_CONFIG.SHEET_NORMALIZED);
 
   if (!sheet) return [];

@@ -33,7 +33,11 @@ var KAIPOKE_EXPORT_CONFIG = {
  * @return {Object} { success, fileId, url, fileName, rowCount, message }
  */
 function kaipoke_exportCsv(weekStartStr) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ssId = PropertiesService.getScriptProperties().getProperty('SS_ID');
+  if (!ssId) {
+    throw new Error('スプレッドシートIDが設定されていません（SS_ID）');
+  }
+  var ss = SpreadsheetApp.openById(ssId);
   var tz = ss.getSpreadsheetTimeZone();
 
   // 割当結果シート読み込み
