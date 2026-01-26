@@ -1410,6 +1410,9 @@
       // 時間タイプ連動の自動時間設定
       autoSetTimeFromType(editingCell.rowIdx, editingCell.colIdx, newValue);
 
+      // 日付→曜日の自動更新
+      autoUpdateWeekdayFromDate(editingCell.rowIdx, editingCell.colIdx, newValue);
+
       td.classList.remove('editing');
       td.innerHTML = escapeHtml(formatCellDisplay(newValue, editingCell.headerName));
       if (dirtyCells.hasOwnProperty(cellKey)) td.classList.add('dirty');
@@ -1563,6 +1566,37 @@
             if (startTime) setCellValue(rowIdx, startColIdx, startTime);
           }
         }
+      }
+    }
+
+    // ============================================================
+    // 日付→曜日の自動更新
+    // ============================================================
+    function autoUpdateWeekdayFromDate(rowIdx, colIdx, newValue) {
+      var header = tableData.header[colIdx];
+
+      // 「日付」カラムの変更でなければ終了
+      if (header !== '日付') return;
+
+      // 「曜日」カラムのインデックスを取得
+      var youbiColIdx = tableData.header.indexOf('曜日');
+      if (youbiColIdx < 0) return;
+
+      // 日付が空なら曜日もクリア
+      if (!newValue) {
+        setCellValue(rowIdx, youbiColIdx, '');
+        return;
+      }
+
+      // 日付から曜日を計算
+      try {
+        var dateObj = new Date(newValue);
+        if (!isNaN(dateObj.getTime())) {
+          var youbi = WEEKDAYS_JP[dateObj.getDay()];
+          setCellValue(rowIdx, youbiColIdx, youbi);
+        }
+      } catch (e) {
+        console.error('曜日自動更新エラー:', e);
       }
     }
 
