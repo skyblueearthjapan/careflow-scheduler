@@ -1649,7 +1649,8 @@ function 週ビューを更新_(ss) {
   staffList.sort((a,b) => {
     if (a.name === '未割当' && b.name !== '未割当') return 1;
     if (b.name === '未割当' && a.name !== '未割当') return -1;
-    return a.name.localeCompare(b.name, 'ja');
+    // スタッフIDでソート（S001, S002, S003...の順）
+    return (a.id || '').localeCompare(b.id || '', 'ja');
   });
 
   viewSheet.clear();
