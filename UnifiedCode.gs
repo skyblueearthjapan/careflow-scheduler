@@ -2628,6 +2628,22 @@ function 割当結果を作成_(ss) {
             candidates = unassignedThisWeek;
           }
           // 全員が既に割り当て済みの場合は、patientCount最小のスタッフを選ぶためそのまま続行
+
+          // ★追加: 候補が複数いる場合、曜日によってローテーション（日ごとに異なるスタッフを優先）
+          if (candidates.length > 1) {
+            // スタッフIDでソートして決定論的な順序を作る
+            candidates.sort(function(a, b) {
+              return a.staff.id.localeCompare(b.staff.id);
+            });
+            // 曜日インデックスで候補リストをシフト（月=1, 火=2, ... 日=0）
+            var dayOfWeek = dateObj.getDay();
+            var shift = dayOfWeek % candidates.length;
+            candidates = candidates.slice(shift).concat(candidates.slice(0, shift));
+            // シフト後の順位を記録（後のソートで使用）
+            candidates.forEach(function(c, i) {
+              c._rotationRank = i;
+            });
+          }
         }
 
         if (candidates.length > 0) {
@@ -2643,6 +2659,10 @@ function 割当結果を作成_(ss) {
             // samePatientToday=falseのスタッフを優先（同じ患者に今日割当済みのスタッフは後ろ）
             if (a.samePatientToday !== b.samePatientToday) return a.samePatientToday ? 1 : -1;
             if (contPref === 'ローテーション優先' && a.patientCount !== b.patientCount) return a.patientCount - b.patientCount;
+            // ★ローテーション優先時: 曜日シフト順位を使用（日ごとに異なるスタッフを選択）
+            if (contPref === 'ローテーション優先' && a._rotationRank !== undefined && b._rotationRank !== undefined) {
+              return a._rotationRank - b._rotationRank;
+            }
             if (a.distScore !== b.distScore) return a.distScore - b.distScore;
             return a.dayCount - b.dayCount;
           });
