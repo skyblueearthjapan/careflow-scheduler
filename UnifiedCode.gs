@@ -2640,7 +2640,8 @@ function 割当結果を作成_(ss) {
 
           candidates.sort(function(a, b){
             if (a._pref !== undefined && b._pref !== undefined && a._pref !== b._pref) return b._pref - a._pref;
-            if (a.samePatientToday !== b.samePatientToday) return a.samePatientToday ? -1 : 1;
+            // samePatientToday=falseのスタッフを優先（同じ患者に今日割当済みのスタッフは後ろ）
+            if (a.samePatientToday !== b.samePatientToday) return a.samePatientToday ? 1 : -1;
             if (contPref === 'ローテーション優先' && a.patientCount !== b.patientCount) return a.patientCount - b.patientCount;
             if (a.distScore !== b.distScore) return a.distScore - b.distScore;
             return a.dayCount - b.dayCount;
