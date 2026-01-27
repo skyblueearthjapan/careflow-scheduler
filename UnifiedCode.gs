@@ -2609,11 +2609,26 @@ function 割当結果を作成_(ss) {
           if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) return;
 
           var distKm = calcDistanceKm(plat, plng, st.lat, st.lng);
-          candidates.push({ staff: st, dayCount: dayCount, patientCount: getPatientWeekCount(pid, st.id),
-                           distKm: distKm, distScore: distToScore(distKm), samePatientToday: false });
+          var thisPatientCount = getPatientWeekCount(pid, st.id);
+
+          // ★ローテーション優先時: 今週既にこの患者に割り当てられたスタッフは候補から除外
+          // ただし、除外すると候補がいなくなる場合に備えて、別リストにも保持
+          candidates.push({ staff: st, dayCount: dayCount, patientCount: thisPatientCount,
+                           distKm: distKm, distScore: distToScore(distKm), samePatientToday: false,
+                           assignedThisWeek: thisPatientCount > 0 });
         });
 
         candidates = applyStaffPreference(candidates, specifiedIdsArr, specifiedType, ngIdsArr);
+
+        // ★ローテーション優先時: 今週未割り当てスタッフを優先（週内分散）
+        if (contPref === 'ローテーション優先' && candidates.length > 0) {
+          var unassignedThisWeek = candidates.filter(function(c){ return !c.assignedThisWeek; });
+          // 未割り当てスタッフがいる場合はそちらを使用、いない場合は全候補を使用
+          if (unassignedThisWeek.length > 0) {
+            candidates = unassignedThisWeek;
+          }
+          // 全員が既に割り当て済みの場合は、patientCount最小のスタッフを選ぶためそのまま続行
+        }
 
         if (candidates.length > 0) {
           candidates.forEach(function(c){
@@ -2648,10 +2663,16 @@ function 割当結果を作成_(ss) {
           // スタッフ個別変更リクエストによる制限チェック（fallback時も適用）
           if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) return;
 
-          fallback.push({ staff: st, dayCount: getAssignCount(st.id, dateStr) });
+          fallback.push({ staff: st, dayCount: getAssignCount(st.id, dateStr), patientCount: getPatientWeekCount(pid, st.id) });
         });
         if (fallback.length > 0) {
-          fallback.sort(function(a,b){ return a.dayCount - b.dayCount; });
+          // ★ローテーション優先時: patientCount（週内割当回数）を最優先でソート
+          fallback.sort(function(a,b){
+            if (contPref === 'ローテーション優先' && a.patientCount !== b.patientCount) {
+              return a.patientCount - b.patientCount;
+            }
+            return a.dayCount - b.dayCount;
+          });
           chosenStaff = fallback[0].staff;
           note = (note || '') + ' / 自動割当: 上限超過の可能性あり';
         }
