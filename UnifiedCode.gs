@@ -1891,7 +1891,7 @@ function 割当結果を作成_(ss) {
   var sIdx = { id: sHeader.indexOf('staff_id'), name: sHeader.indexOf('スタッフ名'), gender: sHeader.indexOf('性別'),
                lat: sHeader.indexOf('緯度'), lng: sHeader.indexOf('経度'), shiftS: sHeader.indexOf('シフト開始'),
                shiftE: sHeader.indexOf('シフト終了'), days: sHeader.indexOf('勤務曜日'), areas: sHeader.indexOf('得意エリア'),
-               maxPer: sHeader.indexOf('最大訪問件数/日') };
+               maxPer: sHeader.indexOf('最大訪問件数/日'), alloc: sHeader.indexOf('割当量') };
 
   function parseDays(str) {
     if (!str) return [];
@@ -1998,8 +1998,10 @@ function 割当結果を作成_(ss) {
     var areasStr = row[sIdx.areas] || '';
     var areaList = String(areasStr).split(/[,\u3001\/・\s]+/).map(function(s){ return s.trim(); }).filter(function(s){ return s; });
     var maxPerDay = Number(row[sIdx.maxPer] || 0) || 999;
+    var allocPref = sIdx.alloc >= 0 ? (row[sIdx.alloc] || '均等') : '均等';
+    if (allocPref !== '多め' && allocPref !== '少なめ') allocPref = '均等';
     staffList.push({ id: id, name: name, gender: row[sIdx.gender] || '', lat: row[sIdx.lat], lng: row[sIdx.lng],
-                     shiftStartMin: shiftStartMin, shiftEndMin: shiftEndMin, workDays: workDays, areas: areaList, maxPerDay: maxPerDay });
+                     shiftStartMin: shiftStartMin, shiftEndMin: shiftEndMin, workDays: workDays, areas: areaList, maxPerDay: maxPerDay, allocPref: allocPref });
   });
 
   if (staffList.length === 0) throw new Error('有効なスタッフ情報がありません。');
@@ -2625,11 +2627,15 @@ function 割当結果を作成_(ss) {
           var distKm = calcDistanceKm(plat, plng, st.lat, st.lng);
           var thisPatientCount = getPatientWeekCount(pid, st.id);
 
+          // ★割当量設定による調整：多め→優先（-2）、少なめ→後回し（+2）、均等→調整なし
+          var allocOffset = st.allocPref === '多め' ? -2 : (st.allocPref === '少なめ' ? 2 : 0);
+          var adjustedDayCount = dayCount + allocOffset;
+
           // ★ローテーション優先時: 今週既にこの患者に割り当てられたスタッフは候補から除外
           // ただし、除外すると候補がいなくなる場合に備えて、別リストにも保持
           // ★追加：動的に追跡した直前割当スタッフかどうかのフラグ
           var isDynamicPrev = (contPref === 'ローテーション優先' && dynamicPrevSid && st.id === dynamicPrevSid);
-          candidates.push({ staff: st, dayCount: dayCount, patientCount: thisPatientCount,
+          candidates.push({ staff: st, dayCount: dayCount, adjustedDayCount: adjustedDayCount, patientCount: thisPatientCount,
                            distKm: distKm, distScore: distToScore(distKm), samePatientToday: false,
                            assignedThisWeek: thisPatientCount > 0, isDynamicPrev: isDynamicPrev });
         });
@@ -2705,7 +2711,8 @@ function 割当結果を作成_(ss) {
               return a._rotationRank - b._rotationRank;
             }
             if (a.distScore !== b.distScore) return a.distScore - b.distScore;
-            return a.dayCount - b.dayCount;
+            // ★割当量設定を反映した調整済みdayCountでソート（多め→優先、少なめ→後回し）
+            return a.adjustedDayCount - b.adjustedDayCount;
           });
           chosenStaff = candidates[0].staff;
         }
@@ -2727,7 +2734,11 @@ function 割当結果を作成_(ss) {
 
           // ★追加：動的に追跡した直前割当スタッフかどうかのフラグ
           var isDynamicPrevFb = (contPref === 'ローテーション優先' && dynamicPrevSid && st.id === dynamicPrevSid);
-          fallback.push({ staff: st, dayCount: getAssignCount(st.id, dateStr), patientCount: getPatientWeekCount(pid, st.id), isDynamicPrev: isDynamicPrevFb });
+          // ★割当量設定による調整：多め→優先（-2）、少なめ→後回し（+2）、均等→調整なし
+          var dayCountFb = getAssignCount(st.id, dateStr);
+          var allocOffsetFb = st.allocPref === '多め' ? -2 : (st.allocPref === '少なめ' ? 2 : 0);
+          var adjustedDayCountFb = dayCountFb + allocOffsetFb;
+          fallback.push({ staff: st, dayCount: dayCountFb, adjustedDayCount: adjustedDayCountFb, patientCount: getPatientWeekCount(pid, st.id), isDynamicPrev: isDynamicPrevFb });
         });
         if (fallback.length > 0) {
           // ★ローテーション優先時: 直前割当スタッフを除外（他の候補がいる場合のみ）
@@ -2762,7 +2773,8 @@ function 割当結果を作成_(ss) {
             if (contPref === 'ローテーション優先' && a._rotationRank !== undefined && b._rotationRank !== undefined) {
               return a._rotationRank - b._rotationRank;
             }
-            return a.dayCount - b.dayCount;
+            // ★割当量設定を反映した調整済みdayCountでソート（多め→優先、少なめ→後回し）
+            return a.adjustedDayCount - b.adjustedDayCount;
           });
           chosenStaff = fallback[0].staff;
           note = (note || '') + ' / 自動割当: 上限超過の可能性あり';

@@ -1892,6 +1892,7 @@
         { key: 'workDays', header: '勤務曜日', label: '勤務可能な曜日は？（複数選択）', type: 'multiSelect', options: ['月','火','水','木','金','土','日'], required: true },
         { key: 'areas', header: '得意エリア', label: '得意エリアは？', type: 'text', hint: '※現在スケジューリング計算に未使用' },
         { key: 'maxPerDay', header: '最大訪問件数/日', label: '1日の最大訪問件数は？', type: 'number', required: true, min: 1 },
+        { key: 'allocPref', header: '割当量', label: '割当量の調整は？', type: 'select', options: ['均等', '多め', '少なめ'], hint: '均等：標準、多め：優先的に割当、少なめ：控えめに割当' },
         { key: 'skill', header: 'スキル', label: 'スキルは？', type: 'select', options: ['', 'ベテラン', '中堅', '新人'], hint: '※現在スケジューリング計算に未使用' },
         { key: 'note', header: '備考', label: '備考（任意）', type: 'textarea' }
       ],
