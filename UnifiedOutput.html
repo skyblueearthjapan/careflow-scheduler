@@ -899,7 +899,67 @@
       border-radius: 50%; width: 30px; height: 30px; animation: spin 0.8s linear infinite;
       margin: 0 auto 10px;
     }
+
+    /* ============================================================
+       ルートマップモーダル
+       ============================================================ */
+    .route-map-modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 1100;
+    }
+    .route-map-modal.show { display: flex; }
+    .route-map-modal-content {
+      background: var(--color-white); border-radius: 12px; width: 90%; max-width: 900px;
+      height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .route-map-header {
+      background: linear-gradient(135deg, var(--color-green) 0%, var(--color-green-dark) 100%);
+      color: var(--color-white); padding: 14px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-weight: 600; font-size: 15px; border-radius: 12px 12px 0 0;
+    }
+    .route-map-header-info { display: flex; flex-direction: column; gap: 2px; }
+    .route-map-header-title { font-size: 16px; }
+    .route-map-header-subtitle { font-size: 12px; opacity: 0.9; }
+    .route-map-close-btn {
+      background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px;
+      border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;
+    }
+    .route-map-close-btn:hover { background: rgba(255,255,255,0.3); }
+    .route-map-body { flex: 1; display: flex; overflow: hidden; }
+    #routeMapContainer { flex: 1; min-height: 300px; }
+    .route-map-sidebar {
+      width: 280px; background: var(--color-bg); border-left: 1px solid var(--color-border);
+      overflow-y: auto; padding: 12px;
+    }
+    .route-stop-item {
+      background: var(--color-white); border-radius: 8px; padding: 10px 12px;
+      margin-bottom: 8px; border-left: 4px solid var(--color-green);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer; transition: all 0.2s;
+    }
+    .route-stop-item:hover { border-left-color: var(--color-blue); background: var(--color-blue-light); }
+    .route-stop-item.start { border-left-color: var(--color-blue); }
+    .route-stop-number {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; background: var(--color-green); color: white;
+      border-radius: 50%; font-size: 12px; font-weight: 600; margin-right: 8px;
+    }
+    .route-stop-item.start .route-stop-number { background: var(--color-blue); }
+    .route-stop-name { font-weight: 600; font-size: 13px; color: var(--color-text); }
+    .route-stop-address { font-size: 11px; color: var(--color-text-light); margin-top: 4px; }
+    .route-map-stats {
+      background: var(--color-white); border-radius: 8px; padding: 12px;
+      margin-bottom: 12px; border: 1px solid var(--color-border);
+    }
+    .route-map-stat-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+    .route-map-stat-label { color: var(--color-text-light); }
+    .route-map-stat-value { font-weight: 600; color: var(--color-text); }
+    .route-table-clickable tr { cursor: pointer; }
+    .route-table-clickable tr:hover td { background: var(--color-blue-light) !important; }
   </style>
+  <!-- Leaflet.js for route map visualization -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
 <body>
 
@@ -1104,6 +1164,26 @@
     </div>
   </div>
 
+  <!-- ルートマップモーダル -->
+  <div class="route-map-modal" id="routeMapModal">
+    <div class="route-map-modal-content">
+      <div class="route-map-header">
+        <div class="route-map-header-info">
+          <div class="route-map-header-title" id="routeMapTitle">訪問ルートマップ</div>
+          <div class="route-map-header-subtitle" id="routeMapSubtitle"></div>
+        </div>
+        <button class="route-map-close-btn" onclick="closeRouteMapModal()">×</button>
+      </div>
+      <div class="route-map-body">
+        <div id="routeMapContainer"></div>
+        <div class="route-map-sidebar">
+          <div class="route-map-stats" id="routeMapStats"></div>
+          <div id="routeStopList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     var baseUrl = '';
     var currentTab = 'weekView';
@@ -1247,9 +1327,15 @@
         return;
       }
 
-      setStatus('success', (data.sheetName || '') + '（' + data.rowCount + '行）');
+      var isRouteSummary = data.sheetName === 'ルートサマリ';
+      var statusMsg = (data.sheetName || '') + '（' + data.rowCount + '行）';
+      if (isRouteSummary) {
+        statusMsg += ' - 行をクリックでマップ表示';
+      }
+      setStatus('success', statusMsg);
 
-      var html = '<div class="table-container"><table class="sheet-table">';
+      var tableClass = isRouteSummary ? 'sheet-table route-table-clickable' : 'sheet-table';
+      var html = '<div class="table-container"><table class="' + tableClass + '">';
 
       html += '<thead><tr>';
       data.header.forEach(function(h) {
@@ -1258,14 +1344,24 @@
       html += '</tr></thead>';
 
       html += '<tbody>';
-      data.rows.forEach(function(row) {
-        html += '<tr>';
+      data.rows.forEach(function(row, rowIndex) {
+        if (isRouteSummary) {
+          var rowDataAttr = ' data-row-index="' + rowIndex + '" onclick="showRouteMap(' + rowIndex + ')"';
+          html += '<tr' + rowDataAttr + '>';
+        } else {
+          html += '<tr>';
+        }
         row.forEach(function(cell) {
           html += '<td>' + escapeHtml(cell || '') + '</td>';
         });
         html += '</tr>';
       });
       html += '</tbody></table></div>';
+
+      // ルートサマリの場合、データをグローバルに保存
+      if (isRouteSummary) {
+        window.routeSummaryData = { header: data.header, rows: data.rows };
+      }
 
       document.getElementById('mainContent').innerHTML = html;
     }
@@ -2358,6 +2454,222 @@
     // モーダル外クリックで閉じる
     document.getElementById('kaipokeModal').addEventListener('click', function(e) {
       if (e.target === this) closeKaipokeModal();
+    });
+
+    // ============================================================
+    // ルートマップ表示機能
+    // ============================================================
+    var routeMap = null;
+
+    function showRouteMap(rowIndex) {
+      if (!window.routeSummaryData || !window.routeSummaryData.rows[rowIndex]) {
+        showToast('データが見つかりません', 'error');
+        return;
+      }
+
+      var header = window.routeSummaryData.header;
+      var row = window.routeSummaryData.rows[rowIndex];
+
+      // ヘッダーからインデックスを取得
+      var staffNameIdx = header.indexOf('スタッフ名');
+      var dateIdx = header.indexOf('日付');
+      var visitCountIdx = header.indexOf('訪問件数');
+      var distIdx = header.indexOf('総移動距離(km)');
+      var timeIdx = header.indexOf('総移動時間(分)');
+      var routeIdx = header.indexOf('ルート順（No. 患者ID 患者名 住所 (緯度, 経度)）');
+
+      var staffName = staffNameIdx >= 0 ? row[staffNameIdx] : '不明';
+      var dateStr = dateIdx >= 0 ? row[dateIdx] : '';
+      var visitCount = visitCountIdx >= 0 ? row[visitCountIdx] : '';
+      var totalDist = distIdx >= 0 ? row[distIdx] : '';
+      var totalTime = timeIdx >= 0 ? row[timeIdx] : '';
+      var routeText = routeIdx >= 0 ? row[routeIdx] : '';
+
+      // ルートテキストをパース
+      var stops = parseRouteText(routeText);
+      if (stops.length === 0) {
+        showToast('位置情報がありません', 'error');
+        return;
+      }
+
+      // モーダルを表示
+      document.getElementById('routeMapTitle').textContent = staffName + ' の訪問ルート';
+      document.getElementById('routeMapSubtitle').textContent = dateStr;
+
+      // 統計情報を表示
+      var statsHtml = '<div class="route-map-stat-row"><span class="route-map-stat-label">訪問件数</span><span class="route-map-stat-value">' + visitCount + '件</span></div>' +
+        '<div class="route-map-stat-row"><span class="route-map-stat-label">総移動距離</span><span class="route-map-stat-value">' + (totalDist ? parseFloat(totalDist).toFixed(1) + 'km' : '-') + '</span></div>' +
+        '<div class="route-map-stat-row"><span class="route-map-stat-label">総移動時間</span><span class="route-map-stat-value">' + (totalTime ? totalTime + '分' : '-') + '</span></div>';
+      document.getElementById('routeMapStats').innerHTML = statsHtml;
+
+      // 訪問リストを表示
+      var listHtml = '';
+      stops.forEach(function(stop, idx) {
+        var isStart = idx === 0;
+        listHtml += '<div class="route-stop-item' + (isStart ? ' start' : '') + '" onclick="panToStop(' + idx + ')">' +
+          '<span class="route-stop-number">' + (idx + 1) + '</span>' +
+          '<span class="route-stop-name">' + escapeHtml(stop.name) + '</span>' +
+          '<div class="route-stop-address">' + escapeHtml(stop.address) + '</div>' +
+          '</div>';
+      });
+      document.getElementById('routeStopList').innerHTML = listHtml;
+
+      // モーダル表示
+      document.getElementById('routeMapModal').classList.add('show');
+
+      // マップを初期化
+      setTimeout(function() {
+        initRouteMap(stops);
+      }, 100);
+    }
+
+    function parseRouteText(text) {
+      if (!text) return [];
+
+      var stops = [];
+      // パターン: No.1 P001 患者名 住所 (緯度, 経度) → No.2 ...
+      var parts = text.split('→');
+
+      parts.forEach(function(part) {
+        part = part.trim();
+        if (!part) return;
+
+        // 座標を抽出: (緯度, 経度)
+        var coordMatch = part.match(/\(([0-9.]+),\s*([0-9.]+)\)\s*$/);
+        if (!coordMatch) return;
+
+        var lat = parseFloat(coordMatch[1]);
+        var lng = parseFloat(coordMatch[2]);
+        if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
+
+        // No.X を除去してパース
+        var contentWithoutCoord = part.replace(/\([0-9.]+,\s*[0-9.]+\)\s*$/, '').trim();
+        var noMatch = contentWithoutCoord.match(/^No\.(\d+)\s+/);
+        var content = noMatch ? contentWithoutCoord.replace(/^No\.\d+\s+/, '') : contentWithoutCoord;
+
+        // 患者ID 患者名 住所 を分離
+        var tokens = content.split(/\s+/);
+        var patientId = tokens[0] || '';
+        var patientName = tokens[1] || '';
+        var address = tokens.slice(2).join(' ') || '';
+
+        stops.push({
+          no: noMatch ? parseInt(noMatch[1]) : stops.length + 1,
+          patientId: patientId,
+          name: patientName || patientId,
+          address: address,
+          lat: lat,
+          lng: lng
+        });
+      });
+
+      return stops;
+    }
+
+    var routeMapStops = [];
+
+    function initRouteMap(stops) {
+      routeMapStops = stops;
+
+      // 既存のマップを破棄
+      if (routeMap) {
+        routeMap.remove();
+        routeMap = null;
+      }
+
+      var container = document.getElementById('routeMapContainer');
+      if (!container) return;
+
+      // マップを初期化
+      routeMap = L.map('routeMapContainer');
+
+      // OpenStreetMapタイルを追加
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      }).addTo(routeMap);
+
+      if (stops.length === 0) return;
+
+      // マーカーとルートラインを追加
+      var latlngs = [];
+      var bounds = L.latLngBounds();
+
+      stops.forEach(function(stop, idx) {
+        var latlng = [stop.lat, stop.lng];
+        latlngs.push(latlng);
+        bounds.extend(latlng);
+
+        // カスタムアイコンを作成
+        var markerColor = idx === 0 ? '#5A8BC4' : '#9BC06A';
+        var icon = L.divIcon({
+          className: 'route-marker',
+          html: '<div style="background:' + markerColor + ';color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid white;">' + (idx + 1) + '</div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        var marker = L.marker(latlng, { icon: icon }).addTo(routeMap);
+        marker.bindPopup('<b>' + (idx + 1) + '. ' + escapeHtml(stop.name) + '</b><br>' + escapeHtml(stop.address));
+      });
+
+      // ルートラインを描画
+      if (latlngs.length > 1) {
+        var polyline = L.polyline(latlngs, {
+          color: '#5A8BC4',
+          weight: 4,
+          opacity: 0.8,
+          dashArray: '10, 10'
+        }).addTo(routeMap);
+
+        // 矢印を追加（方向を示す）
+        addArrowheads(latlngs);
+      }
+
+      // 表示範囲を調整
+      routeMap.fitBounds(bounds, { padding: [30, 30] });
+    }
+
+    function addArrowheads(latlngs) {
+      for (var i = 0; i < latlngs.length - 1; i++) {
+        var start = latlngs[i];
+        var end = latlngs[i + 1];
+
+        // 中間点を計算
+        var midLat = (start[0] + end[0]) / 2;
+        var midLng = (start[1] + end[1]) / 2;
+
+        // 角度を計算
+        var angle = Math.atan2(end[0] - start[0], end[1] - start[1]) * 180 / Math.PI;
+
+        // 矢印マーカーを追加
+        var arrowIcon = L.divIcon({
+          className: 'route-arrow',
+          html: '<div style="transform:rotate(' + (-angle + 90) + 'deg);color:#5A8BC4;font-size:16px;text-shadow:0 0 2px white;">▶</div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        });
+
+        L.marker([midLat, midLng], { icon: arrowIcon, interactive: false }).addTo(routeMap);
+      }
+    }
+
+    function panToStop(idx) {
+      if (!routeMap || !routeMapStops[idx]) return;
+      var stop = routeMapStops[idx];
+      routeMap.setView([stop.lat, stop.lng], 16);
+    }
+
+    function closeRouteMapModal() {
+      document.getElementById('routeMapModal').classList.remove('show');
+      if (routeMap) {
+        routeMap.remove();
+        routeMap = null;
+      }
+    }
+
+    // ルートマップモーダル外クリックで閉じる
+    document.getElementById('routeMapModal').addEventListener('click', function(e) {
+      if (e.target === this) closeRouteMapModal();
     });
   </script>
 
