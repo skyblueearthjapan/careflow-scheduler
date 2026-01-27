@@ -2332,11 +2332,16 @@ function 割当結果を作成_(ss) {
     if (!(d instanceof Date)) return;
     var changeType = row[wIdx.change];
     if (changeType === 'キャンセル') return;
-    weeklyRequests.push({ row: row, date: d, dateStr: Utilities.formatDate(d, tz, 'yyyy/MM/dd'), start: row[wIdx.start], end: row[wIdx.end] });
+    var contPrefVal = normalizeContPref(row[wIdx.contPref]);
+    weeklyRequests.push({ row: row, date: d, dateStr: Utilities.formatDate(d, tz, 'yyyy/MM/dd'), start: row[wIdx.start], end: row[wIdx.end], contPref: contPrefVal });
   });
 
   weeklyRequests.sort(function(a,b){
     if (a.date.getTime() !== b.date.getTime()) return a.date - b.date;
+    // ★ローテーション優先の患者を先に処理（スタッフ分散のため）
+    var aIsRotation = (a.contPref === 'ローテーション優先') ? 0 : 1;
+    var bIsRotation = (b.contPref === 'ローテーション優先') ? 0 : 1;
+    if (aIsRotation !== bIsRotation) return aIsRotation - bIsRotation;
     return toMinutes(a.start) - toMinutes(b.start);
   });
 
@@ -2583,19 +2588,21 @@ function 割当結果を作成_(ss) {
 
       if (!chosenStaff) {
         var candidates = [];
+        // ★デバッグ用：除外理由を追跡
+        var debugExcludeReasons = {};
         staffList.forEach(function(st){
-          if (usedStaffIds[st.id]) return;
-          if (sexLimit === '女性のみ' && st.gender !== '女性') return;
-          if (sexLimit === '男性のみ' && st.gender !== '男性') return;
-          if (youbi && st.workDays.length > 0 && st.workDays.indexOf(youbi) === -1) return;
-          if (avoidPrev && prevSid && st.id === prevSid) return;
+          if (usedStaffIds[st.id]) { debugExcludeReasons[st.id] = 'usedStaffIds'; return; }
+          if (sexLimit === '女性のみ' && st.gender !== '女性') { debugExcludeReasons[st.id] = 'sexLimit(女性のみ)'; return; }
+          if (sexLimit === '男性のみ' && st.gender !== '男性') { debugExcludeReasons[st.id] = 'sexLimit(男性のみ)'; return; }
+          if (youbi && st.workDays.length > 0 && st.workDays.indexOf(youbi) === -1) { debugExcludeReasons[st.id] = 'workDays(' + youbi + ')'; return; }
+          if (avoidPrev && prevSid && st.id === prevSid) { debugExcludeReasons[st.id] = 'avoidPrev'; return; }
           if (st.shiftStartMin != null && st.shiftEndMin != null) {
             if (timeType === '固定') {
-              if (startMin != null && startMin < st.shiftStartMin) return;
-              if (endMin != null && endMin > st.shiftEndMin) return;
+              if (startMin != null && startMin < st.shiftStartMin) { debugExcludeReasons[st.id] = 'shiftStart'; return; }
+              if (endMin != null && endMin > st.shiftEndMin) { debugExcludeReasons[st.id] = 'shiftEnd'; return; }
               // ★追加：同スタッフの既存予定と重なるなら不可
               if (startMin != null && endMin != null) {
-                if (isOverlappedWithExisting_(st.id, dateObj, startMin, endMin)) return;
+                if (isOverlappedWithExisting_(st.id, dateObj, startMin, endMin)) { debugExcludeReasons[st.id] = 'overlap'; return; }
               }
             } else {
               var reqStart = earliestMin != null ? earliestMin : startMin;
@@ -2604,14 +2611,14 @@ function 割当結果を作成_(ss) {
               if (reqEnd == null) reqEnd = st.shiftEndMin;
               var latestStart = Math.max(reqStart, st.shiftStartMin);
               var earliestEnd = Math.min(reqEnd, st.shiftEndMin);
-              if (latestStart >= earliestEnd) return;
+              if (latestStart >= earliestEnd) { debugExcludeReasons[st.id] = 'timeWindow'; return; }
             }
           }
           var dayCount = getAssignCount(st.id, dateStr);
-          if (dayCount >= st.maxPerDay) return;
+          if (dayCount >= st.maxPerDay) { debugExcludeReasons[st.id] = 'maxPerDay'; return; }
 
           // スタッフ個別変更リクエストによる制限チェック
-          if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) return;
+          if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) { debugExcludeReasons[st.id] = 'staffAvailability'; return; }
 
           var distKm = calcDistanceKm(plat, plng, st.lat, st.lng);
           var thisPatientCount = getPatientWeekCount(pid, st.id);
@@ -2626,6 +2633,15 @@ function 割当結果を作成_(ss) {
         });
 
         candidates = applyStaffPreference(candidates, specifiedIdsArr, specifiedType, ngIdsArr);
+
+        // ★デバッグログ：ローテーション優先の患者で候補数と除外理由を確認
+        if (contPref === 'ローテーション優先') {
+          var excludeInfo = Object.keys(debugExcludeReasons).map(function(sid){ return sid + ':' + debugExcludeReasons[sid]; }).join(', ');
+          console.log('[Rotation Debug] pid=' + pid + ' date=' + dateStr + ' candidates=' + candidates.length +
+            ' names=[' + candidates.map(function(c){ return c.staff.id + ':' + c.staff.name; }).join(', ') + ']' +
+            ' excluded=[' + excludeInfo + ']' +
+            ' dynamicPrevSid=' + (dynamicPrevSid || 'none'));
+        }
 
         // ★ローテーション優先時: 今週未割り当てスタッフを優先（週内分散）
         if (contPref === 'ローテーション優先' && candidates.length > 0) {
