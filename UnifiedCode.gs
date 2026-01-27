@@ -2636,6 +2636,15 @@ function 割当結果を作成_(ss) {
           }
           // 全員が既に割り当て済みの場合は、patientCount最小のスタッフを選ぶためそのまま続行
 
+          // ★重要：直前割当スタッフを候補から除外（他の候補がいる場合のみ）
+          // これにより、ソートに関係なく確実に別のスタッフが選ばれる
+          if (dynamicPrevSid && candidates.length > 1) {
+            var nonDynamicPrev = candidates.filter(function(c){ return !c.isDynamicPrev; });
+            if (nonDynamicPrev.length > 0) {
+              candidates = nonDynamicPrev;
+            }
+          }
+
           // ★追加: 候補が複数いる場合、曜日によってローテーション（日ごとに異なるスタッフを優先）
           if (candidates.length > 1) {
             // スタッフIDでソートして決定論的な順序を作る
@@ -2700,6 +2709,13 @@ function 割当結果を作成_(ss) {
           fallback.push({ staff: st, dayCount: getAssignCount(st.id, dateStr), patientCount: getPatientWeekCount(pid, st.id), isDynamicPrev: isDynamicPrevFb });
         });
         if (fallback.length > 0) {
+          // ★ローテーション優先時: 直前割当スタッフを除外（他の候補がいる場合のみ）
+          if (contPref === 'ローテーション優先' && dynamicPrevSid && fallback.length > 1) {
+            var nonDynamicPrevFb = fallback.filter(function(c){ return !c.isDynamicPrev; });
+            if (nonDynamicPrevFb.length > 0) {
+              fallback = nonDynamicPrevFb;
+            }
+          }
           // ★ローテーション優先時: 曜日シフトを適用（日ごとに異なるスタッフを選択）
           if (contPref === 'ローテーション優先' && fallback.length > 1) {
             fallback.sort(function(a, b) {
