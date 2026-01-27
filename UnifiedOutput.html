@@ -938,13 +938,13 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer; transition: all 0.2s;
     }
     .route-stop-item:hover { border-left-color: var(--color-blue); background: var(--color-blue-light); }
-    .route-stop-item.start { border-left-color: var(--color-blue); }
+    .route-stop-item.office { border-left-color: #FF8C00; }
     .route-stop-number {
       display: inline-flex; align-items: center; justify-content: center;
       width: 24px; height: 24px; background: var(--color-green); color: white;
       border-radius: 50%; font-size: 12px; font-weight: 600; margin-right: 8px;
     }
-    .route-stop-item.start .route-stop-number { background: var(--color-blue); }
+    .route-stop-number.office { background: #FF8C00; }
     .route-stop-name { font-weight: 600; font-size: 13px; color: var(--color-text); }
     .route-stop-address { font-size: 11px; color: var(--color-text-light); margin-top: 4px; }
     .route-map-stats {
@@ -2505,9 +2505,10 @@
       // 訪問リストを表示
       var listHtml = '';
       stops.forEach(function(stop, idx) {
-        var isStart = idx === 0;
-        listHtml += '<div class="route-stop-item' + (isStart ? ' start' : '') + '" onclick="panToStop(' + idx + ')">' +
-          '<span class="route-stop-number">' + (idx + 1) + '</span>' +
+        var isOffice = stop.isOffice;
+        var displayNo = stop.no;
+        listHtml += '<div class="route-stop-item' + (isOffice ? ' office' : '') + '" onclick="panToStop(' + idx + ')">' +
+          '<span class="route-stop-number' + (isOffice ? ' office' : '') + '">' + displayNo + '</span>' +
           '<span class="route-stop-name">' + escapeHtml(stop.name) + '</span>' +
           '<div class="route-stop-address">' + escapeHtml(stop.address) + '</div>' +
           '</div>';
@@ -2527,7 +2528,7 @@
       if (!text) return [];
 
       var stops = [];
-      // パターン: No.1 P001 患者名 住所 (緯度, 経度) → No.2 ...
+      // パターン: No.0 S001 出発 住所 (緯度, 経度) → No.1 P001 患者名 住所 (緯度, 経度) → ...
       var parts = text.split('→');
 
       parts.forEach(function(part) {
@@ -2545,21 +2546,26 @@
         // No.X を除去してパース
         var contentWithoutCoord = part.replace(/\([0-9.]+,\s*[0-9.]+\)\s*$/, '').trim();
         var noMatch = contentWithoutCoord.match(/^No\.(\d+)\s+/);
+        var routeNo = noMatch ? parseInt(noMatch[1]) : stops.length;
         var content = noMatch ? contentWithoutCoord.replace(/^No\.\d+\s+/, '') : contentWithoutCoord;
 
-        // 患者ID 患者名 住所 を分離
+        // 患者ID/スタッフID 名前 住所 を分離
         var tokens = content.split(/\s+/);
-        var patientId = tokens[0] || '';
-        var patientName = tokens[1] || '';
+        var id = tokens[0] || '';
+        var name = tokens[1] || '';
         var address = tokens.slice(2).join(' ') || '';
 
+        // No.0かつ名前が「出発」なら営業所
+        var isOffice = (routeNo === 0 && name === '出発');
+
         stops.push({
-          no: noMatch ? parseInt(noMatch[1]) : stops.length + 1,
-          patientId: patientId,
-          name: patientName || patientId,
+          no: routeNo,
+          patientId: id,
+          name: isOffice ? '営業所（出発）' : (name || id),
           address: address,
           lat: lat,
-          lng: lng
+          lng: lng,
+          isOffice: isOffice
         });
       });
 
@@ -2599,17 +2605,20 @@
         latlngs.push(latlng);
         bounds.extend(latlng);
 
-        // カスタムアイコンを作成
-        var markerColor = idx === 0 ? '#5A8BC4' : '#9BC06A';
+        // カスタムアイコンを作成（営業所はオレンジ、訪問は緑）
+        var isOffice = stop.isOffice;
+        var markerColor = isOffice ? '#FF8C00' : '#9BC06A';
+        var displayNo = stop.no;
+        var markerContent = isOffice ? '🏢' : displayNo;
         var icon = L.divIcon({
           className: 'route-marker',
-          html: '<div style="background:' + markerColor + ';color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid white;">' + (idx + 1) + '</div>',
+          html: '<div style="background:' + markerColor + ';color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:' + (isOffice ? '14px' : '12px') + ';box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid white;">' + markerContent + '</div>',
           iconSize: [28, 28],
           iconAnchor: [14, 14]
         });
 
         var marker = L.marker(latlng, { icon: icon }).addTo(routeMap);
-        marker.bindPopup('<b>' + (idx + 1) + '. ' + escapeHtml(stop.name) + '</b><br>' + escapeHtml(stop.address));
+        marker.bindPopup('<b>' + displayNo + '. ' + escapeHtml(stop.name) + '</b><br>' + escapeHtml(stop.address));
       });
 
       // ルートラインを描画

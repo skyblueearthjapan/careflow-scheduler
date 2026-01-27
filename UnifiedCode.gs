@@ -4202,9 +4202,23 @@ function ルートサマリを作成_(ss) {
   const tz = ss.getSpreadsheetTimeZone();
   const resultSheet = ss.getSheetByName('割当結果');
   const patientSheet = ss.getSheetByName('患者マスタ');
+  const staffSheet = ss.getSheetByName('スタッフマスタ');
 
   if (!resultSheet) throw new Error('「割当結果」シートが見つかりません。');
   if (!patientSheet) throw new Error('「患者マスタ」シートが見つかりません。');
+  if (!staffSheet) throw new Error('「スタッフマスタ」シートが見つかりません。');
+
+  // スタッフマスタから拠点情報を取得
+  const sValues = staffSheet.getDataRange().getValues();
+  const sHeader = sValues[0];
+  const sIdx = { id: sHeader.indexOf('staff_id'), addr: sHeader.indexOf('拠点住所'),
+                 lat: sHeader.indexOf('緯度'), lng: sHeader.indexOf('経度') };
+  const staffMap = {};
+  for (let i = 1; i < sValues.length; i++) {
+    const row = sValues[i], sid = row[sIdx.id];
+    if (!sid) continue;
+    staffMap[sid] = { addr: row[sIdx.addr] || '', lat: row[sIdx.lat] || '', lng: row[sIdx.lng] || '' };
+  }
 
   const pValues = patientSheet.getDataRange().getValues();
   const pHeader = pValues[0];
@@ -4268,10 +4282,14 @@ function ルートサマリを作成_(ss) {
       const visits = r.visits.slice().sort((a, b) => {
         if (!a.start && !b.start) return 0; if (!a.start) return 1; if (!b.start) return -1; return a.start - b.start;
       });
-      const routeText = visits.map((v, idx) => {
+      // 出発点（営業所）をNo.0として追加
+      const staff = staffMap[r.staffId] || {};
+      const startPoint = 'No.0 ' + r.staffId + ' 出発 ' + (staff.addr || '') + ' (' + (staff.lat || '') + ', ' + (staff.lng || '') + ')';
+      const visitTexts = visits.map((v, idx) => {
         const p = patientMap[v.pid] || {};
         return 'No.' + (idx + 1) + ' ' + v.pid + ' ' + v.pname + ' ' + (p.addr || '') + ' (' + (p.lat || '') + ', ' + (p.lng || '') + ')';
-      }).join(' → ');
+      });
+      const routeText = [startPoint].concat(visitTexts).join(' → ');
       return [r.staffId, r.staffName, r.dateObj, r.youbi, r.visitCount, r.moveCount, r.distTotal, r.timeTotal, routeText];
     });
     summarySheet.getRange(2, 1, out.length, outHeader.length).setValues(out);
