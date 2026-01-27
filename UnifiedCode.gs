@@ -2769,9 +2769,11 @@ function 割当結果を作成_(ss) {
             if (contPref === 'ローテーション優先' && a._rotationRank !== undefined && b._rotationRank !== undefined) {
               return a._rotationRank - b._rotationRank;
             }
+            // ★均等優先: 割当回数を距離より優先（スタッフ間の負荷バランスを重視）
+            if (a.adjustedDayCount !== b.adjustedDayCount) return a.adjustedDayCount - b.adjustedDayCount;
+            // 割当回数が同じ場合は距離で判定
             if (a.distScore !== b.distScore) return a.distScore - b.distScore;
-            // ★割当量設定を反映した調整済みdayCountでソート（多め→優先、少なめ→後回し）
-            return a.adjustedDayCount - b.adjustedDayCount;
+            return 0;
           });
           chosenStaff = candidates[0].staff;
         }
@@ -2832,7 +2834,7 @@ function 割当結果を作成_(ss) {
             if (contPref === 'ローテーション優先' && a._rotationRank !== undefined && b._rotationRank !== undefined) {
               return a._rotationRank - b._rotationRank;
             }
-            // ★割当量設定を反映した調整済みdayCountでソート（多め→優先、少なめ→後回し）
+            // ★均等優先: 割当回数でソート（スタッフ間の負荷バランスを重視）
             return a.adjustedDayCount - b.adjustedDayCount;
           });
           chosenStaff = fallback[0].staff;
