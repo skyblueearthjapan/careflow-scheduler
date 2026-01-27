@@ -2469,6 +2469,9 @@ function 割当結果を作成_(ss) {
     return false;
   }
 
+  // ★ローテーション優先用：患者ごとに「処理中に最後に割り当てられたスタッフID」を動的に追跡
+  var lastAssignedStaffByPatient = {};
+
   weeklyRequests.forEach(function(item, idx){
     var row = item.row;
     var dateObj = item.date;
@@ -2509,6 +2512,8 @@ function 割当結果を作成_(ss) {
     var plng = pInfo.lng;
 
     var avoidPrev = (contPref === 'ローテーション優先' && prevSid);
+    // ★ローテーション優先時：動的に追跡した「直前割当スタッフ」を取得
+    var dynamicPrevSid = lastAssignedStaffByPatient[pid] || null;
     var earliestMin = earliest ? toMinutes(earliest) : null;
     var latestMin = latest ? toMinutes(latest) : null;
 
@@ -2613,9 +2618,11 @@ function 割当結果を作成_(ss) {
 
           // ★ローテーション優先時: 今週既にこの患者に割り当てられたスタッフは候補から除外
           // ただし、除外すると候補がいなくなる場合に備えて、別リストにも保持
+          // ★追加：動的に追跡した直前割当スタッフかどうかのフラグ
+          var isDynamicPrev = (contPref === 'ローテーション優先' && dynamicPrevSid && st.id === dynamicPrevSid);
           candidates.push({ staff: st, dayCount: dayCount, patientCount: thisPatientCount,
                            distKm: distKm, distScore: distToScore(distKm), samePatientToday: false,
-                           assignedThisWeek: thisPatientCount > 0 });
+                           assignedThisWeek: thisPatientCount > 0, isDynamicPrev: isDynamicPrev });
         });
 
         candidates = applyStaffPreference(candidates, specifiedIdsArr, specifiedType, ngIdsArr);
@@ -2658,6 +2665,10 @@ function 割当結果を作成_(ss) {
             if (a._pref !== undefined && b._pref !== undefined && a._pref !== b._pref) return b._pref - a._pref;
             // samePatientToday=falseのスタッフを優先（同じ患者に今日割当済みのスタッフは後ろ）
             if (a.samePatientToday !== b.samePatientToday) return a.samePatientToday ? 1 : -1;
+            // ★ローテーション優先時: 動的に追跡した直前割当スタッフを後回し（連続割当を防止）
+            if (contPref === 'ローテーション優先' && a.isDynamicPrev !== b.isDynamicPrev) {
+              return a.isDynamicPrev ? 1 : -1;
+            }
             if (contPref === 'ローテーション優先' && a.patientCount !== b.patientCount) return a.patientCount - b.patientCount;
             // ★ローテーション優先時: 曜日シフト順位を使用（日ごとに異なるスタッフを選択）
             if (contPref === 'ローテーション優先' && a._rotationRank !== undefined && b._rotationRank !== undefined) {
@@ -2684,13 +2695,35 @@ function 割当結果を作成_(ss) {
           // スタッフ個別変更リクエストによる制限チェック（fallback時も適用）
           if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) return;
 
-          fallback.push({ staff: st, dayCount: getAssignCount(st.id, dateStr), patientCount: getPatientWeekCount(pid, st.id) });
+          // ★追加：動的に追跡した直前割当スタッフかどうかのフラグ
+          var isDynamicPrevFb = (contPref === 'ローテーション優先' && dynamicPrevSid && st.id === dynamicPrevSid);
+          fallback.push({ staff: st, dayCount: getAssignCount(st.id, dateStr), patientCount: getPatientWeekCount(pid, st.id), isDynamicPrev: isDynamicPrevFb });
         });
         if (fallback.length > 0) {
+          // ★ローテーション優先時: 曜日シフトを適用（日ごとに異なるスタッフを選択）
+          if (contPref === 'ローテーション優先' && fallback.length > 1) {
+            fallback.sort(function(a, b) {
+              return a.staff.id.localeCompare(b.staff.id);
+            });
+            var dayOfWeekFb = dateObj.getDay();
+            var shiftFb = dayOfWeekFb % fallback.length;
+            fallback = fallback.slice(shiftFb).concat(fallback.slice(0, shiftFb));
+            fallback.forEach(function(c, i) {
+              c._rotationRank = i;
+            });
+          }
           // ★ローテーション優先時: patientCount（週内割当回数）を最優先でソート
           fallback.sort(function(a,b){
+            // ★追加：動的に追跡した直前割当スタッフを後回し
+            if (contPref === 'ローテーション優先' && a.isDynamicPrev !== b.isDynamicPrev) {
+              return a.isDynamicPrev ? 1 : -1;
+            }
             if (contPref === 'ローテーション優先' && a.patientCount !== b.patientCount) {
               return a.patientCount - b.patientCount;
+            }
+            // ★追加：曜日シフト順位を使用
+            if (contPref === 'ローテーション優先' && a._rotationRank !== undefined && b._rotationRank !== undefined) {
+              return a._rotationRank - b._rotationRank;
             }
             return a.dayCount - b.dayCount;
           });
@@ -2706,6 +2739,8 @@ function 割当結果を作成_(ss) {
         usedStaffIds[staffId] = true;
         incAssignCount(staffId, dateStr);
         incPatientWeekCount(pid, staffId);
+        // ★ローテーション優先用：この患者に最後に割り当てたスタッフを記録
+        lastAssignedStaffByPatient[pid] = staffId;
       } else {
         staffName = '未割当';
         unassignedList.push({ date: dateObj, youbi: youbiRaw, pid: pid, pname: pname, needStaff: needStaff, slot: slot, reason: note || '条件を満たすスタッフなし' });
