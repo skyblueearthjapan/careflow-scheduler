@@ -956,6 +956,47 @@
     .route-map-stat-value { font-weight: 600; color: var(--color-text); }
     .route-table-clickable tr { cursor: pointer; }
     .route-table-clickable tr:hover td { background: var(--color-blue-light) !important; }
+    /* 患者詳細パネル（ルートマップ内） */
+    #routeStopListContainer { display: block; }
+    .route-patient-detail-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 0; margin-bottom: 8px; border-bottom: 1px solid var(--color-border);
+    }
+    .route-patient-back-btn {
+      background: var(--color-blue); color: white; border: none;
+      padding: 6px 12px; border-radius: 6px; font-size: 12px;
+      cursor: pointer; font-weight: 600;
+    }
+    .route-patient-back-btn:hover { background: var(--color-blue-dark); }
+    .route-patient-detail-title { font-weight: 600; font-size: 13px; color: var(--color-text); }
+    .route-patient-detail-content { font-size: 12px; }
+    .route-patient-section {
+      background: var(--color-white); border-radius: 8px;
+      padding: 10px; margin-bottom: 10px; border: 1px solid var(--color-border);
+    }
+    .route-patient-section-title {
+      font-weight: 600; font-size: 12px; color: var(--color-text);
+      margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--color-border);
+    }
+    .route-patient-info-row {
+      display: flex; justify-content: space-between; padding: 4px 0;
+      border-bottom: 1px dashed var(--color-border);
+    }
+    .route-patient-info-row:last-child { border-bottom: none; }
+    .route-patient-info-label { color: var(--color-text-light); font-size: 11px; }
+    .route-patient-info-value { font-weight: 600; color: var(--color-text); font-size: 11px; }
+    .route-patient-info-value.highlight { color: var(--color-blue); }
+    .route-patient-info-value.critical { color: var(--color-error); }
+    .route-stop-detail-btn {
+      background: var(--color-blue-light); color: var(--color-blue); border: none;
+      padding: 3px 8px; border-radius: 4px; font-size: 10px;
+      cursor: pointer; margin-left: auto; white-space: nowrap;
+    }
+    .route-stop-detail-btn:hover { background: var(--color-blue); color: white; }
+    .route-stop-item-header { display: flex; align-items: center; width: 100%; }
+    .route-stop-item-info { flex: 1; }
+    .route-patient-loading { text-align: center; color: #999; padding: 20px; }
+    .route-patient-error { color: var(--color-error); padding: 10px; }
   </style>
   <!-- Leaflet.js for route map visualization -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
@@ -1178,7 +1219,20 @@
         <div id="routeMapContainer"></div>
         <div class="route-map-sidebar">
           <div class="route-map-stats" id="routeMapStats"></div>
-          <div id="routeStopList"></div>
+          <!-- 訪問リスト（デフォルト表示） -->
+          <div id="routeStopListContainer">
+            <div id="routeStopList"></div>
+          </div>
+          <!-- 患者詳細パネル（詳細ボタンクリック時に表示） -->
+          <div id="routePatientDetailPanel" style="display:none;">
+            <div class="route-patient-detail-header">
+              <button class="route-patient-back-btn" onclick="closeRoutePatientDetail()">← 戻る</button>
+              <span class="route-patient-detail-title" id="routePatientDetailTitle">患者詳細</span>
+            </div>
+            <div class="route-patient-detail-content" id="routePatientDetailContent">
+              <!-- 患者詳細がここに表示される -->
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2507,11 +2561,18 @@
       stops.forEach(function(stop, idx) {
         var isOffice = stop.isOffice;
         var displayNo = stop.no;
-        listHtml += '<div class="route-stop-item' + (isOffice ? ' office' : '') + '" onclick="panToStop(' + idx + ')">' +
-          '<span class="route-stop-number' + (isOffice ? ' office' : '') + '">' + displayNo + '</span>' +
-          '<span class="route-stop-name">' + escapeHtml(stop.name) + '</span>' +
-          '<div class="route-stop-address">' + escapeHtml(stop.address) + '</div>' +
-          '</div>';
+        listHtml += '<div class="route-stop-item' + (isOffice ? ' office' : '') + '" onclick="panToStop(' + idx + ')">';
+        listHtml += '<div class="route-stop-item-header">';
+        listHtml += '<span class="route-stop-number' + (isOffice ? ' office' : '') + '">' + displayNo + '</span>';
+        listHtml += '<div class="route-stop-item-info">';
+        listHtml += '<span class="route-stop-name">' + escapeHtml(stop.name) + '</span>';
+        listHtml += '<div class="route-stop-address">' + escapeHtml(stop.address) + '</div>';
+        listHtml += '</div>';
+        // 営業所以外は詳細ボタンを表示
+        if (!isOffice && stop.patientId) {
+          listHtml += '<button class="route-stop-detail-btn" onclick="event.stopPropagation(); showRoutePatientDetail(\'' + stop.patientId + '\', \'' + escapeHtml(stop.name) + '\')">条件</button>';
+        }
+        listHtml += '</div></div>';
       });
       document.getElementById('routeStopList').innerHTML = listHtml;
 
@@ -2668,8 +2729,156 @@
       routeMap.setView([stop.lat, stop.lng], 16);
     }
 
+    // ルートマップ内で患者詳細を表示
+    function showRoutePatientDetail(patientId, patientName) {
+      // 訪問リストを非表示にして詳細パネルを表示
+      document.getElementById('routeStopListContainer').style.display = 'none';
+      document.getElementById('routePatientDetailPanel').style.display = 'block';
+      document.getElementById('routePatientDetailTitle').textContent = patientName + ' の条件';
+      document.getElementById('routePatientDetailContent').innerHTML = '<div class="route-patient-loading">読み込み中...</div>';
+
+      // 週開始日を取得（監査モードの状態があればそれを使用、なければ現在の週）
+      var weekStartStr = '';
+      if (typeof auditState !== 'undefined' && auditState.weekStartStr) {
+        weekStartStr = auditState.weekStartStr;
+      } else {
+        var today = new Date();
+        var dayOfWeek = today.getDay();
+        var diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        var monday = new Date(today);
+        monday.setDate(today.getDate() + diff);
+        weekStartStr = monday.getFullYear() + '/' + String(monday.getMonth() + 1).padStart(2, '0') + '/' + String(monday.getDate()).padStart(2, '0');
+      }
+
+      google.script.run
+        .withSuccessHandler(function(data) {
+          renderRoutePatientDetail(data);
+        })
+        .withFailureHandler(function(e) {
+          document.getElementById('routePatientDetailContent').innerHTML = '<div class="route-patient-error">エラー: ' + (e.message || String(e)) + '</div>';
+        })
+        .audit_getPatientDetail(patientId, weekStartStr);
+    }
+
+    // 患者詳細をレンダリング
+    function renderRoutePatientDetail(data) {
+      var content = document.getElementById('routePatientDetailContent');
+      if (!data || data.error) {
+        content.innerHTML = '<div class="route-patient-error">' + (data ? data.error : 'データがありません') + '</div>';
+        return;
+      }
+
+      var html = '';
+
+      // 基本情報セクション
+      if (data.master) {
+        html += '<div class="route-patient-section">';
+        html += '<div class="route-patient-section-title">基本情報</div>';
+
+        // 時間タイプ
+        var timeTypeClass = data.master.timeType === '固定' ? 'highlight' : '';
+        html += '<div class="route-patient-info-row">';
+        html += '<span class="route-patient-info-label">時間タイプ</span>';
+        html += '<span class="route-patient-info-value ' + timeTypeClass + '">' + (data.master.timeType || '-') + '</span>';
+        html += '</div>';
+
+        // 希望時間
+        html += '<div class="route-patient-info-row">';
+        html += '<span class="route-patient-info-label">希望時間</span>';
+        html += '<span class="route-patient-info-value highlight">' + (data.master.startPrefStr || '-') + ' - ' + (data.master.endPrefStr || '-') + '</span>';
+        html += '</div>';
+
+        // 希望曜日
+        if (data.master.prefDays && data.master.prefDays.length > 0) {
+          html += '<div class="route-patient-info-row">';
+          html += '<span class="route-patient-info-label">希望曜日</span>';
+          html += '<span class="route-patient-info-value">' + data.master.prefDays.join(', ') + '</span>';
+          html += '</div>';
+        }
+
+        // 曜日NG
+        if (data.master.ngDays && data.master.ngDays.length > 0) {
+          html += '<div class="route-patient-info-row">';
+          html += '<span class="route-patient-info-label">曜日NG</span>';
+          html += '<span class="route-patient-info-value critical">' + data.master.ngDays.join(', ') + '</span>';
+          html += '</div>';
+        }
+
+        // サービス時間
+        html += '<div class="route-patient-info-row">';
+        html += '<span class="route-patient-info-label">サービス</span>';
+        html += '<span class="route-patient-info-value">' + (data.master.svcMin || '-') + '分</span>';
+        html += '</div>';
+
+        // 性別制限
+        if (data.master.sexLimit && data.master.sexLimit !== '-') {
+          html += '<div class="route-patient-info-row">';
+          html += '<span class="route-patient-info-label">性別制限</span>';
+          html += '<span class="route-patient-info-value critical">' + data.master.sexLimit + '</span>';
+          html += '</div>';
+        }
+
+        // 指定スタッフ
+        if (data.master.fixedStaff) {
+          html += '<div class="route-patient-info-row">';
+          html += '<span class="route-patient-info-label">指定スタッフ</span>';
+          html += '<span class="route-patient-info-value">' + data.master.fixedStaff + ' (' + (data.master.fixedType || '希望') + ')</span>';
+          html += '</div>';
+        }
+
+        // NGスタッフ
+        if (data.master.ngStaff) {
+          html += '<div class="route-patient-info-row">';
+          html += '<span class="route-patient-info-label">NGスタッフ</span>';
+          html += '<span class="route-patient-info-value critical">' + data.master.ngStaff + '</span>';
+          html += '</div>';
+        }
+
+        html += '</div>';
+      }
+
+      // 週間スケジュール概要
+      if (data.dayJudgements && data.dayJudgements.length > 0) {
+        html += '<div class="route-patient-section">';
+        html += '<div class="route-patient-section-title">今週の訪問</div>';
+
+        var dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        var youbiMap = {'Mon': '月', 'Tue': '火', 'Wed': '水', 'Thu': '木', 'Fri': '金', 'Sat': '土', 'Sun': '日'};
+        var djByYoubi = {};
+        data.dayJudgements.forEach(function(dj) { djByYoubi[dj.youbi] = dj; });
+
+        dayOrder.forEach(function(youbi) {
+          var dj = djByYoubi[youbi];
+          if (dj) {
+            var statusIcon = dj.status === 'OK' ? '○' : (dj.status === 'WARN' ? '△' : '×');
+            var statusClass = dj.status === 'NG' ? 'critical' : (dj.status === 'WARN' ? 'highlight' : '');
+            var timeStr = '';
+            if (dj.hasActual && dj.actuals && dj.actuals.length > 0) {
+              timeStr = dj.actuals.map(function(a) { return a.startStr + '-' + a.endStr; }).join(', ');
+            }
+            html += '<div class="route-patient-info-row">';
+            html += '<span class="route-patient-info-label">' + youbiMap[youbi] + ' ' + dj.dateStr.substring(5) + '</span>';
+            html += '<span class="route-patient-info-value ' + statusClass + '">' + statusIcon + ' ' + timeStr + '</span>';
+            html += '</div>';
+          }
+        });
+
+        html += '</div>';
+      }
+
+      content.innerHTML = html;
+    }
+
+    // 患者詳細パネルを閉じて訪問リストに戻る
+    function closeRoutePatientDetail() {
+      document.getElementById('routePatientDetailPanel').style.display = 'none';
+      document.getElementById('routeStopListContainer').style.display = 'block';
+    }
+
     function closeRouteMapModal() {
       document.getElementById('routeMapModal').classList.remove('show');
+      // 詳細パネルもリセット
+      closeRoutePatientDetail();
       if (routeMap) {
         routeMap.remove();
         routeMap = null;
