@@ -318,6 +318,49 @@ function requireAdmin_() {
 }
 
 /**
+ * スタッフマスタに「割当量」列を追加し、プルダウンを設定
+ * スプレッドシートのメニュー「拡張機能」→「スクリプトエディタ」から実行可能
+ */
+function setupAllocPrefColumn() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(SHEETS.STAFF_MASTER);
+  if (!sheet) {
+    throw new Error('スタッフマスタシートが見つかりません');
+  }
+
+  var numCols = sheet.getLastColumn();
+  var header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+  var allocIdx = header.indexOf('割当量');
+
+  // 列が存在しない場合は追加
+  if (allocIdx < 0) {
+    allocIdx = numCols;
+    sheet.getRange(1, allocIdx + 1).setValue('割当量');
+    numCols++;
+  }
+
+  // データバリデーション（プルダウン）を設定
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    var range = sheet.getRange(2, allocIdx + 1, lastRow - 1, 1);
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['均等', '多め', '少なめ'], true)
+      .setAllowInvalid(false)
+      .build();
+    range.setDataValidation(rule);
+
+    // 空セルにデフォルト値「均等」を設定
+    var values = range.getValues();
+    var newValues = values.map(function(row) {
+      return [row[0] === '' ? '均等' : row[0]];
+    });
+    range.setValues(newValues);
+  }
+
+  return '「割当量」列のセットアップが完了しました（列: ' + (allocIdx + 1) + '）';
+}
+
+/**
  * 入力対象シート一覧を取得
  */
 function input_listTables() {
@@ -859,6 +902,21 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     var lastRow = sheet.getLastRow();
     var header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
 
+    // ★必要な列が存在しない場合は自動追加
+    var requiredColumns = {
+      'スタッフマスタ': ['割当量']
+    };
+    var columnsToAdd = requiredColumns[formType] || [];
+    columnsToAdd.forEach(function(colName) {
+      if (header.indexOf(colName) < 0) {
+        // 列を末尾に追加
+        var newColIdx = numCols + 1;
+        sheet.getRange(1, newColIdx).setValue(colName);
+        header.push(colName);
+        numCols++;
+      }
+    });
+
     // 挿入位置を決定
     var insertAt;
     if (!insertAfterRow || insertAfterRow < 2) {
@@ -932,6 +990,7 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       'workDays': '勤務曜日',
       'areas': '得意エリア',
       'maxPerDay': '最大訪問件数/日',
+      'allocPref': '割当量',
       'skill': 'スキル',
       // 個別変更リクエスト用
       'date': '日付',
