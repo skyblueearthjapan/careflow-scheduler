@@ -2564,6 +2564,7 @@ function 割当結果を作成_(ss) {
 
     for (var slot = 1; slot <= needStaff; slot++) {
       var chosenStaff = null;
+      var rotationDebugNote = ''; // ★デバッグ用
 
       if (specifiedType === '必須' && specifiedIdsArr.length > 0) {
         for (var si = 0; si < specifiedIdsArr.length; si++) {
@@ -2635,12 +2636,15 @@ function 割当結果を作成_(ss) {
         candidates = applyStaffPreference(candidates, specifiedIdsArr, specifiedType, ngIdsArr);
 
         // ★デバッグログ：ローテーション優先の患者で候補数と除外理由を確認
+        var rotationDebugNote = '';
         if (contPref === 'ローテーション優先') {
           var excludeInfo = Object.keys(debugExcludeReasons).map(function(sid){ return sid + ':' + debugExcludeReasons[sid]; }).join(', ');
           console.log('[Rotation Debug] pid=' + pid + ' date=' + dateStr + ' candidates=' + candidates.length +
             ' names=[' + candidates.map(function(c){ return c.staff.id + ':' + c.staff.name; }).join(', ') + ']' +
             ' excluded=[' + excludeInfo + ']' +
             ' dynamicPrevSid=' + (dynamicPrevSid || 'none'));
+          // 備考欄にも出力（デバッグ用）
+          rotationDebugNote = '候補' + candidates.length + '名[' + candidates.map(function(c){ return c.staff.id; }).join(',') + '] 除外[' + excludeInfo + ']';
         }
 
         // ★ローテーション優先時: 今週未割り当てスタッフを優先（週内分散）
@@ -2783,6 +2787,8 @@ function 割当結果を作成_(ss) {
 
       var note2 = note || '';
       if (needStaff > 1) note2 = (note2 ? note2 + ' / ' : '') + '同時訪問(' + slot + '/' + needStaff + ')';
+      // ★デバッグ用：ローテーション優先時の候補情報を備考に追加
+      if (rotationDebugNote) note2 = (note2 ? note2 + ' / ' : '') + rotationDebugNote;
 
       resultRows.push([visitId, dateObj, youbiRaw, staffId, staffName, pid, pname, area, start, end, svcMin, timeType, earliest, latest, note2]);
 
