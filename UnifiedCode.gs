@@ -2517,6 +2517,9 @@ function 割当結果を作成_(ss) {
         minutesToSerial_(itv.end),   // 希望最遅
         note
       ]);
+
+      // ★★★ イベントもassignCountMapにカウントしてmaxPerDay制限を正しく適用 ★★★
+      incAssignCount(staffId, dateStr);
     });
   });
 
