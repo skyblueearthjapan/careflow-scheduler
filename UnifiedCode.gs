@@ -2781,6 +2781,7 @@ function 割当結果を作成_(ss) {
 
       if (!chosenStaff) {
         var fallback = [];
+        var fallbackOverLimit = []; // maxPerDay上限を超えているスタッフ用
         staffList.forEach(function(st){
           if (usedStaffIds[st.id]) return;
           if (ngIdsArr.indexOf(st.id) >= 0) return;
@@ -2799,8 +2800,23 @@ function 割当結果を作成_(ss) {
           var dayCountFb = getAssignCount(st.id, dateStr);
           var allocOffsetFb = st.allocPref === '多め' ? -2 : (st.allocPref === '少なめ' ? 2 : 0);
           var adjustedDayCountFb = dayCountFb + allocOffsetFb;
-          fallback.push({ staff: st, dayCount: dayCountFb, adjustedDayCount: adjustedDayCountFb, patientCount: getPatientWeekCount(pid, st.id), isDynamicPrev: isDynamicPrevFb });
+          var candidateObj = { staff: st, dayCount: dayCountFb, adjustedDayCount: adjustedDayCountFb, patientCount: getPatientWeekCount(pid, st.id), isDynamicPrev: isDynamicPrevFb };
+
+          // ★maxPerDay制限チェック：上限に達していなければ通常のfallback、超えていればfallbackOverLimitへ
+          if (dayCountFb < st.maxPerDay) {
+            fallback.push(candidateObj);
+          } else {
+            fallbackOverLimit.push(candidateObj);
+          }
         });
+
+        // ★maxPerDay制限を守る候補がいない場合のみ、上限超過スタッフを使用
+        var useFallbackOverLimit = false;
+        if (fallback.length === 0 && fallbackOverLimit.length > 0) {
+          fallback = fallbackOverLimit;
+          useFallbackOverLimit = true;
+        }
+
         if (fallback.length > 0) {
           // ★ローテーション優先時: 直前割当スタッフを除外（他の候補がいる場合のみ）
           if (contPref === 'ローテーション優先' && dynamicPrevSid && fallback.length > 1) {
@@ -2838,7 +2854,10 @@ function 割当結果を作成_(ss) {
             return a.adjustedDayCount - b.adjustedDayCount;
           });
           chosenStaff = fallback[0].staff;
-          note = (note || '') + ' / 自動割当: 上限超過の可能性あり';
+          // ★上限超過スタッフを使用した場合のみ警告を追加
+          if (useFallbackOverLimit) {
+            note = (note || '') + ' / 自動割当: 最大訪問件数超過';
+          }
         }
       }
 
