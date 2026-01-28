@@ -3324,8 +3324,13 @@ function 割当結果を作成_(ss) {
       } else if (timeType === '終日') {
         if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
         if (effLatest == null) effLatest = 18 * 60;      // 18:00
+      } else if (timeType === '時間帯') {
+        // ★「時間帯」タイプ：希望最早/最遅時刻を厳守（列12・列13の値を使用）
+        // 値がない場合のみデフォルトを適用
+        if (effEarliest == null) effEarliest = 9 * 60;
+        if (effLatest == null) effLatest = 18 * 60;
       } else {
-        // デフォルト（時間帯指定なし）
+        // デフォルト（時間帯指定なし・不明なタイプ）
         if (effEarliest == null) effEarliest = 9 * 60;
         if (effLatest == null) effLatest = 18 * 60;
       }
