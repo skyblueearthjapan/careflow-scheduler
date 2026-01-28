@@ -3305,8 +3305,33 @@ function 割当結果を作成_(ss) {
       return candidates.slice(0, 10);
     }
 
-    // スタッフ+日の隙間に訪問が入るかチェック
+    // スタッフ+日の隙間に訪問が入るかチェック（時間帯制限を考慮）
     function canInsertVisitToStaffDay_(staffId, dateStr, visitRow, svcMin) {
+      // ★時間帯制限を取得（列11: 時間タイプ, 列12: 希望最早時刻, 列13: 希望最遅時刻）
+      var timeType = String(visitRow[11] || '').trim();
+      var earliestRaw = visitRow[12];
+      var latestRaw = visitRow[13];
+      var effEarliest = toMinutes(earliestRaw);
+      var effLatest = toMinutes(latestRaw);
+
+      // 時間タイプに基づいてデフォルト許容範囲を設定
+      if (timeType === '午前') {
+        if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
+        if (effLatest == null) effLatest = 12 * 60;      // 12:00
+      } else if (timeType === '午後') {
+        if (effEarliest == null) effEarliest = 13 * 60;  // 13:00
+        if (effLatest == null) effLatest = 17 * 60;      // 17:00
+      } else if (timeType === '終日') {
+        if (effEarliest == null) effEarliest = 9 * 60;   // 09:00
+        if (effLatest == null) effLatest = 18 * 60;      // 18:00
+      } else {
+        // デフォルト（時間帯指定なし）
+        if (effEarliest == null) effEarliest = 9 * 60;
+        if (effLatest == null) effLatest = 18 * 60;
+      }
+
+      console.log('[canInsertVisitToStaffDay_] staffId:', staffId, 'timeType:', timeType, 'effEarliest:', effEarliest, 'effLatest:', effLatest);
+
       var dayKey = staffId + '|' + dateStr;
       var dayIdxList = staffDateMap[dayKey] || [];
       if (dayIdxList.length === 0) {
@@ -3316,7 +3341,17 @@ function 割当結果を作成_(ss) {
         var shiftE = shift.shiftEndMin != null ? shift.shiftEndMin : 1080;
         // ★暫定ガード：訪問看護は基本 09:00 以降とする（8時台吸着の防止）
         shiftS = Math.max(shiftS, 9 * 60);
-        return (shiftE - shiftS >= svcMin) ? { ok: true, startMin: shiftS } : { ok: false };
+
+        // ★時間帯制限を適用
+        var windowStart = Math.max(shiftS, effEarliest);
+        var windowEnd = Math.min(shiftE, effLatest);
+
+        if (windowEnd - windowStart >= svcMin) {
+          return { ok: true, startMin: windowStart };
+        } else {
+          console.log('[canInsertVisitToStaffDay_] 時間帯内に空きなし（empty day）: windowStart:', windowStart, 'windowEnd:', windowEnd, 'svcMin:', svcMin);
+          return { ok: false };
+        }
       }
 
       // 既存の予定を集める
@@ -3352,14 +3387,19 @@ function 割当結果を作成_(ss) {
         gaps.push({ s: cursor, e: dayEnd });
       }
 
-      // svcMin が入る隙間を探す
+      // svcMin が入る隙間を探す（★時間帯制限を考慮）
       for (var gi = 0; gi < gaps.length; gi++) {
-        var gapLen = gaps[gi].e - gaps[gi].s;
+        // 隙間と許容時間帯の交差部分を計算
+        var gapStart = Math.max(gaps[gi].s, effEarliest);
+        var gapEnd = Math.min(gaps[gi].e, effLatest);
+        var gapLen = gapEnd - gapStart;
         if (gapLen >= svcMin) {
-          return { ok: true, startMin: gaps[gi].s };
+          console.log('[canInsertVisitToStaffDay_] 時間帯内に挿入可能: gapStart:', gapStart, 'gapEnd:', gapEnd);
+          return { ok: true, startMin: gapStart };
         }
       }
 
+      console.log('[canInsertVisitToStaffDay_] 時間帯内に空きなし: timeType:', timeType, 'effEarliest:', effEarliest, 'effLatest:', effLatest);
       return { ok: false };
     }
 
