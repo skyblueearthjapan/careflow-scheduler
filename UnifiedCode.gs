@@ -2869,19 +2869,29 @@ function 割当結果を作成_(ss) {
 
       var staffId = '', staffName = '';
       if (chosenStaff) {
-        staffId = chosenStaff.id;
-        staffName = chosenStaff.name;
-        // ★デバッグログ：割当前のカウントとmaxPerDayを確認
-        var countBeforeAssign = getAssignCount(staffId, dateStr);
-        console.log('[Assign Debug] date=' + dateStr + ' staff=' + staffId + ' countBefore=' + countBeforeAssign + ' maxPerDay=' + chosenStaff.maxPerDay + ' (assigning pid=' + pid + ')');
-        if (countBeforeAssign >= chosenStaff.maxPerDay) {
-          console.log('[WARNING] maxPerDay exceeded! staff=' + staffId + ' date=' + dateStr + ' count=' + countBeforeAssign + ' maxPerDay=' + chosenStaff.maxPerDay);
+        var tempStaffId = chosenStaff.id;
+        var tempStaffName = chosenStaff.name;
+        var tempMaxPerDay = chosenStaff.maxPerDay;
+
+        // ★最終安全策：割当前にmaxPerDayを再チェック（二重チェック）
+        var countBeforeAssign = getAssignCount(tempStaffId, dateStr);
+        console.log('[Assign Debug] date=' + dateStr + ' staff=' + tempStaffId + ' countBefore=' + countBeforeAssign + ' maxPerDay=' + tempMaxPerDay + ' (assigning pid=' + pid + ')');
+
+        // ★重要：maxPerDayを超えている場合は割当てを行わない（未割当にする）
+        if (countBeforeAssign >= tempMaxPerDay) {
+          console.log('[BLOCKED] maxPerDay exceeded! staff=' + tempStaffId + ' date=' + dateStr + ' count=' + countBeforeAssign + ' maxPerDay=' + tempMaxPerDay + ' -> marking as unassigned');
+          staffName = '未割当';
+          note = (note || '') + ' / maxPerDay上限超過(' + tempStaffId + ')';
+          unassignedList.push({ date: dateObj, youbi: youbiRaw, pid: pid, pname: pname, needStaff: needStaff, slot: slot, reason: 'maxPerDay上限超過(' + tempStaffId + ' ' + countBeforeAssign + '/' + tempMaxPerDay + ')' });
+        } else {
+          staffId = tempStaffId;
+          staffName = tempStaffName;
+          usedStaffIds[staffId] = true;
+          incAssignCount(staffId, dateStr);
+          incPatientWeekCount(pid, staffId);
+          // ★ローテーション優先用：この患者に最後に割り当てたスタッフを記録
+          lastAssignedStaffByPatient[pid] = staffId;
         }
-        usedStaffIds[staffId] = true;
-        incAssignCount(staffId, dateStr);
-        incPatientWeekCount(pid, staffId);
-        // ★ローテーション優先用：この患者に最後に割り当てたスタッフを記録
-        lastAssignedStaffByPatient[pid] = staffId;
       } else {
         staffName = '未割当';
         unassignedList.push({ date: dateObj, youbi: youbiRaw, pid: pid, pname: pname, needStaff: needStaff, slot: slot, reason: note || '条件を満たすスタッフなし' });
