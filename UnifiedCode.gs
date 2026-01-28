@@ -1947,10 +1947,27 @@ function 割当結果を作成_(ss) {
   if (sValues.length <= 1) throw new Error('「スタッフマスタ」にスタッフが1人もいません。');
   var sHeader = sValues[0];
   var sData   = sValues.slice(1);
+
+  // ヘッダー名の柔軟なマッチング（全角/半角スラッシュ対応）
+  function findHeaderIndex(headerArr, targetName) {
+    var idx = headerArr.indexOf(targetName);
+    if (idx >= 0) return idx;
+    // 全角スラッシュ版も試す
+    var altName = targetName.replace(/\//g, '／');
+    idx = headerArr.indexOf(altName);
+    if (idx >= 0) return idx;
+    // 半角スラッシュ版も試す（念のため）
+    altName = targetName.replace(/／/g, '/');
+    return headerArr.indexOf(altName);
+  }
+
   var sIdx = { id: sHeader.indexOf('staff_id'), name: sHeader.indexOf('スタッフ名'), gender: sHeader.indexOf('性別'),
                lat: sHeader.indexOf('緯度'), lng: sHeader.indexOf('経度'), shiftS: sHeader.indexOf('シフト開始'),
                shiftE: sHeader.indexOf('シフト終了'), days: sHeader.indexOf('勤務曜日'), areas: sHeader.indexOf('得意エリア'),
-               maxPer: sHeader.indexOf('最大訪問件数/日'), alloc: sHeader.indexOf('割当量') };
+               maxPer: findHeaderIndex(sHeader, '最大訪問件数/日'), alloc: sHeader.indexOf('割当量') };
+
+  // ★デバッグログ：ヘッダーインデックスを確認
+  console.log('[Header Debug] sIdx.maxPer=' + sIdx.maxPer + ' sHeader=' + JSON.stringify(sHeader));
 
   function parseDays(str) {
     if (!str) return [];
@@ -2057,6 +2074,8 @@ function 割当結果を作成_(ss) {
     var areasStr = row[sIdx.areas] || '';
     var areaList = String(areasStr).split(/[,\u3001\/・\s]+/).map(function(s){ return s.trim(); }).filter(function(s){ return s; });
     var maxPerDay = Number(row[sIdx.maxPer] || 0) || 999;
+    // ★デバッグログ：maxPerDayの読み取り値を確認
+    console.log('[maxPerDay Debug] staff=' + id + ' name=' + name + ' sIdx.maxPer=' + sIdx.maxPer + ' raw=' + row[sIdx.maxPer] + ' maxPerDay=' + maxPerDay);
     var allocPref = sIdx.alloc >= 0 ? (row[sIdx.alloc] || '均等') : '均等';
     if (allocPref !== '多め' && allocPref !== '少なめ') allocPref = '均等';
     staffList.push({ id: id, name: name, gender: row[sIdx.gender] || '', lat: row[sIdx.lat], lng: row[sIdx.lng],
@@ -2852,6 +2871,12 @@ function 割当結果を作成_(ss) {
       if (chosenStaff) {
         staffId = chosenStaff.id;
         staffName = chosenStaff.name;
+        // ★デバッグログ：割当前のカウントとmaxPerDayを確認
+        var countBeforeAssign = getAssignCount(staffId, dateStr);
+        console.log('[Assign Debug] date=' + dateStr + ' staff=' + staffId + ' countBefore=' + countBeforeAssign + ' maxPerDay=' + chosenStaff.maxPerDay + ' (assigning pid=' + pid + ')');
+        if (countBeforeAssign >= chosenStaff.maxPerDay) {
+          console.log('[WARNING] maxPerDay exceeded! staff=' + staffId + ' date=' + dateStr + ' count=' + countBeforeAssign + ' maxPerDay=' + chosenStaff.maxPerDay);
+        }
         usedStaffIds[staffId] = true;
         incAssignCount(staffId, dateStr);
         incPatientWeekCount(pid, staffId);
