@@ -4083,18 +4083,57 @@ function 週間リクエストを生成_(ss) {
       const visits = toHalfWidthNumber_(row[idx['週訪問回数']], 0);
       if (!visits || visits <= 0) return;
 
-      let prefDays = parseDays(row[idx['希望曜日（複数可）']]);
+      const prefDays = parseDays(row[idx['希望曜日（複数可）']]);
       const ngDays = parseDays(row[idx['曜日NG']]);
-      if (prefDays.length === 0) prefDays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-      const candidates = prefDays.filter(d => !ngDays.includes(d));
-      if (candidates.length === 0) return;
+      const allDays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const availableDays = allDays.filter(d => !ngDays.includes(d));
+      if (availableDays.length === 0) return;
 
-      const actualVisits = Math.min(visits, candidates.length);
+      // 希望曜日を優先、足りなければ他の曜日から均等分散で補充
+      const prefCandidates = prefDays.filter(d => !ngDays.includes(d));
+      const nonPrefCandidates = availableDays.filter(d => !prefDays.includes(d));
+
+      // 均等分散で曜日を選択する関数
+      function selectDaysWithSpread(prefList, nonPrefList, targetCount) {
+        const selected = [];
+        const prefSorted = prefList.slice().sort((a, b) => youbiMap[a] - youbiMap[b]);
+
+        // まず希望曜日を追加
+        for (let i = 0; i < prefSorted.length && selected.length < targetCount; i++) {
+          selected.push(prefSorted[i]);
+        }
+
+        // 足りなければ非希望曜日から均等分散で追加
+        if (selected.length < targetCount && nonPrefList.length > 0) {
+          const remaining = nonPrefList.slice();
+          while (selected.length < targetCount && remaining.length > 0) {
+            // 既存の選択曜日との最小距離が最大になる曜日を選ぶ
+            let bestDay = null, bestMinDist = -1;
+            for (let i = 0; i < remaining.length; i++) {
+              const dayIdx = youbiMap[remaining[i]];
+              let minDist = 7;
+              for (let j = 0; j < selected.length; j++) {
+                const selIdx = youbiMap[selected[j]];
+                const dist = Math.min(Math.abs(dayIdx - selIdx), 7 - Math.abs(dayIdx - selIdx));
+                if (dist < minDist) minDist = dist;
+              }
+              if (minDist > bestMinDist) { bestMinDist = minDist; bestDay = remaining[i]; }
+            }
+            if (bestDay) {
+              selected.push(bestDay);
+              remaining.splice(remaining.indexOf(bestDay), 1);
+            } else break;
+          }
+        }
+        return selected.sort((a, b) => youbiMap[a] - youbiMap[b]);
+      }
+
+      const actualVisits = Math.min(visits, availableDays.length);
+      const candidates = selectDaysWithSpread(prefCandidates, nonPrefCandidates, actualVisits);
+
       const svcMin = info.svcMin, startPref = info.startPref, endPref = info.endPref, timeTypeRaw = info.timeType;
       const win = makeTimeWindow(timeTypeRaw, startPref, endPref, svcMin);
       const sexLimit = info.sexLimit, contPref = info.contPref, note = info.note || '';
-
-      candidates.sort((a, b) => youbiMap[a] - youbiMap[b]);
 
       for (let i = 0; i < actualVisits; i++) {
         const youbi = candidates[i];
