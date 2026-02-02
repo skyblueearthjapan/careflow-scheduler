@@ -626,7 +626,7 @@
     // 英語→日本語変換マップ
     var EN_TO_JP_MAP = { 'Sun':'日', 'Mon':'月', 'Tue':'火', 'Wed':'水', 'Thu':'木', 'Fri':'金', 'Sat':'土' };
     var JP_TO_EN_MAP = { '日':'Sun', '月':'Mon', '火':'Tue', '水':'Wed', '木':'Thu', '金':'Fri', '土':'Sat' };
-    var TIME_OPTIONS = generateTimeOptions(8, 20, 10); // 08:00〜20:00, 10分刻み
+    var TIME_OPTIONS = generateTimeOptions(8, 20, 5); // 08:00〜20:00, 5分刻み
 
     function generateTimeOptions(startHour, endHour, stepMin) {
       var opts = [];
