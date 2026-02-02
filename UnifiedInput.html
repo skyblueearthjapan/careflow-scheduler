@@ -71,6 +71,7 @@
     .table-container {
       flex: 1;
       min-height: 0; /* flexbox内で縮小を許可 */
+      max-height: calc(100vh - 180px); /* 明示的な高さ制限 */
       overflow: scroll; /* 縦横スクロールバーを常に表示 */
       border: 1px solid var(--color-green-light);
       border-radius: 8px;
