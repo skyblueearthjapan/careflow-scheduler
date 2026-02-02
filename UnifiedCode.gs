@@ -904,7 +904,8 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
 
     // ★必要な列が存在しない場合は自動追加
     var requiredColumns = {
-      'スタッフマスタ': ['割当量']
+      'スタッフマスタ': ['割当量'],
+      '患者マスタ': ['訪問頻度', '訪問週']
     };
     var columnsToAdd = requiredColumns[formType] || [];
     columnsToAdd.forEach(function(colName) {
@@ -969,6 +970,8 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       'lng': '経度',
       'area': 'エリア',
       'weeklyCount': '週訪問回数',
+      'visitFrequency': '訪問頻度',
+      'visitWeeks': '訪問週',
       'preferDays': '希望曜日（複数可）',
       'ngDays': '曜日NG',
       'timeType': '時間タイプ',
@@ -1579,6 +1582,50 @@ function toHalfWidthNumber_(v, def) {
   });
   var n = parseInt(s, 10);
   return isNaN(n) ? def : n;
+}
+
+/**
+ * 指定日がその月の「何週目」かを計算（月曜基準）
+ * @param {Date} date - 対象日
+ * @returns {number} 1〜5の週番号
+ */
+function getWeekOfMonth_(date) {
+  // その月の1日を取得
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+  // 1日の曜日（0=日曜, 1=月曜, ... 6=土曜）
+  const firstDayOfWeek = firstDay.getDay();
+  // 月曜基準に変換（月曜=0, 火曜=1, ... 日曜=6）
+  const adjustedFirstDay = (firstDayOfWeek + 6) % 7;
+  // 対象日が月の何日目か
+  const dayOfMonth = date.getDate();
+  // 週番号を計算（1始まり）
+  const weekNumber = Math.ceil((dayOfMonth + adjustedFirstDay) / 7);
+  return weekNumber;
+}
+
+/**
+ * 患者の訪問頻度設定に基づき、指定週に訪問するかどうかを判定
+ * @param {string} visitFrequency - 訪問頻度（'毎週' / '選択制'）
+ * @param {string} visitWeeks - 訪問週（'1,3' / '2,4' / '1' など）
+ * @param {number} weekOfMonth - 対象週番号（1〜5）
+ * @returns {boolean} 訪問するならtrue
+ */
+function shouldVisitThisWeek_(visitFrequency, visitWeeks, weekOfMonth) {
+  // 毎週の場合は常に訪問
+  if (!visitFrequency || visitFrequency === '毎週' || visitFrequency === '') {
+    return true;
+  }
+  // 選択制の場合、訪問週に含まれているか確認
+  if (visitFrequency === '選択制') {
+    if (!visitWeeks || visitWeeks === '') {
+      // 訪問週が未設定の場合は訪問しない
+      return false;
+    }
+    const weeks = String(visitWeeks).split(',').map(w => w.trim());
+    return weeks.includes(String(weekOfMonth));
+  }
+  // その他の場合は訪問する
+  return true;
 }
 
 function parseIdList(str) {
@@ -4060,6 +4107,9 @@ function 週間リクエストを生成_(ss) {
     if (missing.length > 0) throw new Error('患者マスタのヘッダーが足りません：\n' + missing.join('\n'));
 
     const timeTypeColIndex = pHeader.indexOf('時間タイプ');
+    // 訪問頻度・訪問週（オプション列）
+    const visitFrequencyColIndex = pHeader.indexOf('訪問頻度');
+    const visitWeeksColIndex = pHeader.indexOf('訪問週');
 
     const patientInfoMap = {};
     pData.forEach(row => {
@@ -4071,7 +4121,10 @@ function 週間リクエストを生成_(ss) {
         contPref: row[idx['継続希望']], timeType: (timeTypeColIndex >= 0 ? row[timeTypeColIndex] : '') || '',
         startPref: row[idx['希望時間帯（開始）']], endPref: row[idx['希望時間帯（終了）']],
         staffIds: row[idx['指定スタッフID']] || '', staffType: row[idx['指定タイプ']] || '',
-        ngStaffIds: row[idx['NGスタッフID']] || '', note: row[idx['備考']] || ''
+        ngStaffIds: row[idx['NGスタッフID']] || '', note: row[idx['備考']] || '',
+        // 訪問頻度・訪問週
+        visitFrequency: (visitFrequencyColIndex >= 0 ? row[visitFrequencyColIndex] : '') || '毎週',
+        visitWeeks: (visitWeeksColIndex >= 0 ? row[visitWeeksColIndex] : '') || ''
       };
     });
 
@@ -4164,6 +4217,9 @@ function 週間リクエストを生成_(ss) {
       return { start, end, earliest, latest, timeType: t };
     }
 
+    // 今週が何週目かを計算（月曜基準）
+    const currentWeekOfMonth = getWeekOfMonth_(weekStart);
+
     const weeklyRequests = [];
     pData.forEach(row => {
       const pid = row[idx['patient_id']];
@@ -4171,6 +4227,12 @@ function 週間リクエストを生成_(ss) {
       const info = patientInfoMap[pid] || {};
       const visits = toHalfWidthNumber_(row[idx['週訪問回数']], 0);
       if (!visits || visits <= 0) return;
+
+      // 訪問頻度・訪問週による判定
+      if (!shouldVisitThisWeek_(info.visitFrequency, info.visitWeeks, currentWeekOfMonth)) {
+        // この週は訪問しない患者なのでスキップ
+        return;
+      }
 
       const prefDays = parseDays(row[idx['希望曜日（複数可）']]);
       const ngDays = parseDays(row[idx['曜日NG']]);

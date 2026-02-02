@@ -707,6 +707,9 @@
       if (hOrig === '患者影響') return 'patient_affect_select';
       if (hOrig === '所要時間(分)') return 'number';
       if (hOrig === '固定枠' || hOrig === '患者紐づき' || hOrig === '事前事務所戻り' || hOrig === '事後事務所戻り') return 'boolean_select';
+      // 訪問頻度・訪問週（患者マスタ用）
+      if (hOrig === '訪問頻度') return 'visit_frequency_select';
+      if (hOrig === '訪問週') return 'visit_weeks_checkbox';
       return 'text';
     }
 
@@ -1303,6 +1306,10 @@
           return createPatientSelect(value);
         case 'number':
           return '<input type="number" value="' + (value || '') + '" />';
+        case 'visit_frequency_select':
+          return createSelect(['毎週', '選択制'], value || '毎週');
+        case 'visit_weeks_checkbox':
+          return createVisitWeeksEditor(value);
         default:
           return '<input type="text" value="' + escapeHtml(value || '') + '" />';
       }
@@ -1324,6 +1331,21 @@
       WEEKDAYS_EN.forEach(function(en, i) {
         var checked = selected.indexOf(en) >= 0 ? ' checked' : '';
         html += '<label><input type="checkbox" value="' + en + '"' + checked + '>' + WEEKDAYS_JP[i] + '</label>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    // 訪問週チェックボックスエディタ（1週目〜5週目）
+    function createVisitWeeksEditor(value) {
+      var selected = (value || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+      var weeks = ['1', '2', '3', '4', '5'];
+      var html = '<div class="visit-weeks-editor" style="display:flex; gap:8px; align-items:center;">';
+      weeks.forEach(function(w) {
+        var checked = selected.indexOf(w) >= 0 ? ' checked' : '';
+        html += '<label style="display:flex; align-items:center; gap:2px; cursor:pointer;">';
+        html += '<input type="checkbox" value="' + w + '"' + checked + ' style="cursor:pointer;">';
+        html += '<span>' + w + '週目</span></label>';
       });
       html += '</div>';
       return html;
@@ -1441,6 +1463,14 @@
       if (staffCheckboxes.length > 0) {
         var vals = [];
         staffCheckboxes.forEach(function(cb) { if (cb.checked) vals.push(cb.value); });
+        return vals.join(',');
+      }
+
+      // 訪問週チェックボックス
+      var visitWeeksCheckboxes = td.querySelectorAll('.visit-weeks-editor input[type="checkbox"]');
+      if (visitWeeksCheckboxes.length > 0) {
+        var vals = [];
+        visitWeeksCheckboxes.forEach(function(cb) { if (cb.checked) vals.push(cb.value); });
         return vals.join(',');
       }
       return '';
@@ -1873,6 +1903,8 @@
         { key: 'address', header: '住所', label: '住所は？', type: 'textarea', required: true },
         { key: 'area', header: 'エリア', label: 'エリアは？', type: 'select', options: ['', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3'], hint: '※現在スケジューリング計算に未使用' },
         { key: 'weeklyCount', header: '週訪問回数', label: '週の訪問回数は？', type: 'number', required: true, min: 1 },
+        { key: 'visitFrequency', header: '訪問頻度', label: '訪問頻度は？', type: 'select', options: ['毎週', '選択制'], defaultValue: '毎週', hint: '毎週：全週訪問、選択制：特定週のみ訪問' },
+        { key: 'visitWeeks', header: '訪問週', label: '訪問する週は？（複数選択可）', type: 'visitWeeksSelect', conditionalOn: { key: 'visitFrequency', value: '選択制' }, hint: '訪問する週にチェック（例：1,3週目=隔週）' },
         { key: 'preferDays', header: '希望曜日（複数可）', label: '希望する曜日は？（複数選択）', type: 'multiSelect', options: ['月','火','水','木','金','土','日'], required: true },
         { key: 'ngDays', header: '曜日NG', label: 'NGの曜日は？', type: 'select', options: ['', '月', '火', '水', '木', '金', '土', '日'] },
         { key: 'serviceMin', header: 'サービス時間', label: 'サービス時間（分）は？', type: 'number', required: true, min: 5 },
@@ -2137,6 +2169,16 @@
             staffOptions.map(function(s) {
               var checked = selectedStaff.indexOf(s.id) >= 0 ? ' checked' : '';
               return '<label><input type="checkbox" value="' + escapeHtml(s.id) + '"' + checked + '>' + escapeHtml(s.label) + '</label>';
+            }).join('') + '</div>';
+        case 'visitWeeksSelect':
+          var selectedWeeks = currentVal ? currentVal.split(',') : [];
+          var weeks = ['1', '2', '3', '4', '5'];
+          return '<div class="wizard-checkboxes" style="display:flex; gap:12px; flex-wrap:wrap;">' +
+            weeks.map(function(w) {
+              var checked = selectedWeeks.indexOf(w) >= 0 ? ' checked' : '';
+              return '<label style="display:flex; align-items:center; gap:4px; cursor:pointer; padding:6px 10px; border:1px solid #ddd; border-radius:6px; background:#fff;">' +
+                '<input type="checkbox" value="' + w + '"' + checked + ' style="width:18px; height:18px; cursor:pointer;">' +
+                '<span style="font-size:14px;">' + w + '週目</span></label>';
             }).join('') + '</div>';
         case 'patientSelect':
           if (patientOptions.length === 0) return '<div style="color:#999;">患者データがありません</div>';
