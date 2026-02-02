@@ -50,7 +50,7 @@
     .header-badge { font-size: 11px; background: var(--color-orange); padding: 4px 10px; border-radius: 12px; font-weight: 500; }
     .header-status { font-size: 12px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 12px; }
     .main-container { flex: 1; display: flex; overflow: hidden; }
-    .left-panel { flex: 1; padding: 16px; overflow: auto; background: var(--color-white); display: flex; flex-direction: column; }
+    .left-panel { flex: 1; padding: 16px; overflow: hidden; background: var(--color-white); display: flex; flex-direction: column; min-height: 0; }
     .status-bar {
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 12px; padding: 10px 14px;
@@ -66,10 +66,11 @@
     }
     .refresh-btn:hover { background: var(--color-green-dark); }
     .refresh-btn:disabled { background: var(--color-disabled); cursor: not-allowed; }
-    #mainContent { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-    #normalTableArea, #specialWeekArea { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #mainContent { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+    #normalTableArea, #specialWeekArea { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
     .table-container {
       flex: 1;
+      min-height: 0; /* flexbox内で縮小を許可 */
       overflow: scroll; /* 縦横スクロールバーを常に表示 */
       border: 1px solid var(--color-green-light);
       border-radius: 8px;
