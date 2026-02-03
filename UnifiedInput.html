@@ -71,8 +71,9 @@
     .table-container {
       flex: 1;
       min-height: 0; /* flexbox内で縮小を許可 */
-      max-height: calc(100vh - 180px); /* 明示的な高さ制限 */
-      overflow: scroll; /* 縦横スクロールバーを常に表示 */
+      height: 0; /* flexbox計算のベース */
+      overflow-x: scroll !important; /* 横スクロールバーを強制表示 */
+      overflow-y: scroll !important; /* 縦スクロールバーを強制表示 */
       border: 1px solid var(--color-green-light);
       border-radius: 8px;
       /* Firefox用スクロールバー常時表示 */
@@ -1078,6 +1079,27 @@
 
       document.getElementById('dataTable').innerHTML = '<thead>' + headerHtml + '</thead><tbody>' + rowsHtml + '</tbody>';
       attachTableEvents();
+
+      // スクロールバーの再計算を強制（タブ切り替え後の表示問題対策）
+      forceScrollbarRecalc();
+    }
+
+    // スクロールバー再計算ヘルパー関数
+    function forceScrollbarRecalc() {
+      var tableContainer = document.querySelector('#normalTableArea .table-container');
+      if (!tableContainer) return;
+
+      // requestAnimationFrameで描画後に実行
+      requestAnimationFrame(function() {
+        // overflowを一時的にhiddenにしてからscrollに戻す
+        tableContainer.style.overflow = 'hidden';
+        // 次のフレームで復元
+        requestAnimationFrame(function() {
+          tableContainer.style.overflow = 'scroll';
+          // 念のためスクロール位置をリセット
+          tableContainer.scrollLeft = tableContainer.scrollLeft;
+        });
+      });
     }
 
     function formatCellDisplay(value, headerName) {
