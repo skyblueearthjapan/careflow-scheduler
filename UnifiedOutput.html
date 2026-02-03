@@ -1653,6 +1653,13 @@
               return;
             }
             auditState.data = result;
+            // デバッグ情報を出力
+            if (result._debug) {
+              console.log('loadAuditData: デバッグ情報', result._debug);
+            }
+            console.log('loadAuditData: staffList count =', (result.staffList || []).length);
+            console.log('loadAuditData: cellSummary keys =', Object.keys(result.cellSummary || {}).length);
+            console.log('loadAuditData: cellSummary sample =', Object.keys(result.cellSummary || {}).slice(0, 5));
             renderAuditWeekView(result);
             renderAuditSummary(result);
             renderAuditWarnings(result);

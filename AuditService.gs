@@ -82,6 +82,14 @@ function audit_buildWeekSummary_(dataset) {
   var patientSummary = {}; // pid -> summary
   var expectedByPidDate = dataset.expectedByPidDate || {};
 
+  // デバッグログ
+  var actualKeys = Object.keys(dataset.actualPlanMap || {});
+  console.log('audit_buildWeekSummary_: actualPlanMap keys count =', actualKeys.length);
+  if (actualKeys.length > 0) {
+    console.log('audit_buildWeekSummary_: sample keys =', actualKeys.slice(0, 5).join(', '));
+  }
+  console.log('audit_buildWeekSummary_: expectedByPidDate keys count =', Object.keys(expectedByPidDate).length);
+
   // 実績（Actual）から患者×日×スタッフを抽出
   var actualPlanMap = dataset.actualPlanMap;
 
@@ -213,6 +221,12 @@ function audit_buildWeekSummary_(dataset) {
     return a.staffId.localeCompare(b.staffId);
   });
 
+  // デバッグ情報
+  var cellSummaryKeyCount = Object.keys(cellSummary).length;
+  var patientSummaryKeyCount = Object.keys(patientSummary).length;
+  console.log('audit_buildWeekSummary_: cellSummary keys =', cellSummaryKeyCount);
+  console.log('audit_buildWeekSummary_: patientSummary keys =', patientSummaryKeyCount);
+
   return {
     weekStartStr: dataset.weekStartStr,
     weekEndStr: dataset.weekEndStr,
@@ -222,7 +236,14 @@ function audit_buildWeekSummary_(dataset) {
     cellSummary: cellSummary,
     patientSummary: patientSummary,
     warnings: dataset.warnings || [],
-    fromCache: dataset.fromCache || false
+    fromCache: dataset.fromCache || false,
+    // デバッグ用
+    _debug: {
+      actualPlanMapKeys: Object.keys(dataset.actualPlanMap || {}).length,
+      expectedByPidDateKeys: Object.keys(dataset.expectedByPidDate || {}).length,
+      cellSummaryKeys: cellSummaryKeyCount,
+      patientSummaryKeys: patientSummaryKeyCount
+    }
   };
 }
 
