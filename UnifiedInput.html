@@ -710,8 +710,8 @@
       // 訪問頻度・訪問週（患者マスタ用）
       if (hOrig === '訪問頻度') return 'visit_frequency_select';
       if (hOrig === '訪問週') return 'visit_weeks_checkbox';
-      // 個別変更リクエスト用（新時間タイプ）
-      if (hOrig === '新時間タイプ') return 'new_time_type_select';
+      // 個別変更リクエスト用（時間タイプ）
+      if (hOrig === '時間タイプ') return 'new_time_type_select';
       return 'text';
     }
 
@@ -1964,11 +1964,11 @@
         { key: 'patient_id', header: 'patient_id', label: '対象の患者は？', type: 'patientSelect', required: true },
         { key: 'date', header: '日付', label: '変更日（訪問日）は？', type: 'date', required: true },
         { key: 'operation', header: '操作', label: '操作内容は？', type: 'select', options: ['時間変更', 'キャンセル', '追加'], required: true },
-        { key: 'newTimeType', header: '新時間タイプ', label: '時間の指定方法は？', type: 'select', options: ['', '時間帯', '固定', '午前', '午後', '終日'], conditionalOn: { key: 'operation', value: ['時間変更', '追加'] }, hint: '空欄＝患者マスタの設定を使用' },
-        { key: 'start', header: '新開始時刻', label: '新しい開始時刻は？', type: 'time', hint: 'キャンセル時は空欄可、時間帯の場合は希望最早' },
-        { key: 'end', header: '新終了時刻', label: '新しい終了時刻は？', type: 'time', hint: 'キャンセル時は空欄可、時間帯の場合は希望最遅' },
-        { key: 'newEarliest', header: '新希望最早', label: '希望最早時刻は？', type: 'time', conditionalOn: { key: 'newTimeType', value: '時間帯' }, hint: 'この時間以降に訪問開始' },
-        { key: 'newLatest', header: '新希望最遅', label: '希望最遅時刻は？', type: 'time', conditionalOn: { key: 'newTimeType', value: '時間帯' }, hint: 'この時間までに訪問終了' },
+        { key: 'newTimeType', header: '時間タイプ', label: '時間の指定方法は？', type: 'select', options: ['', '時間帯', '固定', '午前', '午後', '終日'], conditionalOn: { key: 'operation', value: ['時間変更', '追加'] }, hint: '空欄＝患者マスタの設定を使用' },
+        { key: 'start', header: '開始時刻(固定)', label: '新しい開始時刻は？', type: 'time', hint: 'キャンセル時は空欄可、時間帯の場合は希望最早' },
+        { key: 'end', header: '終了時刻(固定)', label: '新しい終了時刻は？', type: 'time', hint: 'キャンセル時は空欄可、時間帯の場合は希望最遅' },
+        { key: 'newEarliest', header: '希望最早', label: '希望最早時刻は？', type: 'time', conditionalOn: { key: 'newTimeType', value: '時間帯' }, hint: 'この時間以降に訪問開始' },
+        { key: 'newLatest', header: '希望最遅', label: '希望最遅時刻は？', type: 'time', conditionalOn: { key: 'newTimeType', value: '時間帯' }, hint: 'この時間までに訪問終了' },
         { key: 'note', header: '備考', label: '備考（任意）', type: 'textarea' }
       ],
       'スタッフ個別変更': [

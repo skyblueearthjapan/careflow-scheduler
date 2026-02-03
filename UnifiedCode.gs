@@ -906,7 +906,7 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     var requiredColumns = {
       'スタッフマスタ': ['割当量'],
       '患者マスタ': ['訪問頻度', '訪問週'],
-      '個別変更リクエスト': ['新時間タイプ', '新希望最早', '新希望最遅']
+      '個別変更リクエスト': ['時間タイプ', '希望最早', '希望最遅']
     };
     var columnsToAdd = requiredColumns[formType] || [];
     columnsToAdd.forEach(function(colName) {
@@ -999,8 +999,8 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       // 個別変更リクエスト用
       'date': '日付',
       'operation': '操作',
-      'start': '新開始時刻',
-      'end': '新終了時刻',
+      'start': '開始時刻(固定)',
+      'end': '終了時刻(固定)',
       // スタッフ個別変更リクエスト用
       'restrictionType': '制限タイプ',
       'startTime': '開始時刻',
@@ -4350,11 +4350,11 @@ function 週間リクエストを生成_(ss) {
           name:       findHeaderIdx_(cHeader, '患者名'),
           date:       findHeaderIdx_(cHeader, '日付'),
           op:         findHeaderIdx_(cHeader, '操作'), // ←「操作（...）」に固定しない
-          newStart:   findHeaderIdx_(cHeader, '新開始'),
-          newEnd:     findHeaderIdx_(cHeader, '新終了'),
-          newTimeType: findHeaderIdx_(cHeader, '新時間タイプ'),
-          newEarliest: findHeaderIdx_(cHeader, '新希望最早'),
-          newLatest:   findHeaderIdx_(cHeader, '新希望最遅'),
+          newStart:   findHeaderIdx_(cHeader, '開始時刻(固定)'),
+          newEnd:     findHeaderIdx_(cHeader, '終了時刻(固定)'),
+          newTimeType: findHeaderIdx_(cHeader, '時間タイプ'),
+          newEarliest: findHeaderIdx_(cHeader, '希望最早'),
+          newLatest:   findHeaderIdx_(cHeader, '希望最遅'),
           note:       findHeaderIdx_(cHeader, '備考'),
           regAt:      findHeaderIdx_(cHeader, '登録日時')
         };
@@ -5269,8 +5269,8 @@ function api_getSpecialWeekContext_(payload) {
       pid: cHeader.indexOf('patient_id'),
       date: cHeader.indexOf('日付'),
       op: cHeader.indexOf('操作（キャンセル/時間変更/追加）'),
-      newStart: cHeader.indexOf('新開始時刻'),
-      newEnd: cHeader.indexOf('新終了時刻'),
+      newStart: cHeader.indexOf('開始時刻(固定)'),
+      newEnd: cHeader.indexOf('終了時刻(固定)'),
       note: cHeader.indexOf('備考'),
     };
 

@@ -232,11 +232,11 @@ function audit_loadChangeRequests_(ss, tz, weekStartStr, weekEndStr) {
     name: audit_findHeaderIdx_(header, '患者名'),
     date: audit_findHeaderIdx_(header, '日付'),
     op: audit_findHeaderIdx_(header, '操作'),
-    newStart: audit_findHeaderIdx_(header, '新開始'),
-    newEnd: audit_findHeaderIdx_(header, '新終了'),
-    newTimeType: audit_findHeaderIdx_(header, '新時間タイプ'),
-    newEarliest: audit_findHeaderIdx_(header, '新希望最早'),
-    newLatest: audit_findHeaderIdx_(header, '新希望最遅'),
+    newStart: audit_findHeaderIdx_(header, '開始時刻(固定)'),
+    newEnd: audit_findHeaderIdx_(header, '終了時刻(固定)'),
+    newTimeType: audit_findHeaderIdx_(header, '時間タイプ'),
+    newEarliest: audit_findHeaderIdx_(header, '希望最早'),
+    newLatest: audit_findHeaderIdx_(header, '希望最遅'),
     note: audit_findHeaderIdx_(header, '備考'),
     regAt: audit_findHeaderIdx_(header, '登録日時')
   };
