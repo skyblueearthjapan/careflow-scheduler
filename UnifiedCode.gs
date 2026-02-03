@@ -905,7 +905,8 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     // ★必要な列が存在しない場合は自動追加
     var requiredColumns = {
       'スタッフマスタ': ['割当量'],
-      '患者マスタ': ['訪問頻度', '訪問週']
+      '患者マスタ': ['訪問頻度', '訪問週'],
+      '個別変更リクエスト': ['新時間タイプ', '新希望最早', '新希望最遅']
     };
     var columnsToAdd = requiredColumns[formType] || [];
     columnsToAdd.forEach(function(colName) {
@@ -4351,6 +4352,9 @@ function 週間リクエストを生成_(ss) {
           op:         findHeaderIdx_(cHeader, '操作'), // ←「操作（...）」に固定しない
           newStart:   findHeaderIdx_(cHeader, '新開始'),
           newEnd:     findHeaderIdx_(cHeader, '新終了'),
+          newTimeType: findHeaderIdx_(cHeader, '新時間タイプ'),
+          newEarliest: findHeaderIdx_(cHeader, '新希望最早'),
+          newLatest:   findHeaderIdx_(cHeader, '新希望最遅'),
           note:       findHeaderIdx_(cHeader, '備考'),
           regAt:      findHeaderIdx_(cHeader, '登録日時')
         };
@@ -4399,6 +4403,9 @@ function 週間リクエストを生成_(ss) {
             dateStr: dateStr,
             newStart: (cIdx.newStart >= 0 ? row[cIdx.newStart] : ''),
             newEnd:   (cIdx.newEnd >= 0 ? row[cIdx.newEnd] : ''),
+            newTimeType: (cIdx.newTimeType >= 0 ? String(row[cIdx.newTimeType] || '').trim() : ''),
+            newEarliest: (cIdx.newEarliest >= 0 ? row[cIdx.newEarliest] : ''),
+            newLatest:   (cIdx.newLatest >= 0 ? row[cIdx.newLatest] : ''),
             note:     (cIdx.note >= 0 ? row[cIdx.note] : ''),
             patient_name: (cIdx.name >= 0 ? row[cIdx.name] : ''),
             sortKey: sortKey
@@ -4421,10 +4428,21 @@ function 週間リクエストを生成_(ss) {
 
           } else if (ch.op === '時間変更') {
             matches.forEach(req => {
-              if (ch.newStart) req.start = ch.newStart;
-              let endTime = ch.newEnd;
-              if (!endTime && ch.newStart) endTime = calcEndTime(ch.newStart, req.svcMin);
-              if (endTime) req.end = endTime;
+              // 新時間タイプが指定されている場合、時間帯設定を上書き
+              if (ch.newTimeType) {
+                const win = makeTimeWindow(ch.newTimeType, ch.newEarliest || ch.newStart, ch.newLatest || ch.newEnd, req.svcMin);
+                req.timeType = win.timeType;
+                req.earliest = win.earliest;
+                req.latest = win.latest;
+                req.start = win.start;
+                req.end = win.end;
+              } else {
+                // 従来の固定時間変更
+                if (ch.newStart) req.start = ch.newStart;
+                let endTime = ch.newEnd;
+                if (!endTime && ch.newStart) endTime = calcEndTime(ch.newStart, req.svcMin);
+                if (endTime) req.end = endTime;
+              }
               req.changeType = '変更';
               if (ch.note) req.note = ch.note;
             });
@@ -4432,10 +4450,12 @@ function 週間リクエストを生成_(ss) {
           } else if (ch.op === '追加') {
             const baseInfo = patientInfoMap[ch.pid] || {};
             const weekdayStr = indexToYoubi[ch.date.getDay()];
-            let startTime = ch.newStart || baseInfo.startPref;
-            let endTime   = ch.newEnd   || baseInfo.endPref;
             const svcMin  = baseInfo.svcMin || '';
-            const win = makeTimeWindow(baseInfo.timeType, startTime, endTime, svcMin);
+            // 新時間タイプが指定されていればそれを優先、なければ患者マスタの設定を使用
+            const useTimeType = ch.newTimeType || baseInfo.timeType;
+            let startTime = ch.newEarliest || ch.newStart || baseInfo.startPref;
+            let endTime   = ch.newLatest || ch.newEnd || baseInfo.endPref;
+            const win = makeTimeWindow(useTimeType, startTime, endTime, svcMin);
 
             const newReq = {
               date: ch.date, dateStr: ch.dateStr, weekdayStr: weekdayStr,

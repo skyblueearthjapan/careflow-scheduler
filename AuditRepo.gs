@@ -234,6 +234,9 @@ function audit_loadChangeRequests_(ss, tz, weekStartStr, weekEndStr) {
     op: audit_findHeaderIdx_(header, '操作'),
     newStart: audit_findHeaderIdx_(header, '新開始'),
     newEnd: audit_findHeaderIdx_(header, '新終了'),
+    newTimeType: audit_findHeaderIdx_(header, '新時間タイプ'),
+    newEarliest: audit_findHeaderIdx_(header, '新希望最早'),
+    newLatest: audit_findHeaderIdx_(header, '新希望最遅'),
     note: audit_findHeaderIdx_(header, '備考'),
     regAt: audit_findHeaderIdx_(header, '登録日時')
   };
@@ -271,6 +274,9 @@ function audit_loadChangeRequests_(ss, tz, weekStartStr, weekEndStr) {
       op: op,
       newStartMin: idx.newStart >= 0 ? audit_parseTimeToMin_(row[idx.newStart]) : null,
       newEndMin: idx.newEnd >= 0 ? audit_parseTimeToMin_(row[idx.newEnd]) : null,
+      newTimeType: idx.newTimeType >= 0 ? String(row[idx.newTimeType] || '').trim() : '',
+      newEarliestMin: idx.newEarliest >= 0 ? audit_parseTimeToMin_(row[idx.newEarliest]) : null,
+      newLatestMin: idx.newLatest >= 0 ? audit_parseTimeToMin_(row[idx.newLatest]) : null,
       note: idx.note >= 0 ? String(row[idx.note] || '') : '',
       sortKey: sortKey
     };

@@ -261,19 +261,39 @@ function audit_buildExpectedFromSpecial_(pid, dateStr, detail, source, master) {
  */
 function audit_buildExpectedFromChange_(pid, dateStr, change, master) {
   var svcMin = (master ? master.svcMin : 60) || 60;
-  var startMin = change.newStartMin;
-  var endMin = change.newEndMin;
 
-  // 片方だけの場合はsvcMinで補完
-  if (startMin !== null && endMin === null) {
-    endMin = startMin + svcMin;
-  }
-  if (endMin !== null && startMin === null) {
-    startMin = endMin - svcMin;
-    if (startMin < 0) startMin = 0;
-  }
+  // 新時間タイプが指定されている場合はそれを使用
+  var timeType = change.newTimeType || (master ? master.timeType : '') || '時間帯';
 
-  var timeType = (master ? master.timeType : '') || '時間帯';
+  var startMin, endMin, earliestMin, latestMin;
+
+  if (change.newTimeType) {
+    // 新時間タイプが指定されている場合、時間窓を再計算
+    var win = audit_makeTimeWindow_(change.newTimeType,
+      change.newEarliestMin !== null ? audit_minToTimeStr_(change.newEarliestMin) : (change.newStartMin !== null ? audit_minToTimeStr_(change.newStartMin) : null),
+      change.newLatestMin !== null ? audit_minToTimeStr_(change.newLatestMin) : (change.newEndMin !== null ? audit_minToTimeStr_(change.newEndMin) : null),
+      svcMin);
+    startMin = win.startMin;
+    endMin = win.endMin;
+    earliestMin = win.earliestMin;
+    latestMin = win.latestMin;
+    timeType = win.timeType;
+  } else {
+    // 従来のロジック
+    startMin = change.newStartMin;
+    endMin = change.newEndMin;
+
+    // 片方だけの場合はsvcMinで補完
+    if (startMin !== null && endMin === null) {
+      endMin = startMin + svcMin;
+    }
+    if (endMin !== null && startMin === null) {
+      startMin = endMin - svcMin;
+      if (startMin < 0) startMin = 0;
+    }
+    earliestMin = startMin;
+    latestMin = endMin;
+  }
 
   return {
     expected_id: null,
@@ -285,8 +305,8 @@ function audit_buildExpectedFromChange_(pid, dateStr, change, master) {
     timeType: timeType,
     startMin: startMin,
     endMin: endMin,
-    earliestMin: startMin,
-    latestMin: endMin,
+    earliestMin: earliestMin,
+    latestMin: latestMin,
     svcMin: svcMin,
     needStaff: (master ? master.needStaff : 1) || 1,
     constraints: master ? {
@@ -296,7 +316,7 @@ function audit_buildExpectedFromChange_(pid, dateStr, change, master) {
       fixedType: master.fixedType,
       ngStaff: master.ngStaff
     } : {},
-    note: 'CHANGE(' + change.op + ')'
+    note: 'CHANGE(' + change.op + ')' + (change.newTimeType ? ' timeType:' + change.newTimeType : '')
   };
 }
 
@@ -306,6 +326,21 @@ function audit_buildExpectedFromChange_(pid, dateStr, change, master) {
 function audit_applyTimeChange_(exp, change, master) {
   var svcMin = exp.svcMin || (master ? master.svcMin : 60) || 60;
 
+  // 新時間タイプが指定されている場合、時間窓を完全に上書き
+  if (change.newTimeType) {
+    var win = audit_makeTimeWindow_(change.newTimeType,
+      change.newEarliestMin !== null ? audit_minToTimeStr_(change.newEarliestMin) : (change.newStartMin !== null ? audit_minToTimeStr_(change.newStartMin) : null),
+      change.newLatestMin !== null ? audit_minToTimeStr_(change.newLatestMin) : (change.newEndMin !== null ? audit_minToTimeStr_(change.newEndMin) : null),
+      svcMin);
+    exp.timeType = win.timeType;
+    exp.startMin = win.startMin;
+    exp.endMin = win.endMin;
+    exp.earliestMin = win.earliestMin;
+    exp.latestMin = win.latestMin;
+    return;
+  }
+
+  // 従来のロジック（固定時間変更）
   if (change.newStartMin !== null) {
     exp.startMin = change.newStartMin;
     exp.earliestMin = change.newStartMin;
