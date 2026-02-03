@@ -33,7 +33,8 @@ function audit_loadWeekDataset_(weekStartStr) {
   var d = new Date(weekStart);
   for (var i = 0; i < 7; i++) {
     weekDates.push({
-      date: new Date(d),
+      // DateオブジェクトはJSON化でnullになる可能性があるため、文字列として保持
+      dateIso: d.toISOString(),
       dateStr: audit_formatDateStr_(d, tz),
       youbi: audit_getYoubiEn_(d)
     });
@@ -80,7 +81,7 @@ function audit_loadWeekDataset_(weekStartStr) {
     specialWeekMap: specialWeekMap,
     actualPlanMap: actualPlanMap,
     warnings: warnings,
-    loadedAt: new Date()
+    loadedAt: new Date().toISOString()
   };
 }
 
