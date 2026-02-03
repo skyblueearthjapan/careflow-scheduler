@@ -503,11 +503,16 @@ function audit_loadSpecialWeek_(ss, tz, weekStartStr, weekEndStr) {
  */
 function audit_loadActualPlans_(ss, tz, weekStartStr, weekEndStr) {
   var sheet = ss.getSheetByName(SHEETS.ASSIGN_RESULT);
-  if (!sheet || sheet.getLastRow() <= 1) return {};
+  console.log('audit_loadActualPlans_: シート存在 =', !!sheet);
+  if (!sheet || sheet.getLastRow() <= 1) {
+    console.log('audit_loadActualPlans_: シートが空または存在しない');
+    return {};
+  }
 
   var values = sheet.getDataRange().getValues();
   var header = values[0].map(function(h) { return String(h || '').trim(); });
   var data = values.slice(1);
+  console.log('audit_loadActualPlans_: 全行数 =', data.length, ', 週範囲 =', weekStartStr, '〜', weekEndStr);
 
   var idx = {
     visitId: audit_findHeaderIdx_(header, 'visit_id'),
@@ -528,19 +533,22 @@ function audit_loadActualPlans_(ss, tz, weekStartStr, weekEndStr) {
   };
 
   var map = {};
+  var debugCounts = { total: 0, evSkipped: 0, noPid: 0, noDate: 0, outOfRange: 0, added: 0 };
   data.forEach(function(row) {
+    debugCounts.total++;
     var visitId = idx.visitId >= 0 ? String(row[idx.visitId] || '').trim() : '';
     // EV_ で始まるものはイベント行なのでスキップ
-    if (visitId.indexOf('EV_') === 0) return;
+    if (visitId.indexOf('EV_') === 0) { debugCounts.evSkipped++; return; }
 
     var pid = idx.pid >= 0 ? String(row[idx.pid] || '').trim() : '';
-    if (!pid) return;
+    if (!pid) { debugCounts.noPid++; return; }
 
     var dateObj = idx.date >= 0 ? audit_parseDate_(row[idx.date]) : null;
-    if (!dateObj) return;
+    if (!dateObj) { debugCounts.noDate++; return; }
 
     var dateStr = audit_formatDateStr_(dateObj, tz);
-    if (dateStr < weekStartStr || dateStr > weekEndStr) return;
+    if (dateStr < weekStartStr || dateStr > weekEndStr) { debugCounts.outOfRange++; return; }
+    debugCounts.added++;
 
     var staffId = idx.staffId >= 0 ? String(row[idx.staffId] || '').trim() : '';
 
@@ -567,6 +575,8 @@ function audit_loadActualPlans_(ss, tz, weekStartStr, weekEndStr) {
     });
   });
 
+  console.log('audit_loadActualPlans_: フィルタ結果', JSON.stringify(debugCounts));
+  console.log('audit_loadActualPlans_: map keys =', Object.keys(map).length);
   return map;
 }
 
