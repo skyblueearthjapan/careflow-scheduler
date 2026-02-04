@@ -887,6 +887,8 @@
     .kaipoke-btn.warning:hover:not(:disabled) { background: var(--color-orange-dark); }
     .kaipoke-btn.danger { background: var(--color-error); color: var(--color-white); }
     .kaipoke-btn.danger:hover:not(:disabled) { background: #c0392b; }
+    .kaipoke-btn.info { background: #5f6368; color: var(--color-white); }
+    .kaipoke-btn.info:hover:not(:disabled) { background: #4a4d51; }
     .kaipoke-result {
       background: var(--color-white); border: 1px solid var(--color-border); border-radius: 6px;
       padding: 12px; min-height: 60px; white-space: pre-wrap; font-size: 12px; color: var(--color-text);
@@ -1188,6 +1190,7 @@
           <button class="kaipoke-btn success" onclick="kaipokeExport()">2. CSV出力（Driveに保存）</button>
           <button class="kaipoke-btn warning" onclick="kaipokeDiff()">3. 差分確認（プレビュー）</button>
           <button class="kaipoke-btn danger" onclick="kaipokeApply()">4. 差分適用（カイポケに反映）</button>
+          <button class="kaipoke-btn info" onclick="kaipokeTest()">5. 接続テスト</button>
         </div>
 
         <!-- ローディング -->
@@ -2510,6 +2513,24 @@
           kaipokeRefreshStatus();
         })
         .runApply(kaipokeGetMonth(), weekStart);
+    }
+
+    function kaipokeTest() {
+      kaipokeShowLoading('接続テスト中...');
+      kaipokeShowResult('サーバーとの接続をテストしています...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          kaipokeHideLoading();
+          kaipokeShowResult(result.message, !result.success);
+          kaipokeRefreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          kaipokeHideLoading();
+          kaipokeShowResult('エラー: ' + error.message, true);
+          kaipokeRefreshStatus();
+        })
+        .runConnectionTest();
     }
 
     // モーダル外クリックで閉じる
