@@ -80,6 +80,13 @@
     .btn-danger:hover {
       background: #d33426;
     }
+    .btn-info {
+      background: #5f6368;
+      color: white;
+    }
+    .btn-info:hover {
+      background: #4a4d51;
+    }
     button:disabled {
       background: #ccc;
       cursor: not-allowed;
@@ -179,6 +186,10 @@
 
     <button class="btn-danger" onclick="onApplyClick()">
       4. 差分適用（カイポケに反映）
+    </button>
+
+    <button class="btn-info" onclick="onTestClick()">
+      5. 接続テスト
     </button>
   </div>
 
@@ -381,6 +392,27 @@
           refreshStatus();
         })
         .runApply(getSelectedMonth(), weekStart);
+    }
+
+    // ==========================================
+    // 接続テスト
+    // ==========================================
+    function onTestClick() {
+      showLoading("接続テスト中...");
+      showResult("サーバーとの接続をテストしています...");
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          showResult(result.message, !result.success);
+          refreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showResult("エラー: " + error.message, true);
+          refreshStatus();
+        })
+        .runConnectionTest();
     }
   </script>
 </body>

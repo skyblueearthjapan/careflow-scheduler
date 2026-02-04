@@ -268,6 +268,92 @@ function runApply(month, weekStart) {
 }
 
 // ==========================================
+// 接続テスト
+// ==========================================
+function runConnectionTest() {
+  var url = API_BASE_URL + "/api/test";
+
+  var testPayload = {
+    "action": "ping",
+    "timestamp": new Date().toISOString(),
+    "source": "gas_sidebar"
+  };
+
+  var options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(testPayload),
+    "muteHttpExceptions": true
+  };
+
+  try {
+    var startTime = new Date().getTime();
+    var response = UrlFetchApp.fetch(url, options);
+    var endTime = new Date().getTime();
+    var responseTime = endTime - startTime;
+
+    var statusCode = response.getResponseCode();
+    var result = JSON.parse(response.getContentText());
+
+    if (statusCode === 200 && result.success) {
+      return {
+        "success": true,
+        "message": "接続テスト成功!\n" +
+                   "ステータス: OK\n" +
+                   "応答時間: " + responseTime + "ms\n" +
+                   "サーバー時刻: " + (result.server_time || "N/A") + "\n" +
+                   "メッセージ: " + (result.message || "テスト完了")
+      };
+    } else {
+      return {
+        "success": false,
+        "message": "接続テスト失敗\n" +
+                   "ステータスコード: " + statusCode + "\n" +
+                   "エラー: " + (result.error || "不明なエラー")
+      };
+    }
+  } catch (e) {
+    // /api/test が存在しない場合は /api/status にフォールバック
+    try {
+      var statusUrl = API_BASE_URL + "/api/status";
+      var statusOptions = {
+        "method": "get",
+        "muteHttpExceptions": true
+      };
+
+      var startTime2 = new Date().getTime();
+      var statusResponse = UrlFetchApp.fetch(statusUrl, statusOptions);
+      var endTime2 = new Date().getTime();
+      var responseTime2 = endTime2 - startTime2;
+
+      var statusResult = JSON.parse(statusResponse.getContentText());
+
+      if (statusResult.status === "running") {
+        return {
+          "success": true,
+          "message": "接続テスト成功!\n" +
+                     "（/api/status で確認）\n" +
+                     "ステータス: " + statusResult.status + "\n" +
+                     "応答時間: " + responseTime2 + "ms"
+        };
+      } else {
+        return {
+          "success": false,
+          "message": "サーバー状態が異常です: " + statusResult.status
+        };
+      }
+    } catch (e2) {
+      return {
+        "success": false,
+        "message": "サーバーに接続できません\n" +
+                   "URL: " + API_BASE_URL + "\n" +
+                   "エラー: " + e.message
+      };
+    }
+  }
+}
+
+// ==========================================
 // 設定更新（DriveフォルダID）
 // ==========================================
 function setDriveFolderId(folderId) {
