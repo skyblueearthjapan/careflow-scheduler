@@ -354,6 +354,131 @@ function runConnectionTest() {
 }
 
 // ==========================================
+// ログ取得
+// ==========================================
+function kaipoke_logs(tail) {
+  var url = API_BASE_URL + "/api/kaipoke/logs";
+  if (tail) {
+    url += "?tail=" + tail;
+  }
+
+  var options = {
+    "method": "get",
+    "muteHttpExceptions": true,
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    var statusCode = response.getResponseCode();
+    var result = JSON.parse(response.getContentText());
+
+    if (statusCode === 200 && result.ok) {
+      return {
+        "success": true,
+        "lines": result.lines || []
+      };
+    } else {
+      return {
+        "success": false,
+        "lines": [],
+        "message": result.error || "ログ取得エラー"
+      };
+    }
+  } catch (e) {
+    return {
+      "success": false,
+      "lines": ["[ローカル] ログ取得失敗: " + e.message],
+      "message": e.message
+    };
+  }
+}
+
+// ==========================================
+// VNC URL取得
+// ==========================================
+function kaipoke_vncUrl() {
+  var url = API_BASE_URL + "/api/kaipoke/vnc-url";
+
+  var options = {
+    "method": "get",
+    "muteHttpExceptions": true,
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    var statusCode = response.getResponseCode();
+    var result = JSON.parse(response.getContentText());
+
+    if (statusCode === 200 && result.ok) {
+      return {
+        "success": true,
+        "url": result.url,
+        "ready": result.ready || false
+      };
+    } else {
+      return {
+        "success": false,
+        "url": null,
+        "message": result.error || "VNC URL取得エラー"
+      };
+    }
+  } catch (e) {
+    return {
+      "success": false,
+      "url": null,
+      "message": e.message
+    };
+  }
+}
+
+// ==========================================
+// 拡張ステータス取得（VNC URL含む）
+// ==========================================
+function kaipoke_status() {
+  var url = API_BASE_URL + "/api/kaipoke/status";
+
+  var options = {
+    "method": "get",
+    "muteHttpExceptions": true,
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    var statusCode = response.getResponseCode();
+    var result = JSON.parse(response.getContentText());
+
+    if (statusCode === 200 && result.ok) {
+      return {
+        "success": true,
+        "server": result.server || {},
+        "job": result.job || {},
+        "vnc": result.vnc || {},
+        "message": result.message || "OK"
+      };
+    } else {
+      return {
+        "success": false,
+        "message": result.error || "ステータス取得エラー"
+      };
+    }
+  } catch (e) {
+    return {
+      "success": false,
+      "message": "サーバー接続エラー: " + e.message
+    };
+  }
+}
+
+// ==========================================
 // 設定更新（DriveフォルダID）
 // ==========================================
 function setDriveFolderId(folderId) {

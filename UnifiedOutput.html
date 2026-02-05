@@ -849,17 +849,72 @@
     }
     .kaipoke-modal.show { display: flex; }
     .kaipoke-modal-content {
-      background: var(--color-white); border-radius: 12px; width: 400px; max-width: 90%;
-      max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      background: var(--color-white); border-radius: 12px;
+      width: 95vw; height: 90vh;
+      display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
     }
     .kaipoke-modal-header {
       background: var(--color-blue); color: var(--color-white); padding: 14px 20px;
       display: flex; justify-content: space-between; align-items: center;
       font-weight: 600; font-size: 15px; border-radius: 12px 12px 0 0;
     }
-    .kaipoke-modal-body { flex: 1; overflow-y: auto; padding: 20px; }
+    .kaipoke-modal-body {
+      flex: 1; overflow: hidden; display: flex; flex-direction: row;
+    }
+    /* 左パネル: VNCビューア (70%) */
+    .kaipoke-viewer-panel {
+      flex: 7; display: flex; flex-direction: column; background: #1a1a1a;
+      border-right: 1px solid var(--color-border); border-radius: 0 0 0 12px;
+    }
+    .kaipoke-viewer-header {
+      padding: 10px 16px; background: #2d2d2d; color: #fff;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 13px; border-bottom: 1px solid #444;
+    }
+    .kaipoke-viewer-status { display: flex; align-items: center; gap: 8px; }
+    .kaipoke-viewer-status-dot {
+      width: 10px; height: 10px; border-radius: 50%; background: #666;
+    }
+    .kaipoke-viewer-status-dot.connected { background: #34a853; }
+    .kaipoke-viewer-status-dot.connecting { background: #fbbc04; animation: kaipoke-pulse 1s infinite; }
+    .kaipoke-viewer-status-dot.error { background: #ea4335; }
+    @keyframes kaipoke-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .kaipoke-viewer-frame-container {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: #1a1a1a; position: relative;
+    }
+    .kaipoke-viewer-frame {
+      width: 100%; height: 100%; border: none; background: #000;
+    }
+    .kaipoke-viewer-placeholder {
+      color: #888; text-align: center; padding: 40px;
+    }
+    .kaipoke-viewer-placeholder-icon { font-size: 64px; margin-bottom: 16px; opacity: 0.5; }
+    .kaipoke-viewer-placeholder-text { font-size: 14px; line-height: 1.8; }
+    .kaipoke-viewer-error {
+      background: rgba(234,67,53,0.1); border: 1px solid #ea4335;
+      border-radius: 8px; padding: 20px; margin: 20px; color: #ea4335;
+    }
+    .kaipoke-viewer-error-title { font-weight: 600; margin-bottom: 8px; }
+    /* 右パネル: コントロール (30%) */
+    .kaipoke-control-panel {
+      flex: 3; display: flex; flex-direction: column; overflow-y: auto;
+      background: var(--color-bg); min-width: 280px; max-width: 360px;
+      border-radius: 0 0 12px 0;
+    }
+    .kaipoke-control-panel::-webkit-scrollbar { width: 6px; }
+    .kaipoke-control-panel::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
     .kaipoke-section {
-      background: var(--color-bg); border-radius: 8px; padding: 16px; margin-bottom: 16px;
+      background: var(--color-white); border-radius: 8px; padding: 14px; margin: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .kaipoke-section:first-child { margin-top: 12px; }
+    .kaipoke-section.logs-section { flex: 1; display: flex; flex-direction: column; min-height: 120px; }
+    .kaipoke-logs-container { flex: 1; overflow-y: auto; }
+    .kaipoke-logs {
+      background: #1a1a1a; color: #0f0; font-family: monospace; font-size: 11px;
+      padding: 10px; border-radius: 4px; min-height: 80px; max-height: 150px;
+      overflow-y: auto; white-space: pre-wrap; word-break: break-all;
     }
     .kaipoke-section-title { font-weight: 600; color: var(--color-text); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
     .kaipoke-status-indicator {
@@ -1157,52 +1212,98 @@
   <div class="kaipoke-modal" id="kaipokeModal">
     <div class="kaipoke-modal-content">
       <div class="kaipoke-modal-header">
-        <span>カイポケ自動化</span>
+        <span>カイポケ自動化 - RPA実行モニター</span>
         <button class="audit-close-btn" onclick="closeKaipokeModal()">×</button>
       </div>
       <div class="kaipoke-modal-body">
-        <!-- サーバー状態 -->
-        <div class="kaipoke-section">
-          <div class="kaipoke-section-title">
-            <span class="kaipoke-status-indicator error" id="kaipokeStatusIndicator"></span>
-            <span id="kaipokeStatusText">確認中...</span>
+        <!-- 左パネル: VNCビューア -->
+        <div class="kaipoke-viewer-panel">
+          <div class="kaipoke-viewer-header">
+            <div class="kaipoke-viewer-status">
+              <span class="kaipoke-viewer-status-dot" id="kaipokeVncStatusDot"></span>
+              <span id="kaipokeVncStatusText">未接続</span>
+            </div>
+            <div>
+              <span id="kaipokeVncHost">-</span>
+            </div>
           </div>
-          <button class="kaipoke-btn primary" onclick="kaipokeRefreshStatus()">状態を更新</button>
-        </div>
-
-        <!-- 月選択 -->
-        <div class="kaipoke-section">
-          <div class="kaipoke-section-title">対象設定</div>
-          <div class="kaipoke-input-group">
-            <label>対象月</label>
-            <select id="kaipokeTargetMonth"></select>
+          <div class="kaipoke-viewer-frame-container">
+            <!-- VNC iframe (初期は非表示) -->
+            <iframe id="kaipokeVncFrame" class="kaipoke-viewer-frame" style="display:none;" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+            <!-- プレースホルダー (初期表示) -->
+            <div class="kaipoke-viewer-placeholder" id="kaipokeVncPlaceholder">
+              <div class="kaipoke-viewer-placeholder-icon">🖥️</div>
+              <div class="kaipoke-viewer-placeholder-text">
+                VNCビューア<br>
+                「接続テスト」でサーバーとの接続を確認後、<br>
+                「月間スケジュール展開」などを実行すると<br>
+                ここにブラウザ操作画面が表示されます
+              </div>
+            </div>
+            <!-- エラー表示エリア -->
+            <div class="kaipoke-viewer-error" id="kaipokeVncError" style="display:none;">
+              <div class="kaipoke-viewer-error-title">⚠️ 表示エラー</div>
+              <div id="kaipokeVncErrorText"></div>
+            </div>
           </div>
-          <div class="kaipoke-input-group">
-            <label>対象週の開始日（差分適用時に必要）</label>
-            <input type="date" id="kaipokeWeekStart">
+        </div>
+
+        <!-- 右パネル: コントロール -->
+        <div class="kaipoke-control-panel">
+          <!-- サーバー状態 -->
+          <div class="kaipoke-section">
+            <div class="kaipoke-section-title">
+              <span class="kaipoke-status-indicator error" id="kaipokeStatusIndicator"></span>
+              <span id="kaipokeStatusText">確認中...</span>
+            </div>
+            <button class="kaipoke-btn primary" onclick="kaipokeRefreshStatus()">状態を更新</button>
           </div>
-        </div>
 
-        <!-- 操作ボタン -->
-        <div class="kaipoke-section">
-          <div class="kaipoke-section-title">自動化操作</div>
-          <button class="kaipoke-btn primary" onclick="kaipokeExpand()">1. 月間スケジュール展開</button>
-          <button class="kaipoke-btn success" onclick="kaipokeExport()">2. CSV出力（Driveに保存）</button>
-          <button class="kaipoke-btn warning" onclick="kaipokeDiff()">3. 差分確認（プレビュー）</button>
-          <button class="kaipoke-btn danger" onclick="kaipokeApply()">4. 差分適用（カイポケに反映）</button>
-          <button class="kaipoke-btn info" onclick="kaipokeTest()">5. 接続テスト</button>
-        </div>
+          <!-- 対象設定 -->
+          <div class="kaipoke-section">
+            <div class="kaipoke-section-title">対象設定</div>
+            <div class="kaipoke-input-group">
+              <label>対象月</label>
+              <select id="kaipokeTargetMonth"></select>
+            </div>
+            <div class="kaipoke-input-group">
+              <label>対象週の開始日（差分適用時に必要）</label>
+              <input type="date" id="kaipokeWeekStart">
+            </div>
+          </div>
 
-        <!-- ローディング -->
-        <div class="kaipoke-loading" id="kaipokeLoading">
-          <div class="kaipoke-spinner"></div>
-          <div id="kaipokeLoadingText">処理中...</div>
-        </div>
+          <!-- 操作ボタン -->
+          <div class="kaipoke-section">
+            <div class="kaipoke-section-title">自動化操作</div>
+            <button class="kaipoke-btn primary" onclick="kaipokeExpand()">1. 月間スケジュール展開</button>
+            <button class="kaipoke-btn success" onclick="kaipokeExport()">2. CSV出力（Driveに保存）</button>
+            <button class="kaipoke-btn warning" onclick="kaipokeDiff()">3. 差分確認（プレビュー）</button>
+            <button class="kaipoke-btn danger" onclick="kaipokeApply()">4. 差分適用（カイポケに反映）</button>
+            <button class="kaipoke-btn info" onclick="kaipokeTest()">5. 接続テスト</button>
+          </div>
 
-        <!-- 結果表示 -->
-        <div class="kaipoke-section">
-          <div class="kaipoke-section-title">実行結果</div>
-          <div class="kaipoke-result" id="kaipokeResult">ボタンをクリックして操作を開始してください</div>
+          <!-- ローディング -->
+          <div class="kaipoke-loading" id="kaipokeLoading">
+            <div class="kaipoke-spinner"></div>
+            <div id="kaipokeLoadingText">処理中...</div>
+          </div>
+
+          <!-- 実行結果 -->
+          <div class="kaipoke-section">
+            <div class="kaipoke-section-title">実行結果</div>
+            <div class="kaipoke-result" id="kaipokeResult">ボタンをクリックして操作を開始してください</div>
+          </div>
+
+          <!-- ログ表示 -->
+          <div class="kaipoke-section logs-section">
+            <div class="kaipoke-section-title">
+              実行ログ
+              <button class="kaipoke-btn info" style="width:auto; padding:4px 10px; margin:0 0 0 auto; font-size:11px;" onclick="kaipokeRefreshLogs()">更新</button>
+            </div>
+            <div class="kaipoke-logs-container">
+              <div class="kaipoke-logs" id="kaipokeLogs">ログはここに表示されます...</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2524,13 +2625,153 @@
           kaipokeHideLoading();
           kaipokeShowResult(result.message, !result.success);
           kaipokeRefreshStatus();
+          // 接続成功時、VNC状態も更新
+          if (result.success) {
+            kaipokeUpdateVncStatus('connected', 'サーバー接続確認済み');
+          }
         })
         .withFailureHandler(function(error) {
           kaipokeHideLoading();
           kaipokeShowResult('エラー: ' + error.message, true);
           kaipokeRefreshStatus();
+          kaipokeUpdateVncStatus('error', '接続エラー');
         })
         .runConnectionTest();
+    }
+
+    // ==========================================
+    // VNC ビューア状態管理
+    // ==========================================
+    var kaipokeVncState = {
+      status: 'disconnected', // disconnected, connecting, connected, error
+      url: null,
+      lastUpdate: null
+    };
+
+    function kaipokeUpdateVncStatus(status, message) {
+      kaipokeVncState.status = status;
+      kaipokeVncState.lastUpdate = new Date();
+
+      var dot = document.getElementById('kaipokeVncStatusDot');
+      var text = document.getElementById('kaipokeVncStatusText');
+
+      if (dot) {
+        dot.className = 'kaipoke-viewer-status-dot ' + status;
+      }
+      if (text) {
+        text.textContent = message || status;
+      }
+    }
+
+    function kaipokeSetVncUrl(url) {
+      var iframe = document.getElementById('kaipokeVncFrame');
+      var placeholder = document.getElementById('kaipokeVncPlaceholder');
+      var errorDiv = document.getElementById('kaipokeVncError');
+
+      if (!url) {
+        // URLなし → プレースホルダー表示
+        if (iframe) iframe.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'block';
+        if (errorDiv) errorDiv.style.display = 'none';
+        kaipokeUpdateVncStatus('disconnected', '未接続');
+        return;
+      }
+
+      kaipokeVncState.url = url;
+      kaipokeUpdateVncStatus('connecting', '接続中...');
+
+      if (placeholder) placeholder.style.display = 'none';
+      if (errorDiv) errorDiv.style.display = 'none';
+
+      if (iframe) {
+        iframe.style.display = 'block';
+        iframe.src = url;
+
+        // iframe読み込み完了を検知
+        iframe.onload = function() {
+          kaipokeUpdateVncStatus('connected', '接続中');
+        };
+        iframe.onerror = function() {
+          kaipokeShowVncError('iframe読み込みエラー: X-Frame-Options または CSP により表示がブロックされている可能性があります');
+        };
+      }
+    }
+
+    function kaipokeShowVncError(message) {
+      var iframe = document.getElementById('kaipokeVncFrame');
+      var placeholder = document.getElementById('kaipokeVncPlaceholder');
+      var errorDiv = document.getElementById('kaipokeVncError');
+      var errorText = document.getElementById('kaipokeVncErrorText');
+
+      if (iframe) iframe.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'none';
+      if (errorDiv) {
+        errorDiv.style.display = 'block';
+        if (errorText) errorText.textContent = message;
+      }
+      kaipokeUpdateVncStatus('error', 'エラー');
+    }
+
+    // ==========================================
+    // ログ表示機能
+    // ==========================================
+    function kaipokeRefreshLogs() {
+      var logsDiv = document.getElementById('kaipokeLogs');
+      if (logsDiv) {
+        logsDiv.textContent = '取得中...';
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (logsDiv) {
+            if (result && result.lines && result.lines.length > 0) {
+              logsDiv.textContent = result.lines.join('\n');
+              // 自動スクロール（最新ログを表示）
+              logsDiv.scrollTop = logsDiv.scrollHeight;
+            } else {
+              logsDiv.textContent = 'ログはありません';
+            }
+          }
+        })
+        .withFailureHandler(function(error) {
+          if (logsDiv) {
+            logsDiv.textContent = 'ログ取得エラー: ' + error.message;
+          }
+        })
+        .kaipoke_logs(200);
+    }
+
+    function kaipokeAppendLog(message) {
+      var logsDiv = document.getElementById('kaipokeLogs');
+      if (logsDiv) {
+        var timestamp = new Date().toLocaleTimeString('ja-JP');
+        logsDiv.textContent += '\n[' + timestamp + '] ' + message;
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+      }
+    }
+
+    // ==========================================
+    // 拡張: 状態ポーリング（オプション）
+    // ==========================================
+    var kaipokePollingInterval = null;
+
+    function kaipokeStartPolling(intervalMs) {
+      if (kaipokePollingInterval) {
+        clearInterval(kaipokePollingInterval);
+      }
+      intervalMs = intervalMs || 10000; // デフォルト10秒
+      kaipokePollingInterval = setInterval(function() {
+        kaipokeRefreshStatus();
+      }, intervalMs);
+      console.log('Kaipoke polling started: ' + intervalMs + 'ms');
+    }
+
+    function kaipokeStopPolling() {
+      if (kaipokePollingInterval) {
+        clearInterval(kaipokePollingInterval);
+        kaipokePollingInterval = null;
+        console.log('Kaipoke polling stopped');
+      }
     }
 
     // モーダル外クリックで閉じる
