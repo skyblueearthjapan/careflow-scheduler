@@ -3,7 +3,7 @@
 // ==========================================
 
 // APIサーバーのベースURL（本番環境に合わせて変更）
-var API_BASE_URL = "http://サーバーIP:5000";
+var API_BASE_URL = "http://192.168.0.3:5000";
 
 // Google DriveのフォルダID（共有フォルダのID）
 var DRIVE_FOLDER_ID = "1ABCxxxxxxxxxxxxxxxx";
