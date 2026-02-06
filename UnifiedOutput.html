@@ -2625,9 +2625,10 @@
           kaipokeHideLoading();
           kaipokeShowResult(result.message, !result.success);
           kaipokeRefreshStatus();
-          // 接続成功時、VNC状態も更新
+          // 接続成功時、VNC画面を表示
           if (result.success) {
-            kaipokeUpdateVncStatus('connected', 'サーバー接続確認済み');
+            kaipokeUpdateVncStatus('connecting', 'VNC接続中...');
+            kaipokeSetVncUrl('https://novnc.kaipoke-api.net/vnc.html?autoconnect=true&resize=scale');
           }
         })
         .withFailureHandler(function(error) {
