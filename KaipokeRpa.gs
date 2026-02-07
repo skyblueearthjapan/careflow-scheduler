@@ -919,18 +919,30 @@ function getInterlockSettings() {
 
     for (var i = 0; i < data.length; i++) {
       var key = String(data[i][0] || '').trim();
-      var val = String(data[i][1] || '').trim();
+      var rawVal = data[i][1];
+
+      // セルの値がDateオブジェクトの場合は適切なフォーマットに変換
+      var val;
+      if (rawVal instanceof Date) {
+        val = Utilities.formatDate(rawVal, "JST", "yyyy-MM-dd");
+        console.log('[getInterlockSettings] Date型検出: key=' + key + ' -> ' + val);
+      } else {
+        val = String(rawVal || '').trim();
+      }
 
       if (key === '展開制限月') {
-        settings.expandMinMonth = val || null;
+        // YYYY-MM形式に正規化（YYYY-MM-DDが来たらYYYY-MMに切る）
+        settings.expandMinMonth = val ? val.substring(0, 7) : null;
       } else if (key === '展開完了月') {
-        settings.expandCompleted = val ? val.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+        settings.expandCompleted = val ? val.split(',').map(function(s) { return s.trim().substring(0, 7); }).filter(Boolean) : [];
       } else if (key === '差分制限週') {
+        // YYYY-MM-DD形式のまま使用
         settings.applyMinWeek = val || null;
       } else if (key === '差分完了週') {
         settings.applyCompleted = val ? val.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
       }
     }
+    console.log('[getInterlockSettings] expandMinMonth=' + settings.expandMinMonth + ' applyMinWeek=' + settings.applyMinWeek);
 
     return settings;
   } catch (e) {
