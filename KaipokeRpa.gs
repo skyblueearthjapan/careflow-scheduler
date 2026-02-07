@@ -278,23 +278,30 @@ function checkDiff(month, weekStart) {
     console.log('[checkDiff] statusCode=' + statusCode + ' responseBody=' + response.getContentText().substring(0, 500));
 
     if (statusCode === 200 && result.success) {
-      // result.summary を使用（常に全項目が含まれる。0件でもキーがある）
-      var s = result.summary || {};
+      // レスポンス構造: { success, result: { total_corrections, summary: { additions, deletions, edits, time_changes, ... }, corrections: [...] } }
+      var r = result.result || {};
+      var s = r.summary || {};
       var additions    = s.additions    || 0;
       var deletions    = s.deletions    || 0;
       var edits        = s.edits        || 0;
       var timeChanges  = s.time_changes || 0;
-      var totalChanges = result.total_changes || (additions + deletions + edits + timeChanges);
+      var staffChanges = s.staff_changes || 0;
+      var dateChanges  = s.date_changes || 0;
+      var totalChanges = r.total_corrections || (additions + deletions + edits + timeChanges);
+
+      console.log('[checkDiff] summary: additions=' + additions + ' deletions=' + deletions + ' edits=' + edits + ' time_changes=' + timeChanges + ' total=' + totalChanges);
 
       return {
         "success": true,
         "message": "差分確認結果（" + weekStart + " 〜 " + weekRange.endDate + "）:\n" +
                    "追加予定: " + additions + "件\n" +
                    "削除予定: " + deletions + "件\n" +
-                   "変更予定: " + edits + "件\n" +
+                   "編集予定: " + edits + "件\n" +
                    "時間変更: " + timeChanges + "件\n" +
+                   "職員変更: " + staffChanges + "件\n" +
+                   "日付変更: " + dateChanges + "件\n" +
                    "合計: " + totalChanges + "件",
-        "data": result
+        "data": r
       };
     } else {
       return {
@@ -379,23 +386,30 @@ function runApply(month, weekStart) {
     console.log('[runApply] statusCode=' + statusCode + ' responseBody=' + response.getContentText().substring(0, 500));
 
     if (statusCode === 200 && result.success) {
-      // result.summary を使用（安全なアクセス）
-      var s = result.summary || {};
+      // レスポンス構造: { success, result: { total_corrections, summary: {...}, corrections: [...] } }
+      var r = result.result || {};
+      var s = r.summary || {};
       var additions    = s.additions    || 0;
       var deletions    = s.deletions    || 0;
       var edits        = s.edits        || 0;
       var timeChanges  = s.time_changes || 0;
-      var applied      = result.applied_count || (additions + deletions + edits + timeChanges);
+      var staffChanges = s.staff_changes || 0;
+      var dateChanges  = s.date_changes || 0;
+      var totalChanges = r.total_corrections || (additions + deletions + edits + timeChanges);
+
+      console.log('[runApply] summary: additions=' + additions + ' deletions=' + deletions + ' edits=' + edits + ' total=' + totalChanges);
 
       return {
         "success": true,
         "message": "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n" +
                    "追加: " + additions + "件\n" +
                    "削除: " + deletions + "件\n" +
-                   "変更: " + edits + "件\n" +
+                   "編集: " + edits + "件\n" +
                    "時間変更: " + timeChanges + "件\n" +
-                   "適用合計: " + applied + "件",
-        "data": result
+                   "職員変更: " + staffChanges + "件\n" +
+                   "日付変更: " + dateChanges + "件\n" +
+                   "適用合計: " + totalChanges + "件",
+        "data": r
       };
     } else if (statusCode === 400) {
       return {
