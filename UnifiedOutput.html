@@ -3116,21 +3116,38 @@
     }
 
     function kaipokeEmergencyStop() {
+      // google.script.runは直列実行のため、実行中のタスクが終わるまで待たされる。
+      // 非常停止はそれでは意味がないので、fetch()でVPS APIを直接呼び出す。
+      var API_URL = 'https://kaipoke-api.net';
       kaipokeShowLoading('非常停止を要求中...');
       kaipokeShowResult('非常停止を送信しています...');
 
-      google.script.run
-        .withSuccessHandler(function(result) {
-          kaipokeHideLoading();
-          kaipokeShowResult(result.message, !result.success);
-          kaipokeRefreshStatus();
-        })
-        .withFailureHandler(function(error) {
-          kaipokeHideLoading();
-          kaipokeShowResult('非常停止エラー: ' + error.message, true);
-          kaipokeRefreshStatus();
-        })
-        .emergencyStop();
+      fetch(API_URL + '/api/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      .then(function(response) { return response.json(); })
+      .then(function(result) {
+        kaipokeHideLoading();
+        if (result.success) {
+          var taskName = (result.current_task && result.current_task.command) ? result.current_task.command : 'なし';
+          kaipokeShowResult(
+            '非常停止を要求しました。\n\n' +
+            (result.message || '') + '\n\n' +
+            '対象タスク: ' + taskName,
+            false
+          );
+        } else {
+          kaipokeShowResult('停止に失敗しました: ' + (result.error || '不明なエラー'), true);
+        }
+        kaipokeRefreshStatus();
+      })
+      .catch(function(error) {
+        kaipokeHideLoading();
+        kaipokeShowResult('非常停止エラー: ' + error.message + '\n\n※VPS側でCORS設定が必要です', true);
+        kaipokeRefreshStatus();
+      });
     }
 
     function kaipokeTest() {
