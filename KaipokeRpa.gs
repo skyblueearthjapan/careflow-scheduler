@@ -254,14 +254,14 @@ function checkDiff(month, weekStart) {
   }
   console.log('[checkDiff] optimizedCSV読み込み完了: ' + optimizedFileName + ' (' + optimizedCsvContent.length + '文字)');
 
-  // 3. CSV内容を直接送信
+  // 3. CSV内容を直接送信（week_start/week_endはYYYYMMDD形式）
   var payload = {
-    "month": targetMonth,
-    "week_start": weekStart,
-    "week_end": weekRange.endDate,
     "current_csv_content": currentCsvContent,
-    "optimized_csv_content": optimizedCsvContent
+    "optimized_csv_content": optimizedCsvContent,
+    "week_start": weekRange.startStr,
+    "week_end": weekRange.endStr
   };
+  console.log('[checkDiff] payload keys: ' + Object.keys(payload).join(', ') + ' week_start=' + weekRange.startStr + ' week_end=' + weekRange.endStr);
 
   var options = {
     "method": "post",
@@ -344,14 +344,14 @@ function runApply(month, weekStart) {
   }
   console.log('[runApply] optimizedCSV読み込み完了: ' + optimizedFileName);
 
-  // 3. CSV内容を直接送信
+  // 3. CSV内容を直接送信（week_start/week_endはYYYYMMDD形式）
   var payload = {
-    "month": targetMonth,
-    "week_start": weekStart,
-    "week_end": weekRange.endDate,
     "current_csv_content": currentCsvContent,
-    "optimized_csv_content": optimizedCsvContent
+    "optimized_csv_content": optimizedCsvContent,
+    "week_start": weekRange.startStr,
+    "week_end": weekRange.endStr
   };
+  console.log('[runApply] payload keys: ' + Object.keys(payload).join(', ') + ' week_start=' + weekRange.startStr + ' week_end=' + weekRange.endStr);
 
   var options = {
     "method": "post",
