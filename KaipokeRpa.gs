@@ -180,7 +180,7 @@ function saveCsvToDrive_(csvContent, month) {
   try {
     var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
     var monthStr = month.replace("-", "");
-    var fileName = "kaipoke_export_" + monthStr + ".csv";
+    var fileName = "kaipoke_current_" + monthStr + ".csv";
 
     // 既存ファイルがあれば削除（上書き）
     var existingFiles = folder.getFilesByName(fileName);
@@ -585,7 +585,7 @@ function saveOptimizedCsvToDrive(data, month) {
   try {
     var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
     var monthStr = month.replace("-", "");
-    var fileName = "optimized_" + monthStr + ".csv";
+    var fileName = "gas_optimized_" + monthStr + ".csv";
 
     // ヘッダー行
     var headers = [
