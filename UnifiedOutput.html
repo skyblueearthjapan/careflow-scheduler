@@ -3116,9 +3116,6 @@
     }
 
     function kaipokeEmergencyStop() {
-      if (!confirm('*** 非常停止 ***\n\n実行中の処理を緊急停止します。\n現在処理中の利用者の操作が完了した後に停止します。\n\n本当に停止しますか？')) {
-        return;
-      }
       kaipokeShowLoading('非常停止を要求中...');
       kaipokeShowResult('非常停止を送信しています...');
 
