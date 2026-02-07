@@ -2735,8 +2735,11 @@
       if (pw === null) return;
       google.script.run
         .withSuccessHandler(function(r) {
-          if (r.success) { kaipokeInterlock.expandMinMonth = val || null; kaipokeUpdateButtonStates(); alert('保存しました'); }
-          else { alert(r.message); }
+          if (r.success) {
+            kaipokeInterlock.expandMinMonth = val || null;
+            kaipokeUpdateButtonStates();
+            setTimeout(function() { alert('保存しました'); }, 50);
+          } else { alert(r.message); }
         })
         .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
         .saveInterlockSetting('展開制限月', val, pw);
@@ -2748,8 +2751,11 @@
       if (pw === null) return;
       google.script.run
         .withSuccessHandler(function(r) {
-          if (r.success) { kaipokeInterlock.applyMinWeek = val || null; kaipokeUpdateButtonStates(); alert('保存しました'); }
-          else { alert(r.message); }
+          if (r.success) {
+            kaipokeInterlock.applyMinWeek = val || null;
+            kaipokeUpdateButtonStates();
+            setTimeout(function() { alert('保存しました'); }, 50);
+          } else { alert(r.message); }
         })
         .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
         .saveInterlockSetting('差分制限週', val, pw);
@@ -2762,8 +2768,12 @@
       var newList = kaipokeInterlock.expandCompleted.filter(function(m) { return m !== month; });
       google.script.run
         .withSuccessHandler(function(r) {
-          if (r.success) { kaipokeInterlock.expandCompleted = newList; kaipokeUpdateButtonStates(); kaipokeRenderCompletedTags(); alert('解除しました'); }
-          else { alert(r.message); }
+          if (r.success) {
+            kaipokeInterlock.expandCompleted = newList;
+            kaipokeUpdateButtonStates();
+            kaipokeRenderCompletedTags();
+            setTimeout(function() { alert('解除しました'); }, 50);
+          } else { alert(r.message); }
         })
         .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
         .saveInterlockSetting('展開完了月', newList.join(','), pw);
@@ -2776,8 +2786,12 @@
       var newList = kaipokeInterlock.applyCompleted.filter(function(w) { return w !== weekStart; });
       google.script.run
         .withSuccessHandler(function(r) {
-          if (r.success) { kaipokeInterlock.applyCompleted = newList; kaipokeUpdateButtonStates(); kaipokeRenderCompletedTags(); alert('解除しました'); }
-          else { alert(r.message); }
+          if (r.success) {
+            kaipokeInterlock.applyCompleted = newList;
+            kaipokeUpdateButtonStates();
+            kaipokeRenderCompletedTags();
+            setTimeout(function() { alert('解除しました'); }, 50);
+          } else { alert(r.message); }
         })
         .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
         .saveInterlockSetting('差分完了週', newList.join(','), pw);
@@ -2792,6 +2806,7 @@
     function kaipokeHideLoading() {
       document.getElementById('kaipokeLoading').className = 'kaipoke-loading';
       kaipokeDisableButtons(false);
+      kaipokeUpdateButtonStates();
     }
 
     function kaipokeDisableButtons(disabled) {

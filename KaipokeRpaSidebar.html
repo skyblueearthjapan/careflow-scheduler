@@ -448,8 +448,11 @@
       if (pw === null) return;
       google.script.run
         .withSuccessHandler(function(r) {
-          if (r.success) { interlock.expandMinMonth = val || null; updateButtonStates(); alert('保存しました'); }
-          else { alert(r.message); }
+          if (r.success) {
+            interlock.expandMinMonth = val || null;
+            updateButtonStates();
+            setTimeout(function() { alert('保存しました'); }, 50);
+          } else { alert(r.message); }
         })
         .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
         .saveInterlockSetting('展開制限月', val, pw);
@@ -461,8 +464,11 @@
       if (pw === null) return;
       google.script.run
         .withSuccessHandler(function(r) {
-          if (r.success) { interlock.applyMinWeek = val || null; updateButtonStates(); alert('保存しました'); }
-          else { alert(r.message); }
+          if (r.success) {
+            interlock.applyMinWeek = val || null;
+            updateButtonStates();
+            setTimeout(function() { alert('保存しました'); }, 50);
+          } else { alert(r.message); }
         })
         .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
         .saveInterlockSetting('差分制限週', val, pw);
@@ -475,8 +481,12 @@
       var newList = interlock.expandCompleted.filter(function(m) { return m !== month; });
       google.script.run
         .withSuccessHandler(function(r) {
-          if (r.success) { interlock.expandCompleted = newList; updateButtonStates(); renderCompletedTags(); alert('解除しました'); }
-          else { alert(r.message); }
+          if (r.success) {
+            interlock.expandCompleted = newList;
+            updateButtonStates();
+            renderCompletedTags();
+            setTimeout(function() { alert('解除しました'); }, 50);
+          } else { alert(r.message); }
         })
         .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
         .saveInterlockSetting('展開完了月', newList.join(','), pw);
@@ -489,8 +499,12 @@
       var newList = interlock.applyCompleted.filter(function(w) { return w !== weekStart; });
       google.script.run
         .withSuccessHandler(function(r) {
-          if (r.success) { interlock.applyCompleted = newList; updateButtonStates(); renderCompletedTags(); alert('解除しました'); }
-          else { alert(r.message); }
+          if (r.success) {
+            interlock.applyCompleted = newList;
+            updateButtonStates();
+            renderCompletedTags();
+            setTimeout(function() { alert('解除しました'); }, 50);
+          } else { alert(r.message); }
         })
         .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
         .saveInterlockSetting('差分完了週', newList.join(','), pw);
