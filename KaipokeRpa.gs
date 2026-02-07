@@ -210,17 +210,57 @@ function saveCsvToDrive_(csvContent, month) {
 }
 
 // ==========================================
-// 差分確認（プレビュー）
+// 差分確認（プレビュー）- パターンB: CSV内容を直接送信
 // ==========================================
 function checkDiff(month, weekStart) {
   var url = API_BASE_URL + "/api/diff";
+  var targetMonth = month || getCurrentMonth();
+  var monthStr = targetMonth.replace("-", "");
 
-  var monthStr = (month || getCurrentMonth()).replace("-", "");
+  // weekStart必須チェック
+  if (!weekStart) {
+    return {
+      "success": false,
+      "message": "エラー: 対象週が指定されていません。"
+    };
+  }
+
+  // 週範囲を算出（YYYYMMDD形式 + YYYY-MM-DD形式）
+  var weekRange = getWeekRange_(weekStart);
+  console.log('[checkDiff] month=' + targetMonth + ' weekStart=' + weekStart + ' weekEnd=' + weekRange.endDate);
+
+  // --- Google DriveからCSVを読み込み ---
+  var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+
+  // 1. kaipoke_current_YYYYMM.csv を読み込み
+  var currentFileName = "kaipoke_current_" + monthStr + ".csv";
+  var currentCsvContent = readCsvContentFromDrive_(folder, currentFileName);
+  if (currentCsvContent === null) {
+    return {
+      "success": false,
+      "message": "エラー: Google Driveに「" + currentFileName + "」が見つかりません。\n先にCSV出力（ステップ3）を実行してください。"
+    };
+  }
+  console.log('[checkDiff] currentCSV読み込み完了: ' + currentFileName + ' (' + currentCsvContent.length + '文字)');
+
+  // 2. gas_optimized_YYYYMMDD_YYYYMMDD.csv を読み込み
+  var optimizedFileName = "gas_optimized_" + weekRange.startStr + "_" + weekRange.endStr + ".csv";
+  var optimizedCsvContent = readCsvContentFromDrive_(folder, optimizedFileName);
+  if (optimizedCsvContent === null) {
+    return {
+      "success": false,
+      "message": "エラー: Google Driveに「" + optimizedFileName + "」が見つかりません。\n先にGAS側のCSV出力を実行してください。"
+    };
+  }
+  console.log('[checkDiff] optimizedCSV読み込み完了: ' + optimizedFileName + ' (' + optimizedCsvContent.length + '文字)');
+
+  // 3. CSV内容を直接送信
   var payload = {
-    "month": month || getCurrentMonth(),
+    "month": targetMonth,
     "week_start": weekStart,
-    "current_csv": "data/current_" + monthStr + ".csv",
-    "optimized_csv": "data/optimized_" + monthStr + ".csv"
+    "week_end": weekRange.endDate,
+    "current_csv_content": currentCsvContent,
+    "optimized_csv_content": optimizedCsvContent
   };
 
   var options = {
@@ -239,7 +279,7 @@ function checkDiff(month, weekStart) {
       var d = result.diff;
       return {
         "success": true,
-        "message": "差分確認結果:\n" +
+        "message": "差分確認結果（" + weekStart + " 〜 " + weekRange.endDate + "）:\n" +
                    "追加予定: " + d.add + "件\n" +
                    "削除予定: " + d.remove + "件\n" +
                    "変更予定: " + d.modify + "件",
@@ -260,17 +300,57 @@ function checkDiff(month, weekStart) {
 }
 
 // ==========================================
-// 差分適用
+// 差分適用 - パターンB: CSV内容を直接送信
 // ==========================================
 function runApply(month, weekStart) {
   var url = API_BASE_URL + "/api/apply";
+  var targetMonth = month || getCurrentMonth();
+  var monthStr = targetMonth.replace("-", "");
 
-  var monthStr = (month || getCurrentMonth()).replace("-", "");
+  // weekStart必須チェック
+  if (!weekStart) {
+    return {
+      "success": false,
+      "message": "エラー: 対象週が指定されていません。"
+    };
+  }
+
+  // 週範囲を算出
+  var weekRange = getWeekRange_(weekStart);
+  console.log('[runApply] month=' + targetMonth + ' weekStart=' + weekStart + ' weekEnd=' + weekRange.endDate);
+
+  // --- Google DriveからCSVを読み込み ---
+  var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+
+  // 1. kaipoke_current_YYYYMM.csv を読み込み
+  var currentFileName = "kaipoke_current_" + monthStr + ".csv";
+  var currentCsvContent = readCsvContentFromDrive_(folder, currentFileName);
+  if (currentCsvContent === null) {
+    return {
+      "success": false,
+      "message": "エラー: Google Driveに「" + currentFileName + "」が見つかりません。\n先にCSV出力（ステップ3）を実行してください。"
+    };
+  }
+  console.log('[runApply] currentCSV読み込み完了: ' + currentFileName);
+
+  // 2. gas_optimized_YYYYMMDD_YYYYMMDD.csv を読み込み
+  var optimizedFileName = "gas_optimized_" + weekRange.startStr + "_" + weekRange.endStr + ".csv";
+  var optimizedCsvContent = readCsvContentFromDrive_(folder, optimizedFileName);
+  if (optimizedCsvContent === null) {
+    return {
+      "success": false,
+      "message": "エラー: Google Driveに「" + optimizedFileName + "」が見つかりません。\n先にGAS側のCSV出力を実行してください。"
+    };
+  }
+  console.log('[runApply] optimizedCSV読み込み完了: ' + optimizedFileName);
+
+  // 3. CSV内容を直接送信
   var payload = {
-    "month": month || getCurrentMonth(),
+    "month": targetMonth,
     "week_start": weekStart,
-    "current_csv": "data/current_" + monthStr + ".csv",
-    "optimized_csv": "data/optimized_" + monthStr + ".csv"
+    "week_end": weekRange.endDate,
+    "current_csv_content": currentCsvContent,
+    "optimized_csv_content": optimizedCsvContent
   };
 
   var options = {
@@ -290,7 +370,7 @@ function runApply(month, weekStart) {
       var a = result.result.applied;
       return {
         "success": true,
-        "message": "差分適用完了!\n" +
+        "message": "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n" +
                    "追加: " + a.add + "/" + d.add + "件\n" +
                    "削除: " + a.remove + "/" + d.remove + "件\n" +
                    "変更: " + a.modify + "/" + d.modify + "件",
@@ -664,6 +744,49 @@ function loadCsvFromDrive(fileName) {
 // ==========================================
 // ユーティリティ関数
 // ==========================================
+
+/**
+ * Google DriveフォルダからCSVファイルの内容を読み込む
+ * @param {Folder} folder - Google Driveフォルダ
+ * @param {string} fileName - ファイル名
+ * @return {string|null} CSV文字列（BOM除去済み）、ファイルが無い場合はnull
+ */
+function readCsvContentFromDrive_(folder, fileName) {
+  var files = folder.getFilesByName(fileName);
+  if (!files.hasNext()) {
+    console.log('[readCsvContentFromDrive_] ファイルが見つかりません: ' + fileName);
+    return null;
+  }
+  var file = files.next();
+  var content = file.getBlob().getDataAsString("UTF-8");
+  // BOM除去
+  if (content.charCodeAt(0) === 0xFEFF) {
+    content = content.substring(1);
+  }
+  return content;
+}
+
+/**
+ * 週の開始日から週範囲を算出
+ * @param {string} weekStartStr - 週開始日（YYYY-MM-DD形式）
+ * @return {Object} { startStr: 'YYYYMMDD', endStr: 'YYYYMMDD', endDate: 'YYYY-MM-DD' }
+ */
+function getWeekRange_(weekStartStr) {
+  var parts = weekStartStr.split("-");
+  var ws = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  var we = new Date(ws);
+  we.setDate(we.getDate() + 6);
+
+  var startStr = Utilities.formatDate(ws, "JST", "yyyyMMdd");
+  var endStr = Utilities.formatDate(we, "JST", "yyyyMMdd");
+  var endDate = Utilities.formatDate(we, "JST", "yyyy-MM-dd");
+
+  return {
+    startStr: startStr,
+    endStr: endStr,
+    endDate: endDate
+  };
+}
 
 /**
  * 現在の月をYYYY-MM形式で取得
