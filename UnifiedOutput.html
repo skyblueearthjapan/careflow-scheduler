@@ -957,6 +957,23 @@
     .kaipoke-btn.danger:hover:not(:disabled) { background: #c0392b; }
     .kaipoke-btn.info { background: #5f6368; color: var(--color-white); }
     .kaipoke-btn.info:hover:not(:disabled) { background: #4a4d51; }
+    .kaipoke-btn.emergency {
+      background: linear-gradient(135deg, #dc0000 0%, #ff0000 50%, #dc0000 100%);
+      color: #ffffff; font-size: 18px; font-weight: 900; padding: 16px 12px;
+      border: 3px solid #8b0000; border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(220, 0, 0, 0.5);
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+      letter-spacing: 2px; animation: emergency-pulse 2s ease-in-out infinite;
+    }
+    .kaipoke-btn.emergency:hover:not(:disabled) {
+      background: linear-gradient(135deg, #ff0000 0%, #ff3333 50%, #ff0000 100%);
+      box-shadow: 0 6px 20px rgba(255, 0, 0, 0.7); transform: scale(1.02);
+    }
+    .kaipoke-btn.emergency:active:not(:disabled) { transform: scale(0.98); }
+    @keyframes emergency-pulse {
+      0%, 100% { box-shadow: 0 4px 15px rgba(220, 0, 0, 0.5); }
+      50% { box-shadow: 0 4px 25px rgba(255, 0, 0, 0.8); }
+    }
     .kaipoke-result {
       background: var(--color-white); border: 1px solid var(--color-border); border-radius: 6px;
       padding: 12px; min-height: 60px; white-space: pre-wrap; font-size: 12px; color: var(--color-text);
@@ -1309,6 +1326,7 @@
           <!-- 操作ボタン -->
           <div class="kaipoke-section">
             <div class="kaipoke-section-title">自動化操作</div>
+            <button class="kaipoke-btn emergency" onclick="kaipokeEmergencyStop()">*** 非常停止 ***</button>
             <button class="kaipoke-btn info" onclick="kaipokeTest()">1. 接続テスト</button>
             <button class="kaipoke-btn primary" id="kaipokeExpandBtn" onclick="kaipokeExpand()">2. 月間スケジュール展開</button>
             <div class="kaipoke-lock-msg" id="kaipokeExpandLock" style="display:none;"></div>
@@ -3095,6 +3113,27 @@
           kaipokeRefreshStatus();
         })
         .runApply(kaipokeGetMonth(), weekStart);
+    }
+
+    function kaipokeEmergencyStop() {
+      if (!confirm('*** 非常停止 ***\n\n実行中の処理を緊急停止します。\n現在処理中の利用者の操作が完了した後に停止します。\n\n本当に停止しますか？')) {
+        return;
+      }
+      kaipokeShowLoading('非常停止を要求中...');
+      kaipokeShowResult('非常停止を送信しています...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          kaipokeHideLoading();
+          kaipokeShowResult(result.message, !result.success);
+          kaipokeRefreshStatus();
+        })
+        .withFailureHandler(function(error) {
+          kaipokeHideLoading();
+          kaipokeShowResult('非常停止エラー: ' + error.message, true);
+          kaipokeRefreshStatus();
+        })
+        .emergencyStop();
     }
 
     function kaipokeTest() {

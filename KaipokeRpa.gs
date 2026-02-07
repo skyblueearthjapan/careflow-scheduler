@@ -52,6 +52,56 @@ function checkServerStatus() {
 }
 
 // ==========================================
+// 非常停止（Playwright処理を緊急停止）
+// ==========================================
+
+/**
+ * VPS上のPlaywright処理を緊急停止する
+ * POST /api/stop → 現在処理中の利用者の操作が完了した後に停止
+ * @returns {Object} {success, message}
+ */
+function emergencyStop() {
+  var url = API_BASE_URL + "/api/stop";
+
+  var options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify({}),
+    "muteHttpExceptions": true
+  };
+
+  try {
+    console.log('[emergencyStop] 非常停止を要求');
+    var response = UrlFetchApp.fetch(url, options);
+    var statusCode = response.getResponseCode();
+    var result = JSON.parse(response.getContentText());
+
+    console.log('[emergencyStop] statusCode=' + statusCode + ' response=' + response.getContentText().substring(0, 300));
+
+    if (statusCode === 200 && result.success) {
+      var taskName = (result.current_task && result.current_task.command) ? result.current_task.command : 'なし';
+      return {
+        "success": true,
+        "message": "非常停止を要求しました。\n\n" +
+                   result.message + "\n\n" +
+                   "対象タスク: " + taskName
+      };
+    } else {
+      return {
+        "success": false,
+        "message": "停止に失敗しました: " + (result.error || result.message || "不明なエラー")
+      };
+    }
+  } catch (e) {
+    console.error('[emergencyStop] エラー:', e);
+    return {
+      "success": false,
+      "message": "非常停止リクエストに失敗しました。\nサーバーに接続できません。\nエラー: " + e.message
+    };
+  }
+}
+
+// ==========================================
 // 月間スケジュール展開
 // ==========================================
 function runExpand(month) {
