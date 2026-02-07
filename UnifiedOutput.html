@@ -2445,8 +2445,35 @@
     // カイポケ自動化モーダル
     // ============================================================
     var kaipokeModalInitialized = false;
+    var kaipokeAuthenticated = false;
 
     function openKaipokeModal() {
+      // 既に認証済みならそのまま表示
+      if (kaipokeAuthenticated) {
+        showKaipokeModalInner_();
+        return;
+      }
+
+      // パスワード入力を求める
+      var password = prompt('カイポケ自動化のパスワードを入力してください');
+      if (password === null) return; // キャンセル
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            kaipokeAuthenticated = true;
+            showKaipokeModalInner_();
+          } else {
+            alert('パスワードが正しくありません');
+          }
+        })
+        .withFailureHandler(function(error) {
+          alert('認証エラー: ' + error.message);
+        })
+        .verifyKaipokePassword(password);
+    }
+
+    function showKaipokeModalInner_() {
       var modal = document.getElementById('kaipokeModal');
       modal.classList.add('show');
 

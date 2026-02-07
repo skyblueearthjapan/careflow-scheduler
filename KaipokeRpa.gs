@@ -634,6 +634,57 @@ function getWeekStart(date) {
 }
 
 // ==========================================
+// パスワード認証
+// ==========================================
+
+/**
+ * スプレッドシートの「管理者」シートからカイポケパスワードを取得
+ * 管理者シートの任意の行で、A列に「カイポケパスワード」と書いて
+ * B列にパスワードを設定する
+ * @returns {string|null} パスワード文字列、未設定の場合はnull
+ */
+function getKaipokePassword_() {
+  try {
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName('管理者');
+    if (!sheet) return null;
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 0; i < data.length; i++) {
+      var cellA = String(data[i][0] || '').trim();
+      if (cellA === 'カイポケパスワード') {
+        var pw = String(data[i][1] || '').trim();
+        return pw || null;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error('getKaipokePassword_ error:', e);
+    return null;
+  }
+}
+
+/**
+ * カイポケ自動化のパスワードを検証
+ * @param {string} inputPassword - ユーザーが入力したパスワード
+ * @returns {Object} {success: boolean, message: string}
+ */
+function verifyKaipokePassword(inputPassword) {
+  var storedPassword = getKaipokePassword_();
+
+  if (!storedPassword) {
+    // パスワード未設定の場合はアクセスを許可
+    return { success: true, message: 'パスワード未設定のためアクセス許可' };
+  }
+
+  if (String(inputPassword || '').trim() === storedPassword) {
+    return { success: true, message: '認証成功' };
+  } else {
+    return { success: false, message: 'パスワードが正しくありません' };
+  }
+}
+
+// ==========================================
 // サイドバー表示
 // ==========================================
 

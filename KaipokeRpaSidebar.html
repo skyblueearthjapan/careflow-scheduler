@@ -137,6 +137,18 @@
 <body>
   <h2>カイポケ自動化</h2>
 
+  <!-- パスワード認証画面 -->
+  <div id="authScreen" class="section">
+    <div class="section-title">パスワード認証</div>
+    <label>パスワードを入力してください</label>
+    <input type="password" id="passwordInput" placeholder="パスワード" onkeydown="if(event.key==='Enter')verifyPassword()">
+    <button class="btn-primary" onclick="verifyPassword()">認証</button>
+    <div id="authError" style="color:#ea4335;font-size:13px;margin-top:8px;display:none;"></div>
+  </div>
+
+  <!-- メインコンテンツ（認証後に表示） -->
+  <div id="mainContent" style="display:none;">
+
   <!-- サーバー状態 -->
   <div class="section">
     <div class="section-title">
@@ -205,11 +217,41 @@
     <div id="resultArea">ボタンをクリックして操作を開始してください</div>
   </div>
 
+  </div><!-- /mainContent -->
+
   <script>
+    // ==========================================
+    // パスワード認証
+    // ==========================================
+    function verifyPassword() {
+      var password = document.getElementById('passwordInput').value;
+      var errorEl = document.getElementById('authError');
+      errorEl.style.display = 'none';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            document.getElementById('authScreen').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            initializeMain();
+          } else {
+            errorEl.innerText = 'パスワードが正しくありません';
+            errorEl.style.display = 'block';
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('passwordInput').focus();
+          }
+        })
+        .withFailureHandler(function(error) {
+          errorEl.innerText = '認証エラー: ' + error.message;
+          errorEl.style.display = 'block';
+        })
+        .verifyKaipokePassword(password);
+    }
+
     // ==========================================
     // 初期化
     // ==========================================
-    window.onload = function() {
+    function initializeMain() {
       // 現在の月をデフォルト選択
       var now = new Date();
       var currentMonth = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2);
@@ -224,6 +266,10 @@
       document.getElementById("weekStart").value = currentMonth + "-20";
 
       refreshStatus();
+    }
+
+    window.onload = function() {
+      document.getElementById('passwordInput').focus();
     };
 
     // ==========================================
