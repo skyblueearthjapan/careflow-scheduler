@@ -101,10 +101,25 @@ function kaipoke_exportCsv(weekStartStr) {
   var allRows = [csvHeader].concat(csvRows);
   var csvContent = kaipoke_rowsToCsv_(allRows);
 
-  // ファイル名生成（gas_optimized_YYYYMM.csv 形式）
+  // ファイル名生成（gas_optimized_YYYYMMDD_YYYYMMDD.csv 形式 = 週の範囲）
   var now = new Date();
-  var dateLabel = weekStartStr ? weekStartStr.replace(/\//g, '').substring(0, 6) : Utilities.formatDate(now, tz, 'yyyyMM');
-  var fileName = 'gas_optimized_' + dateLabel + '.csv';
+  var startLabel, endLabel;
+  if (weekStartStr) {
+    var ws = kaipoke_parseDate_(weekStartStr);
+    var we = new Date(ws); we.setDate(we.getDate() + 6);
+    startLabel = Utilities.formatDate(ws, tz, 'yyyyMMdd');
+    endLabel   = Utilities.formatDate(we, tz, 'yyyyMMdd');
+  } else {
+    // weekStartStr未指定時は今週を自動算出
+    var today = new Date(); today.setHours(0,0,0,0);
+    var day = today.getDay();
+    var diff = (day + 6) % 7;
+    var ws2 = new Date(today); ws2.setDate(today.getDate() - diff);
+    var we2 = new Date(ws2); we2.setDate(ws2.getDate() + 6);
+    startLabel = Utilities.formatDate(ws2, tz, 'yyyyMMdd');
+    endLabel   = Utilities.formatDate(we2, tz, 'yyyyMMdd');
+  }
+  var fileName = 'gas_optimized_' + startLabel + '_' + endLabel + '.csv';
 
   // Google Driveに保存（DRIVE_FOLDER_ID を使用、同名ファイルは削除してから保存）
   var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
