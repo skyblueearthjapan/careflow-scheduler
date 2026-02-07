@@ -639,7 +639,7 @@ function getWeekStart(date) {
 
 /**
  * スプレッドシートの「管理者」シートからカイポケパスワードを取得
- * 管理者シートの任意の行で、A列に「カイポケパスワード」と書いて
+ * 管理者シートの任意の行で、A列に「パスワード」（または「カイポケパスワード」）と書いて
  * B列にパスワードを設定する
  * @returns {string|null} パスワード文字列、未設定の場合はnull
  */
@@ -652,7 +652,7 @@ function getKaipokePassword_() {
     var data = sheet.getDataRange().getValues();
     for (var i = 0; i < data.length; i++) {
       var cellA = String(data[i][0] || '').trim();
-      if (cellA === 'カイポケパスワード') {
+      if (cellA === 'パスワード' || cellA === 'カイポケパスワード') {
         var pw = String(data[i][1] || '').trim();
         return pw || null;
       }
