@@ -1402,8 +1402,9 @@ function input_saveSpecialWeekWizard(payload) {
 /**
  * ジョブを実行（ホワイトリスト制御）
  * @param {string} jobKey - ジョブキー
+ * @param {string} [weekStartStr] - 週開始日（yyyy-MM-dd）。未指定時は今週を自動算出
  */
-function runJob(jobKey) {
+function runJob(jobKey, weekStartStr) {
   const startTime = new Date();
 
   // ホワイトリストチェック
@@ -1412,26 +1413,34 @@ function runJob(jobKey) {
     return { ok: false, message: '不明なジョブキー: ' + jobKey };
   }
 
+  // weekStartStr のバリデーション（指定時）
+  if (weekStartStr) {
+    var testDate = parseDateLoose_(weekStartStr);
+    if (!testDate) {
+      return { ok: false, message: '対象週の日付が不正です: ' + weekStartStr };
+    }
+    console.log('[runJob] jobKey=' + jobKey + ' weekStartStr=' + weekStartStr);
+  } else {
+    console.log('[runJob] jobKey=' + jobKey + ' weekStartStr=(auto/today)');
+  }
+
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
 
-    // 関数を呼び出し
+    // 関数を呼び出し（weekStartStr を渡す）
     let result;
     switch (jobKey) {
       case 'weeklyRequest':
-        result = 週間リクエストを生成_(ss);
+        result = 週間リクエストを生成_(ss, weekStartStr);
         break;
       case 'assignResult':
         result = 割当結果を作成_(ss);
         break;
       case 'updateWeekView':
-        result = 週ビューを更新_(ss);
+        result = 週ビューを更新_(ss, weekStartStr);
         break;
       case 'routeSummary':
-        result = ルートサマリを作成_(ss);
-        break;
-      case 'updateGeo':
-        result = 位置情報を更新_(ss);
+        result = ルートサマリを作成_(ss, weekStartStr);
         break;
       default:
         throw new Error('未実装のジョブ: ' + jobKey);
@@ -1643,7 +1652,7 @@ function parseTypeList(str) {
 // 週ビューを更新（ss引数版）
 // ============================================================
 
-function 週ビューを更新_(ss) {
+function 週ビューを更新_(ss, weekStartStr) {
   const tz = ss.getSpreadsheetTimeZone();
   const resultSheet  = ss.getSheetByName('割当結果');
   const viewSheet    = ss.getSheetByName('週ビュー');
@@ -1696,12 +1705,22 @@ function 週ビューを更新_(ss) {
 
   // ※イベントは割当結果のEV行から取得するため、イベントリクエストの読み込みは不要
 
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const day = today.getDay();
-  const diffToMonday = (day + 6) % 7;
-  const start = new Date(today);
-  start.setDate(today.getDate() - diffToMonday);
+  // weekStartStr が指定されていればその月曜を使用、なければ今週を自動算出
+  let start;
+  if (weekStartStr) {
+    start = parseDateLoose_(weekStartStr);
+    if (!start) throw new Error('対象週の日付が不正です: ' + weekStartStr);
+    start.setHours(0,0,0,0);
+    console.log('[週ビュー更新] 指定週=' + weekStartStr);
+  } else {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const day = today.getDay();
+    const diffToMonday = (day + 6) % 7;
+    start = new Date(today);
+    start.setDate(today.getDate() - diffToMonday);
+    console.log('[週ビュー更新] 自動算出=今週');
+  }
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
 
@@ -4076,7 +4095,7 @@ function applyStaff同行_(ss, resultRows, opts) {
 // 週間リクエストを生成（ss引数版）
 // ============================================================
 
-function 週間リクエストを生成_(ss) {
+function 週間リクエストを生成_(ss, weekStartStr) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) throw new Error('別の処理が実行中です。少し待ってから再実行してください。');
 
@@ -4129,16 +4148,26 @@ function 週間リクエストを生成_(ss) {
       };
     });
 
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const day = today.getDay();
-    const diffToMonday = (day + 6) % 7;
-    const weekStart = new Date(today);
-    weekStart.setDate(today.getDate() - diffToMonday);
+    // weekStartStr が指定されていればその月曜を使用、なければ今週を自動算出
+    let weekStart;
+    if (weekStartStr) {
+      weekStart = parseDateLoose_(weekStartStr);
+      if (!weekStart) throw new Error('対象週の日付が不正です: ' + weekStartStr);
+      weekStart.setHours(0,0,0,0);
+      console.log('[週間リクエスト生成] 指定週=' + weekStartStr);
+    } else {
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const day = today.getDay();
+      const diffToMonday = (day + 6) % 7;
+      weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - diffToMonday);
+      console.log('[週間リクエスト生成] 自動算出=今週');
+    }
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
-    const weekStartStr = Utilities.formatDate(weekStart, tz, 'yyyy/MM/dd');
-    const weekEndStr   = Utilities.formatDate(weekEnd, tz, 'yyyy/MM/dd');
+    const weekStartFmt = Utilities.formatDate(weekStart, tz, 'yyyy/MM/dd');
+    const weekEndFmt   = Utilities.formatDate(weekEnd, tz, 'yyyy/MM/dd');
 
     const lastVisitMap = {};
     if (historySheet) {
@@ -4156,7 +4185,7 @@ function 週間リクエストを生成_(ss) {
           const d = row[hIdxDate], pid = row[hIdxPid];
           if (!pid || !(d instanceof Date)) return;
           const ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
-          if (ds >= weekStartStr) return;
+          if (ds >= weekStartFmt) return;
           const current = lastVisitMap[pid];
           if (!current || d > current.date) lastVisitMap[pid] = { date: d, staffId: row[hIdxStaff] || '', staffName: row[hIdxName] || '' };
         });
@@ -4386,7 +4415,7 @@ function 週間リクエストを生成_(ss) {
           if (!d) return;
 
           const dateStr = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
-          if (dateStr < weekStartStr || dateStr > weekEndStr) return;
+          if (dateStr < weekStartFmt || dateStr > weekEndFmt) return;
 
           const key = String(pid).trim() + '|' + dateStr;
 
@@ -4414,7 +4443,7 @@ function 週間リクエストを生成_(ss) {
           if (!changeMap[key] || sortKey > changeMap[key].sortKey) changeMap[key] = change;
         });
 
-        // console.log('[ChangeRequest] picked=', Object.keys(changeMap).length, 'week=', weekStartStr, '-', weekEndStr);
+        // console.log('[ChangeRequest] picked=', Object.keys(changeMap).length, 'week=', weekStartFmt, '-', weekEndFmt);
 
         Object.keys(changeMap).forEach(key => {
           const ch = changeMap[key];
@@ -4523,7 +4552,7 @@ function 週間リクエストを生成_(ss) {
     }
 
     if (weeklyRequests.length === 0) {
-      throw new Error('週間リクエスト候補が0件でした。\n・「週訪問回数」が0または空ではないか\n・「希望曜日」と「曜日NG」の組み合わせで候補が消えていないか\n・今週の範囲（' + weekStartStr + '〜' + weekEndStr + '）でよいか\nなどを確認してください。');
+      throw new Error('週間リクエスト候補が0件でした。\n・「週訪問回数」が0または空ではないか\n・「希望曜日」と「曜日NG」の組み合わせで候補が消えていないか\n・対象週の範囲（' + weekStartFmt + '〜' + weekEndFmt + '）でよいか\nなどを確認してください。');
     }
 
     weeklyRequests.sort((a, b) => {
@@ -4551,7 +4580,7 @@ function 週間リクエストを生成_(ss) {
 
     weeklySheet.getRange(2, 1, out.length, headerOut.length).setValues(out);
 
-    return { message: '週間リクエストを ' + weekStartStr + ' 〜 ' + weekEndStr + ' 分、' + weeklyRequests.length + ' 件生成しました。' };
+    return { message: '週間リクエストを ' + weekStartFmt + ' 〜 ' + weekEndFmt + ' 分、' + weeklyRequests.length + ' 件生成しました。' };
 
   } finally {
     lock.releaseLock();
@@ -4598,7 +4627,7 @@ function updateSheetLatLng_(sheet, addrHeader, latHeader, lngHeader) {
 // ルートサマリを作成（ss引数版）
 // ============================================================
 
-function ルートサマリを作成_(ss) {
+function ルートサマリを作成_(ss, weekStartStr) {
   const tz = ss.getSpreadsheetTimeZone();
   const resultSheet = ss.getSheetByName('割当結果');
   const patientSheet = ss.getSheetByName('患者マスタ');
@@ -4648,6 +4677,20 @@ function ルートサマリを作成_(ss) {
     throw new Error('「割当結果」のヘッダー名を確認してください。');
   }
 
+  // weekStartStr が指定されていれば週フィルタ用の範囲を計算
+  let filterStartStr = null, filterEndStr = null;
+  if (weekStartStr) {
+    const ws = parseDateLoose_(weekStartStr);
+    if (!ws) throw new Error('対象週の日付が不正です: ' + weekStartStr);
+    ws.setHours(0,0,0,0);
+    const we = new Date(ws); we.setDate(ws.getDate() + 6);
+    filterStartStr = Utilities.formatDate(ws, tz, 'yyyy/MM/dd');
+    filterEndStr   = Utilities.formatDate(we, tz, 'yyyy/MM/dd');
+    console.log('[ルートサマリ作成] 週フィルタ=' + filterStartStr + '〜' + filterEndStr);
+  } else {
+    console.log('[ルートサマリ作成] 全データ対象');
+  }
+
   const map = {};
   data.forEach(row => {
     const d = row[idx.date];
@@ -4655,6 +4698,8 @@ function ルートサマリを作成_(ss) {
     const staffId = row[idx.staffId], staffName = row[idx.sname];
     if (!staffId) return;
     const dateStr = Utilities.formatDate(d, tz, 'yyyy/MM/dd'), youbi = row[idx.youbi];
+    // 週フィルタ（指定時のみ）
+    if (filterStartStr && (dateStr < filterStartStr || dateStr > filterEndStr)) return;
     const distKm = Number(row[idx.dist] || 0), moveMin = Number(row[idx.mtime] || 0);
     const key = staffId + '|' + dateStr;
 

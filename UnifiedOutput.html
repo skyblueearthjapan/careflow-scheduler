@@ -255,6 +255,19 @@
 
     .button-group { margin-bottom: 20px; }
 
+    /* 対象週セレクター */
+    .week-selector { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border); }
+    .week-selector label { display: block; font-size: 11px; color: var(--color-text-light); margin-bottom: 4px; letter-spacing: 0.3px; }
+    .week-selector select {
+      width: 100%; padding: 7px 8px; border: 1px solid var(--color-border); border-radius: 6px;
+      font-size: 12px; background: var(--color-white); color: var(--color-text); margin-bottom: 8px;
+    }
+    .week-selector select:focus { outline: none; border-color: var(--color-green); box-shadow: 0 0 0 2px rgba(106,168,79,0.15); }
+    .week-selector .current-week-label {
+      font-size: 11px; color: var(--color-green-dark); font-weight: 500;
+      padding: 4px 8px; background: rgba(106,168,79,0.08); border-radius: 4px; display: inline-block;
+    }
+
     .button-group-title {
       font-size: 11px;
       color: var(--color-text-light);
@@ -1149,6 +1162,15 @@
     <div class="right-panel">
       <div class="panel-title">GAS実行メニュー</div>
 
+      <!-- 対象月・対象週セレクター -->
+      <div class="week-selector">
+        <label>対象月</label>
+        <select id="jobTargetMonth" onchange="onJobMonthChange()"></select>
+        <label>対象週</label>
+        <select id="jobTargetWeek"></select>
+        <div id="jobCurrentWeekLabel" class="current-week-label"></div>
+      </div>
+
       <div class="button-group">
         <div class="button-group-title">スケジュール生成</div>
         <button class="action-btn primary" onclick="runJob('weeklyRequest', this)">
@@ -1170,10 +1192,6 @@
         <button class="action-btn secondary" onclick="runJob('routeSummary', this)">
           <span class="icon">🗺️</span><span class="spinner"></span>
           ルートサマリを作成
-        </button>
-        <button class="action-btn secondary" onclick="runJob('updateGeo', this)">
-          <span class="icon">📍</span><span class="spinner"></span>
-          位置情報を更新
         </button>
       </div>
 
@@ -1411,6 +1429,7 @@
         .withSuccessHandler(function(url) { baseUrl = url; })
         .getBaseUrl();
 
+      initJobWeekSelector();
       loadWeekView();
       loadLogs();
 
@@ -1575,9 +1594,117 @@
     }
 
     // ============================================================
+    // 対象月・対象週セレクター
+    // ============================================================
+
+    /**
+     * 月セレクター初期化：前月〜翌月の3ヶ月分を生成し、今月をデフォルトに
+     */
+    function initJobWeekSelector() {
+      var select = document.getElementById('jobTargetMonth');
+      var now = new Date();
+      var year = now.getFullYear();
+      select.innerHTML = '';
+      for (var m = 1; m <= 12; m++) {
+        var val = year + '-' + ('0' + m).slice(-2);
+        var opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = year + '年' + m + '月';
+        select.appendChild(opt);
+      }
+      var currentMonth = year + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+      select.value = currentMonth;
+      onJobMonthChange();
+    }
+
+    /**
+     * 指定月の月曜日一覧を生成（カイポケ側と同じロジック）
+     */
+    function getWeeksForMonth(yearMonth) {
+      var parts = yearMonth.split('-');
+      var year = parseInt(parts[0]);
+      var month = parseInt(parts[1]) - 1;
+      var weeks = [];
+      var date = new Date(year, month, 1);
+      // 月内の最初の月曜まで進む
+      while (date.getDay() !== 1) { date.setDate(date.getDate() + 1); }
+      var weekNum = 1;
+      while (date.getMonth() === month) {
+        var mm = ('0' + (date.getMonth() + 1)).slice(-2);
+        var dd = ('0' + date.getDate()).slice(-2);
+        var dateStr = date.getFullYear() + '-' + mm + '-' + dd;
+        weeks.push({ value: dateStr, label: dateStr + '（' + (month + 1) + '月' + weekNum + '週目）' });
+        weekNum++;
+        date.setDate(date.getDate() + 7);
+      }
+      return weeks;
+    }
+
+    /**
+     * 今日がどの週に属するかを返す（月曜基準）
+     */
+    function getCurrentWeekMonday() {
+      var now = new Date();
+      now.setHours(0,0,0,0);
+      var day = now.getDay();
+      var diff = (day + 6) % 7;
+      var monday = new Date(now);
+      monday.setDate(now.getDate() - diff);
+      var mm = ('0' + (monday.getMonth() + 1)).slice(-2);
+      var dd = ('0' + monday.getDate()).slice(-2);
+      return monday.getFullYear() + '-' + mm + '-' + dd;
+    }
+
+    /**
+     * 月変更時：週プルダウンを再生成し、今週があればそれを選択
+     */
+    function onJobMonthChange() {
+      var month = document.getElementById('jobTargetMonth').value;
+      var weeks = getWeeksForMonth(month);
+      var sel = document.getElementById('jobTargetWeek');
+      sel.innerHTML = '';
+      weeks.forEach(function(w) {
+        var opt = document.createElement('option');
+        opt.value = w.value;
+        opt.textContent = w.label;
+        sel.appendChild(opt);
+      });
+      // 今週の月曜に一致する選択肢があれば選択
+      var currentMonday = getCurrentWeekMonday();
+      var found = false;
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === currentMonday) {
+          sel.value = currentMonday;
+          found = true;
+          break;
+        }
+      }
+      // 今週ラベル表示
+      var label = document.getElementById('jobCurrentWeekLabel');
+      if (found) {
+        label.textContent = '（今週が選択されています）';
+        label.style.display = 'inline-block';
+      } else {
+        label.textContent = '（今週: ' + currentMonday + '）';
+        label.style.display = 'inline-block';
+      }
+    }
+
+    /**
+     * 選択中の対象週を取得
+     */
+    function getSelectedWeekStart() {
+      var sel = document.getElementById('jobTargetWeek');
+      return sel ? sel.value : null;
+    }
+
+    // ============================================================
     // GAS実行
     // ============================================================
     function runJob(jobKey, btn) {
+      var weekStart = getSelectedWeekStart();
+      console.log('[runJob] jobKey=' + jobKey + ' weekStart=' + weekStart);
+
       btn.classList.add('loading');
       btn.disabled = true;
 
@@ -1605,7 +1732,7 @@
           showToast('エラー: ' + e.message, 'error');
           loadLogs();
         })
-        .runJob(jobKey);
+        .runJob(jobKey, weekStart);
     }
 
     // ============================================================
