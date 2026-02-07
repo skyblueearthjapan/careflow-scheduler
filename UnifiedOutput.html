@@ -2721,6 +2721,10 @@
       // 週プルダウンを生成
       kaipokeOnMonthChange();
 
+      // 非常停止ダイアログを最初に開く（他のgoogle.script.runより先に）
+      // 独立したモードレスダイアログなので、サイドパネルがフリーズしても操作可能
+      google.script.run.showEmergencyStopDialog();
+
       // インターロック設定を読み込み
       kaipokeLoadInterlock();
 
@@ -2729,10 +2733,6 @@
 
       // 接続テストを自動実行
       kaipokeTest();
-
-      // 非常停止ダイアログを自動で開く（サイドパネルフリーズ対策）
-      // 独立したモードレスダイアログなので、サイドパネルがフリーズしても操作可能
-      google.script.run.showEmergencyStopDialog();
     }
 
     // ==========================================
@@ -2979,7 +2979,7 @@
 
     function kaipokeDisableButtons(disabled) {
       var modal = document.getElementById('kaipokeModal');
-      var buttons = modal.querySelectorAll('.kaipoke-btn');
+      var buttons = modal.querySelectorAll('.kaipoke-btn:not(.emergency)');
       buttons.forEach(function(btn) { btn.disabled = disabled; });
     }
 
@@ -3125,10 +3125,33 @@
     }
 
     function kaipokeOpenEmergencyStop() {
-      // サイドパネルはgoogle.script.run実行中にフリーズするため、
-      // 非常停止パネルを独立したモードレスダイアログとして開く。
-      // ダイアログはサイドパネルとは別の実行コンテキストなのでフリーズしない。
-      google.script.run.showEmergencyStopDialog();
+      // fetch()でVPS APIを直接呼び出し（google.script.runを使わない）
+      // これによりGASサーバーのキューに関係なく即座に送信できる
+      var API_URL = 'https://kaipoke-api.net:8443';
+      kaipokeShowResult('非常停止を送信中...');
+
+      fetch(API_URL + '/api/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      .then(function(response) { return response.json(); })
+      .then(function(result) {
+        if (result.success) {
+          var taskName = (result.current_task && result.current_task.command) ? result.current_task.command : 'なし';
+          kaipokeShowResult('非常停止を要求しました。\n対象タスク: ' + taskName, false);
+        } else {
+          kaipokeShowResult('停止失敗: ' + (result.error || '不明なエラー'), true);
+        }
+      })
+      .catch(function(error) {
+        // fetch失敗時はGAS経由にフォールバック
+        kaipokeShowResult('直接送信失敗、GAS経由で送信中...', true);
+        google.script.run
+          .withSuccessHandler(function(r) { kaipokeShowResult(r.message, !r.success); })
+          .withFailureHandler(function(e) { kaipokeShowResult('エラー: ' + e.message, true); })
+          .emergencyStop();
+      });
     }
 
     function kaipokeTest() {
