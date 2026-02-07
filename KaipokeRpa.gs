@@ -1098,6 +1098,18 @@ function addToCompletedList_(key, value) {
 // ==========================================
 
 /**
+ * 非常停止パネルをモードレスダイアログとして表示
+ * サイドパネルとは独立した実行コンテキストなので、
+ * サイドパネルがフリーズしても操作可能
+ */
+function showEmergencyStopDialog() {
+  var html = HtmlService.createHtmlOutputFromFile('EmergencyStopDialog')
+    .setWidth(320)
+    .setHeight(220);
+  SpreadsheetApp.getUi().showModelessDialog(html, '非常停止');
+}
+
+/**
  * カイポケ自動化サイドバーを表示
  */
 function showKaipokeRpaSidebar() {

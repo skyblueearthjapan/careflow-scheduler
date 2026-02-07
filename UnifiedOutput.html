@@ -1326,7 +1326,7 @@
           <!-- 操作ボタン -->
           <div class="kaipoke-section">
             <div class="kaipoke-section-title">自動化操作</div>
-            <button class="kaipoke-btn emergency" onclick="kaipokeEmergencyStop()">*** 非常停止 ***</button>
+            <button class="kaipoke-btn emergency" onclick="kaipokeOpenEmergencyStop()">*** 非常停止 ***</button>
             <button class="kaipoke-btn info" onclick="kaipokeTest()">1. 接続テスト</button>
             <button class="kaipoke-btn primary" id="kaipokeExpandBtn" onclick="kaipokeExpand()">2. 月間スケジュール展開</button>
             <div class="kaipoke-lock-msg" id="kaipokeExpandLock" style="display:none;"></div>
@@ -3021,7 +3021,12 @@
       var month = kaipokeGetMonth();
       var check = kaipokeCheckExpandAllowed(month);
       if (!check.allowed) { alert('🔒 ' + check.reason); return; }
-      if (!confirm('月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）')) return;
+      if (!confirm('月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）\n\n※ 非常停止パネルが自動で開きます')) return;
+
+      // 長時間処理の開始前に非常停止ダイアログを自動表示
+      // サイドパネルはフリーズするので、独立ダイアログで非常停止可能にする
+      google.script.run.showEmergencyStopDialog();
+
       kaipokeShowLoading('月間スケジュール展開中...\n（約2〜5分かかります）');
       kaipokeShowResult('処理開始...');
 
@@ -3115,39 +3120,11 @@
         .runApply(kaipokeGetMonth(), weekStart);
     }
 
-    function kaipokeEmergencyStop() {
-      // google.script.runは直列実行のため、実行中のタスクが終わるまで待たされる。
-      // 非常停止はそれでは意味がないので、fetch()でVPS APIを直接呼び出す。
-      var API_URL = 'https://kaipoke-api.net';
-      kaipokeShowLoading('非常停止を要求中...');
-      kaipokeShowResult('非常停止を送信しています...');
-
-      fetch(API_URL + '/api/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      })
-      .then(function(response) { return response.json(); })
-      .then(function(result) {
-        kaipokeHideLoading();
-        if (result.success) {
-          var taskName = (result.current_task && result.current_task.command) ? result.current_task.command : 'なし';
-          kaipokeShowResult(
-            '非常停止を要求しました。\n\n' +
-            (result.message || '') + '\n\n' +
-            '対象タスク: ' + taskName,
-            false
-          );
-        } else {
-          kaipokeShowResult('停止に失敗しました: ' + (result.error || '不明なエラー'), true);
-        }
-        kaipokeRefreshStatus();
-      })
-      .catch(function(error) {
-        kaipokeHideLoading();
-        kaipokeShowResult('非常停止エラー: ' + error.message + '\n\n※VPS側でCORS設定が必要です', true);
-        kaipokeRefreshStatus();
-      });
+    function kaipokeOpenEmergencyStop() {
+      // サイドパネルはgoogle.script.run実行中にフリーズするため、
+      // 非常停止パネルを独立したモードレスダイアログとして開く。
+      // ダイアログはサイドパネルとは別の実行コンテキストなのでフリーズしない。
+      google.script.run.showEmergencyStopDialog();
     }
 
     function kaipokeTest() {
