@@ -101,13 +101,17 @@ function kaipoke_exportCsv(weekStartStr) {
   var allRows = [csvHeader].concat(csvRows);
   var csvContent = kaipoke_rowsToCsv_(allRows);
 
-  // ファイル名生成
+  // ファイル名生成（gas_optimized_YYYYMM.csv 形式）
   var now = new Date();
-  var dateLabel = weekStartStr ? weekStartStr.replace(/\//g, '') : Utilities.formatDate(now, tz, 'yyyyMMdd');
-  var fileName = 'kaipoke_export_' + dateLabel + '.csv';
+  var dateLabel = weekStartStr ? weekStartStr.replace(/\//g, '').substring(0, 6) : Utilities.formatDate(now, tz, 'yyyyMM');
+  var fileName = 'gas_optimized_' + dateLabel + '.csv';
 
-  // Google Driveに保存
-  var folder = kaipoke_getOrCreateFolder_();
+  // Google Driveに保存（DRIVE_FOLDER_ID を使用、同名ファイルは削除してから保存）
+  var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  var existing = folder.getFilesByName(fileName);
+  while (existing.hasNext()) {
+    existing.next().setTrashed(true);
+  }
   var file = folder.createFile(fileName, csvContent, MimeType.CSV);
 
   return {

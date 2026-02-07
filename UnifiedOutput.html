@@ -1715,10 +1715,13 @@
     // GAS実行
     // ============================================================
     function runJob(jobKey, btn) {
-      // 実行前に対象週を最新に再計算（カイポケと同じ手法）
-      initJobWeekSelector();
+      // ※ initJobWeekSelector() はここで呼ばない
+      //   （ユーザーの選択値がリセットされてしまうため）
+      //   更新は visibilitychange（タブ復帰時）と初期ロード時のみ
 
       var weekStart = getSelectedWeekStart();
+      // ラベルだけ最新化（選択値は変えない）
+      updateJobWeekLabel();
       console.log('[runJob] jobKey=' + jobKey + ' weekStart=' + weekStart);
 
       btn.classList.add('loading');
