@@ -1167,7 +1167,7 @@
         <label>対象月</label>
         <select id="jobTargetMonth" onchange="onJobMonthChange()"></select>
         <label>対象週</label>
-        <select id="jobTargetWeek"></select>
+        <select id="jobTargetWeek" onchange="updateJobWeekLabel()"></select>
         <div id="jobCurrentWeekLabel" class="current-week-label"></div>
       </div>
 
@@ -1438,6 +1438,13 @@
       if (urlParams.get('kaipoke') === '1') {
         setTimeout(function() { openKaipokeModal(); }, 500);
       }
+
+      // タブ復帰時に対象週を最新に更新
+      document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+          initJobWeekSelector();
+        }
+      });
     });
 
     // ============================================================
@@ -1598,7 +1605,7 @@
     // ============================================================
 
     /**
-     * 月セレクター初期化：前月〜翌月の3ヶ月分を生成し、今月をデフォルトに
+     * 月セレクター初期化：今年の12ヶ月を生成し、今月をデフォルトに
      */
     function initJobWeekSelector() {
       var select = document.getElementById('jobTargetMonth');
@@ -1626,7 +1633,6 @@
       var month = parseInt(parts[1]) - 1;
       var weeks = [];
       var date = new Date(year, month, 1);
-      // 月内の最初の月曜まで進む
       while (date.getDay() !== 1) { date.setDate(date.getDate() + 1); }
       var weekNum = 1;
       while (date.getMonth() === month) {
@@ -1679,15 +1685,22 @@
           break;
         }
       }
-      // 今週ラベル表示
+      updateJobWeekLabel();
+    }
+
+    /**
+     * 今週ラベルを更新（選択中の週が今週かどうかを表示）
+     */
+    function updateJobWeekLabel() {
+      var sel = document.getElementById('jobTargetWeek');
+      var currentMonday = getCurrentWeekMonday();
       var label = document.getElementById('jobCurrentWeekLabel');
-      if (found) {
+      if (sel.value === currentMonday) {
         label.textContent = '（今週が選択されています）';
-        label.style.display = 'inline-block';
       } else {
         label.textContent = '（今週: ' + currentMonday + '）';
-        label.style.display = 'inline-block';
       }
+      label.style.display = 'inline-block';
     }
 
     /**
@@ -1702,6 +1715,9 @@
     // GAS実行
     // ============================================================
     function runJob(jobKey, btn) {
+      // 実行前に対象週を最新に再計算（カイポケと同じ手法）
+      initJobWeekSelector();
+
       var weekStart = getSelectedWeekStart();
       console.log('[runJob] jobKey=' + jobKey + ' weekStart=' + weekStart);
 
