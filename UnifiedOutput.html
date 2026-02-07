@@ -957,6 +957,22 @@
       margin: 0 auto 10px;
     }
 
+    /* インターロック */
+    .kaipoke-lock-msg {
+      font-size: 12px; color: var(--color-error); padding: 4px 8px; margin: -4px 0 8px 0;
+      background: #fef7f7; border-radius: 4px; border: 1px solid #fce8e6;
+    }
+    .kaipoke-completed-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .kaipoke-completed-tag {
+      display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+      background: #e8f5e9; border-radius: 4px; font-size: 11px; color: #2e7d32; cursor: pointer;
+    }
+    .kaipoke-completed-tag:hover { background: #fce8e6; color: #c62828; }
+    .kaipoke-interlock-panel { margin-top: 8px; }
+    .kaipoke-interlock-row { display: flex; gap: 4px; margin-bottom: 8px; }
+    .kaipoke-interlock-row select { flex: 1; padding: 6px; font-size: 12px; border: 1px solid var(--color-border); border-radius: 4px; }
+    .kaipoke-interlock-row button { padding: 6px 10px; font-size: 11px; white-space: nowrap; }
+
     /* ============================================================
        ルートマップモーダル
        ============================================================ */
@@ -1264,22 +1280,56 @@
             <div class="kaipoke-section-title">対象設定</div>
             <div class="kaipoke-input-group">
               <label>対象月</label>
-              <select id="kaipokeTargetMonth"></select>
+              <select id="kaipokeTargetMonth" onchange="kaipokeOnMonthChange()"></select>
             </div>
             <div class="kaipoke-input-group">
-              <label>対象週の開始日（差分適用時に必要）</label>
-              <input type="date" id="kaipokeWeekStart">
+              <label>対象週（差分適用時に必要）</label>
+              <select id="kaipokeWeekStart" onchange="kaipokeUpdateButtonStates()"></select>
             </div>
           </div>
 
           <!-- 操作ボタン -->
           <div class="kaipoke-section">
             <div class="kaipoke-section-title">自動化操作</div>
-            <button class="kaipoke-btn primary" onclick="kaipokeExpand()">1. 月間スケジュール展開</button>
-            <button class="kaipoke-btn success" onclick="kaipokeExport()">2. CSV出力（Driveに保存）</button>
-            <button class="kaipoke-btn warning" onclick="kaipokeDiff()">3. 差分確認（プレビュー）</button>
-            <button class="kaipoke-btn danger" onclick="kaipokeApply()">4. 差分適用（カイポケに反映）</button>
-            <button class="kaipoke-btn info" onclick="kaipokeTest()">5. 接続テスト</button>
+            <button class="kaipoke-btn info" onclick="kaipokeTest()">1. 接続テスト</button>
+            <button class="kaipoke-btn primary" id="kaipokeExpandBtn" onclick="kaipokeExpand()">2. 月間スケジュール展開</button>
+            <div class="kaipoke-lock-msg" id="kaipokeExpandLock" style="display:none;"></div>
+            <button class="kaipoke-btn success" onclick="kaipokeExport()">3. CSV出力（Driveに保存）</button>
+            <button class="kaipoke-btn warning" onclick="kaipokeDiff()">4. 差分確認（プレビュー）</button>
+            <button class="kaipoke-btn danger" id="kaipokeApplyBtn" onclick="kaipokeApply()">5. 差分適用（カイポケに反映）</button>
+            <div class="kaipoke-lock-msg" id="kaipokeApplyLock" style="display:none;"></div>
+          </div>
+
+          <!-- インターロック設定 -->
+          <div class="kaipoke-section">
+            <div class="kaipoke-section-title" style="cursor:pointer;" onclick="kaipokeToggleInterlock()">
+              インターロック設定 <span id="kaipokeInterlockArrow">▶</span>
+            </div>
+            <div id="kaipokeInterlockPanel" class="kaipoke-interlock-panel" style="display:none;">
+              <div class="kaipoke-input-group">
+                <label>月間展開 - 制限月（この月以降のみ実行可）</label>
+                <div class="kaipoke-interlock-row">
+                  <select id="kaipokeExpandMinMonth"></select>
+                  <button class="kaipoke-btn primary" onclick="kaipokeSaveExpandMin()">🔒保存</button>
+                </div>
+              </div>
+              <div class="kaipoke-input-group">
+                <label>月間展開 - 完了月（クリックで解除 🔒）</label>
+                <div class="kaipoke-completed-tags" id="kaipokeExpandCompleted"><span style="font-size:11px;color:#999;">なし</span></div>
+              </div>
+              <hr style="border:none;border-top:1px solid var(--color-border);margin:12px 0;">
+              <div class="kaipoke-input-group">
+                <label>差分適用 - 制限週（この週以降のみ実行可）</label>
+                <div class="kaipoke-interlock-row">
+                  <select id="kaipokeApplyMinWeek"></select>
+                  <button class="kaipoke-btn primary" onclick="kaipokeSaveApplyMin()">🔒保存</button>
+                </div>
+              </div>
+              <div class="kaipoke-input-group">
+                <label>差分適用 - 完了週（クリックで解除 🔒）</label>
+                <div class="kaipoke-completed-tags" id="kaipokeApplyCompleted"><span style="font-size:11px;color:#999;">なし</span></div>
+              </div>
+            </div>
           </div>
 
           <!-- ローディング -->
@@ -2446,6 +2496,7 @@
     // ============================================================
     var kaipokeModalInitialized = false;
     var kaipokeAuthenticated = false;
+    var kaipokeInterlock = { expandMinMonth: null, expandCompleted: [], applyMinWeek: null, applyCompleted: [] };
 
     function openKaipokeModal() {
       // 既に認証済みならそのまま表示
@@ -2500,15 +2551,236 @@
         opt.textContent = year + '年' + m + '月';
         select.appendChild(opt);
       }
-      // 現在の月を選択
       var currentMonth = year + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
       select.value = currentMonth;
 
-      // 週開始日を設定
-      document.getElementById('kaipokeWeekStart').value = currentMonth + '-20';
+      // 週プルダウンを生成
+      kaipokeOnMonthChange();
+
+      // インターロック設定を読み込み
+      kaipokeLoadInterlock();
 
       // ステータス確認
       kaipokeRefreshStatus();
+
+      // 接続テストを自動実行
+      kaipokeTest();
+    }
+
+    // ==========================================
+    // 週プルダウン生成
+    // ==========================================
+    function kaipokeGetWeeksForMonth(yearMonth) {
+      var parts = yearMonth.split('-');
+      var year = parseInt(parts[0]);
+      var month = parseInt(parts[1]) - 1;
+      var weeks = [];
+      var date = new Date(year, month, 1);
+      while (date.getDay() !== 1) { date.setDate(date.getDate() + 1); }
+      var weekNum = 1;
+      while (date.getMonth() === month) {
+        var mm = ('0' + (date.getMonth() + 1)).slice(-2);
+        var dd = ('0' + date.getDate()).slice(-2);
+        var dateStr = date.getFullYear() + '-' + mm + '-' + dd;
+        weeks.push({ value: dateStr, label: dateStr + '（' + (month + 1) + '月' + weekNum + '週目）' });
+        weekNum++;
+        date.setDate(date.getDate() + 7);
+      }
+      return weeks;
+    }
+
+    function kaipokeOnMonthChange() {
+      var month = kaipokeGetMonth();
+      var weeks = kaipokeGetWeeksForMonth(month);
+      var sel = document.getElementById('kaipokeWeekStart');
+      sel.innerHTML = '';
+      weeks.forEach(function(w) {
+        var opt = document.createElement('option');
+        opt.value = w.value;
+        opt.textContent = w.label;
+        sel.appendChild(opt);
+      });
+      kaipokeUpdateButtonStates();
+    }
+
+    // ==========================================
+    // インターロック
+    // ==========================================
+    function kaipokeLoadInterlock() {
+      google.script.run
+        .withSuccessHandler(function(settings) {
+          kaipokeInterlock = settings;
+          kaipokeUpdateButtonStates();
+          kaipokePopulateInterlockPanel();
+        })
+        .withFailureHandler(function() {})
+        .getInterlockSettings();
+    }
+
+    function kaipokeCheckExpandAllowed(month) {
+      if (kaipokeInterlock.expandMinMonth && month < kaipokeInterlock.expandMinMonth) {
+        return { allowed: false, reason: kaipokeInterlock.expandMinMonth.replace(/^\d{4}-0?/, '').replace(/^(\d+)/, function(m){return parseInt(m);}) + '月以降のみ展開可能です' };
+      }
+      if (kaipokeInterlock.expandCompleted.indexOf(month) >= 0) {
+        return { allowed: false, reason: month + ' は展開完了済みです' };
+      }
+      return { allowed: true };
+    }
+
+    function kaipokeCheckApplyAllowed(weekStart) {
+      if (!weekStart) return { allowed: true };
+      if (kaipokeInterlock.applyMinWeek && weekStart < kaipokeInterlock.applyMinWeek) {
+        return { allowed: false, reason: kaipokeInterlock.applyMinWeek + ' 以降のみ差分適用可能です' };
+      }
+      if (kaipokeInterlock.applyCompleted.indexOf(weekStart) >= 0) {
+        return { allowed: false, reason: weekStart + ' は差分適用完了済みです' };
+      }
+      return { allowed: true };
+    }
+
+    function kaipokeUpdateButtonStates() {
+      var month = kaipokeGetMonth();
+      var weekStart = kaipokeGetWeekStart();
+
+      var ec = kaipokeCheckExpandAllowed(month);
+      var expandBtn = document.getElementById('kaipokeExpandBtn');
+      var expandLock = document.getElementById('kaipokeExpandLock');
+      if (expandBtn) { expandBtn.disabled = !ec.allowed; expandBtn.style.opacity = ec.allowed ? '1' : '0.5'; }
+      if (expandLock) { expandLock.style.display = ec.allowed ? 'none' : 'block'; expandLock.textContent = ec.allowed ? '' : '🔒 ' + ec.reason; }
+
+      var ac = kaipokeCheckApplyAllowed(weekStart);
+      var applyBtn = document.getElementById('kaipokeApplyBtn');
+      var applyLock = document.getElementById('kaipokeApplyLock');
+      if (applyBtn) { applyBtn.disabled = !ac.allowed; applyBtn.style.opacity = ac.allowed ? '1' : '0.5'; }
+      if (applyLock) { applyLock.style.display = ac.allowed ? 'none' : 'block'; applyLock.textContent = ac.allowed ? '' : '🔒 ' + ac.reason; }
+    }
+
+    function kaipokeToggleInterlock() {
+      var panel = document.getElementById('kaipokeInterlockPanel');
+      var arrow = document.getElementById('kaipokeInterlockArrow');
+      if (panel.style.display === 'none') { panel.style.display = 'block'; arrow.textContent = '▼'; }
+      else { panel.style.display = 'none'; arrow.textContent = '▶'; }
+    }
+
+    function kaipokePopulateInterlockPanel() {
+      // 展開制限月プルダウン
+      var expandSel = document.getElementById('kaipokeExpandMinMonth');
+      expandSel.innerHTML = '<option value="">制限なし</option>';
+      var now = new Date();
+      var year = now.getFullYear();
+      for (var m = 1; m <= 12; m++) {
+        var val = year + '-' + ('0' + m).slice(-2);
+        var opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = year + '年' + m + '月';
+        expandSel.appendChild(opt);
+      }
+      if (kaipokeInterlock.expandMinMonth) expandSel.value = kaipokeInterlock.expandMinMonth;
+
+      // 差分制限週プルダウン（全月の週を表示）
+      var applySel = document.getElementById('kaipokeApplyMinWeek');
+      applySel.innerHTML = '<option value="">制限なし</option>';
+      for (var m2 = 1; m2 <= 12; m2++) {
+        var monthStr = year + '-' + ('0' + m2).slice(-2);
+        var weeks = kaipokeGetWeeksForMonth(monthStr);
+        weeks.forEach(function(w) {
+          var opt = document.createElement('option');
+          opt.value = w.value;
+          opt.textContent = w.label;
+          applySel.appendChild(opt);
+        });
+      }
+      if (kaipokeInterlock.applyMinWeek) applySel.value = kaipokeInterlock.applyMinWeek;
+
+      // 完了タグ表示
+      kaipokeRenderCompletedTags();
+    }
+
+    function kaipokeRenderCompletedTags() {
+      // 展開完了月
+      var ec = document.getElementById('kaipokeExpandCompleted');
+      if (kaipokeInterlock.expandCompleted.length === 0) {
+        ec.innerHTML = '<span style="font-size:11px;color:#999;">なし</span>';
+      } else {
+        ec.innerHTML = '';
+        kaipokeInterlock.expandCompleted.forEach(function(m) {
+          var tag = document.createElement('span');
+          tag.className = 'kaipoke-completed-tag';
+          tag.textContent = m + ' ✓';
+          tag.title = 'クリックで解除（パスワード必要）';
+          tag.onclick = function() { kaipokeUnlockExpand(m); };
+          ec.appendChild(tag);
+        });
+      }
+      // 差分完了週
+      var ac = document.getElementById('kaipokeApplyCompleted');
+      if (kaipokeInterlock.applyCompleted.length === 0) {
+        ac.innerHTML = '<span style="font-size:11px;color:#999;">なし</span>';
+      } else {
+        ac.innerHTML = '';
+        kaipokeInterlock.applyCompleted.forEach(function(w) {
+          var tag = document.createElement('span');
+          tag.className = 'kaipoke-completed-tag';
+          tag.textContent = w + ' ✓';
+          tag.title = 'クリックで解除（パスワード必要）';
+          tag.onclick = function() { kaipokeUnlockApply(w); };
+          ac.appendChild(tag);
+        });
+      }
+    }
+
+    function kaipokeSaveExpandMin() {
+      var val = document.getElementById('kaipokeExpandMinMonth').value;
+      var pw = prompt('パスワードを入力してください');
+      if (pw === null) return;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) { kaipokeInterlock.expandMinMonth = val || null; kaipokeUpdateButtonStates(); alert('保存しました'); }
+          else { alert(r.message); }
+        })
+        .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
+        .saveInterlockSetting('展開制限月', val, pw);
+    }
+
+    function kaipokeSaveApplyMin() {
+      var val = document.getElementById('kaipokeApplyMinWeek').value;
+      var pw = prompt('パスワードを入力してください');
+      if (pw === null) return;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) { kaipokeInterlock.applyMinWeek = val || null; kaipokeUpdateButtonStates(); alert('保存しました'); }
+          else { alert(r.message); }
+        })
+        .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
+        .saveInterlockSetting('差分制限週', val, pw);
+    }
+
+    function kaipokeUnlockExpand(month) {
+      if (!confirm(month + ' の展開完了ロックを解除しますか？')) return;
+      var pw = prompt('パスワードを入力してください');
+      if (pw === null) return;
+      var newList = kaipokeInterlock.expandCompleted.filter(function(m) { return m !== month; });
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) { kaipokeInterlock.expandCompleted = newList; kaipokeUpdateButtonStates(); kaipokeRenderCompletedTags(); alert('解除しました'); }
+          else { alert(r.message); }
+        })
+        .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
+        .saveInterlockSetting('展開完了月', newList.join(','), pw);
+    }
+
+    function kaipokeUnlockApply(weekStart) {
+      if (!confirm(weekStart + ' の差分適用完了ロックを解除しますか？')) return;
+      var pw = prompt('パスワードを入力してください');
+      if (pw === null) return;
+      var newList = kaipokeInterlock.applyCompleted.filter(function(w) { return w !== weekStart; });
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) { kaipokeInterlock.applyCompleted = newList; kaipokeUpdateButtonStates(); kaipokeRenderCompletedTags(); alert('解除しました'); }
+          else { alert(r.message); }
+        })
+        .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
+        .saveInterlockSetting('差分完了週', newList.join(','), pw);
     }
 
     function kaipokeShowLoading(message) {
@@ -2567,6 +2839,9 @@
     }
 
     function kaipokeExpand() {
+      var month = kaipokeGetMonth();
+      var check = kaipokeCheckExpandAllowed(month);
+      if (!check.allowed) { alert('🔒 ' + check.reason); return; }
       if (!confirm('月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）')) return;
       kaipokeShowLoading('月間スケジュール展開中...\n（約2〜5分かかります）');
       kaipokeShowResult('処理開始...');
@@ -2576,13 +2851,21 @@
           kaipokeHideLoading();
           kaipokeShowResult(result.message, !result.success);
           kaipokeRefreshStatus();
+          if (result.success) {
+            // 展開完了を自動記録
+            google.script.run.withSuccessHandler(function() {
+              kaipokeInterlock.expandCompleted.push(month);
+              kaipokeUpdateButtonStates();
+              kaipokeRenderCompletedTags();
+            }).markExpandCompleted(month);
+          }
         })
         .withFailureHandler(function(error) {
           kaipokeHideLoading();
           kaipokeShowResult('エラー: ' + error.message, true);
           kaipokeRefreshStatus();
         })
-        .runExpand(kaipokeGetMonth());
+        .runExpand(month);
     }
 
     function kaipokeExport() {
@@ -2624,7 +2907,9 @@
 
     function kaipokeApply() {
       var weekStart = kaipokeGetWeekStart();
-      if (!weekStart) { alert('対象週の開始日を入力してください'); return; }
+      if (!weekStart) { alert('対象週を選択してください'); return; }
+      var check = kaipokeCheckApplyAllowed(weekStart);
+      if (!check.allowed) { alert('🔒 ' + check.reason); return; }
       if (!confirm('差分をカイポケに適用しますか？\n\n※ この操作は取り消せません')) return;
       kaipokeShowLoading('差分適用中...');
       kaipokeShowResult('処理開始...');
@@ -2634,6 +2919,14 @@
           kaipokeHideLoading();
           kaipokeShowResult(result.message, !result.success);
           kaipokeRefreshStatus();
+          if (result.success) {
+            // 差分適用完了を自動記録
+            google.script.run.withSuccessHandler(function() {
+              kaipokeInterlock.applyCompleted.push(weekStart);
+              kaipokeUpdateButtonStates();
+              kaipokeRenderCompletedTags();
+            }).markApplyCompleted(weekStart);
+          }
         })
         .withFailureHandler(function(error) {
           kaipokeHideLoading();

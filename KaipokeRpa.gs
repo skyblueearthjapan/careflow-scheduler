@@ -685,6 +685,142 @@ function verifyKaipokePassword(inputPassword) {
 }
 
 // ==========================================
+// インターロック設定
+// ==========================================
+
+/**
+ * インターロック設定を取得
+ * @returns {Object} {expandMinMonth, expandCompleted[], applyMinWeek, applyCompleted[]}
+ */
+function getInterlockSettings() {
+  try {
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName('管理者');
+    if (!sheet) return { expandMinMonth: null, expandCompleted: [], applyMinWeek: null, applyCompleted: [] };
+
+    var data = sheet.getDataRange().getValues();
+    var settings = {
+      expandMinMonth: null,
+      expandCompleted: [],
+      applyMinWeek: null,
+      applyCompleted: []
+    };
+
+    for (var i = 0; i < data.length; i++) {
+      var key = String(data[i][0] || '').trim();
+      var val = String(data[i][1] || '').trim();
+
+      if (key === '展開制限月') {
+        settings.expandMinMonth = val || null;
+      } else if (key === '展開完了月') {
+        settings.expandCompleted = val ? val.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+      } else if (key === '差分制限週') {
+        settings.applyMinWeek = val || null;
+      } else if (key === '差分完了週') {
+        settings.applyCompleted = val ? val.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+      }
+    }
+
+    return settings;
+  } catch (e) {
+    console.error('getInterlockSettings error:', e);
+    return { expandMinMonth: null, expandCompleted: [], applyMinWeek: null, applyCompleted: [] };
+  }
+}
+
+/**
+ * インターロック設定を保存（パスワード必須）
+ * @param {string} key - 設定キー（展開制限月/展開完了月/差分制限週/差分完了週）
+ * @param {string} value - 設定値
+ * @param {string} password - パスワード
+ * @returns {Object} {success: boolean, message: string}
+ */
+function saveInterlockSetting(key, value, password) {
+  var result = verifyKaipokePassword(password);
+  if (!result.success) {
+    return { success: false, message: 'パスワードが正しくありません' };
+  }
+
+  try {
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName('管理者');
+    if (!sheet) return { success: false, message: '管理者シートが見つかりません' };
+
+    var data = sheet.getDataRange().getValues();
+    var found = false;
+
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0] || '').trim() === key) {
+        sheet.getRange(i + 1, 2).setValue(value);
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      var lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow + 1, 1).setValue(key);
+      sheet.getRange(lastRow + 1, 2).setValue(value);
+    }
+
+    return { success: true, message: '設定を保存しました' };
+  } catch (e) {
+    return { success: false, message: '保存エラー: ' + e.message };
+  }
+}
+
+/**
+ * 展開完了月を自動追加（パスワード不要）
+ */
+function markExpandCompleted(month) {
+  return addToCompletedList_('展開完了月', month);
+}
+
+/**
+ * 差分適用完了週を自動追加（パスワード不要）
+ */
+function markApplyCompleted(weekStart) {
+  return addToCompletedList_('差分完了週', weekStart);
+}
+
+/**
+ * 完了リストに値を追加するヘルパー
+ */
+function addToCompletedList_(key, value) {
+  try {
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName('管理者');
+    if (!sheet) return { success: false };
+
+    var data = sheet.getDataRange().getValues();
+    var found = false;
+
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0] || '').trim() === key) {
+        var existing = String(data[i][1] || '').trim();
+        var items = existing ? existing.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+        if (items.indexOf(value) < 0) {
+          items.push(value);
+        }
+        sheet.getRange(i + 1, 2).setValue(items.join(','));
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      var lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow + 1, 1).setValue(key);
+      sheet.getRange(lastRow + 1, 2).setValue(value);
+    }
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ==========================================
 // サイドバー表示
 // ==========================================
 

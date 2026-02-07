@@ -52,45 +52,17 @@
       font-weight: bold;
       transition: background 0.2s;
     }
-    .btn-primary {
-      background: #4285f4;
-      color: white;
-    }
-    .btn-primary:hover {
-      background: #3367d6;
-    }
-    .btn-success {
-      background: #34a853;
-      color: white;
-    }
-    .btn-success:hover {
-      background: #2d8e47;
-    }
-    .btn-warning {
-      background: #fbbc04;
-      color: #333;
-    }
-    .btn-warning:hover {
-      background: #f0a800;
-    }
-    .btn-danger {
-      background: #ea4335;
-      color: white;
-    }
-    .btn-danger:hover {
-      background: #d33426;
-    }
-    .btn-info {
-      background: #5f6368;
-      color: white;
-    }
-    .btn-info:hover {
-      background: #4a4d51;
-    }
-    button:disabled {
-      background: #ccc;
-      cursor: not-allowed;
-    }
+    .btn-primary { background: #4285f4; color: white; }
+    .btn-primary:hover { background: #3367d6; }
+    .btn-success { background: #34a853; color: white; }
+    .btn-success:hover { background: #2d8e47; }
+    .btn-warning { background: #fbbc04; color: #333; }
+    .btn-warning:hover { background: #f0a800; }
+    .btn-danger { background: #ea4335; color: white; }
+    .btn-danger:hover { background: #d33426; }
+    .btn-info { background: #5f6368; color: white; }
+    .btn-info:hover { background: #4a4d51; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
     #resultArea {
       background: #f8f9fa;
       border: 1px solid #e0e0e0;
@@ -111,14 +83,8 @@
     .status-ready { background: #34a853; }
     .status-busy { background: #fbbc04; }
     .status-error { background: #ea4335; }
-    .loading {
-      display: none;
-      text-align: center;
-      padding: 20px;
-    }
-    .loading.show {
-      display: block;
-    }
+    .loading { display: none; text-align: center; padding: 20px; }
+    .loading.show { display: block; }
     .spinner {
       border: 3px solid #f3f3f3;
       border-top: 3px solid #4285f4;
@@ -132,6 +98,19 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    .lock-msg {
+      font-size: 12px; color: #ea4335; padding: 4px 8px; margin: -4px 0 8px 0;
+      background: #fef7f7; border-radius: 4px; border: 1px solid #fce8e6;
+    }
+    .completed-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; margin-bottom: 8px; }
+    .completed-tag {
+      display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+      background: #e8f5e9; border-radius: 4px; font-size: 11px; color: #2e7d32; cursor: pointer;
+    }
+    .completed-tag:hover { background: #fce8e6; color: #c62828; }
+    .interlock-row { display: flex; gap: 4px; margin-bottom: 8px; }
+    .interlock-row select { flex: 1; }
+    .interlock-row button { width: auto; padding: 8px 10px; font-size: 12px; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -158,51 +137,65 @@
     <button class="btn-primary" onclick="refreshStatus()">状態を更新</button>
   </div>
 
-  <!-- 月選択 -->
+  <!-- 対象設定 -->
   <div class="section">
-    <div class="section-title">対象月</div>
-    <select id="targetMonth">
-      <option value="2026-01">2026年1月</option>
-      <option value="2026-02">2026年2月</option>
-      <option value="2026-03">2026年3月</option>
-      <option value="2026-04">2026年4月</option>
-      <option value="2026-05">2026年5月</option>
-      <option value="2026-06">2026年6月</option>
-      <option value="2026-07">2026年7月</option>
-      <option value="2026-08">2026年8月</option>
-      <option value="2026-09">2026年9月</option>
-      <option value="2026-10">2026年10月</option>
-      <option value="2026-11">2026年11月</option>
-      <option value="2026-12">2026年12月</option>
-    </select>
+    <div class="section-title">対象設定</div>
+    <label>対象月</label>
+    <select id="targetMonth" onchange="onMonthChange()"></select>
 
-    <label>対象週の開始日（差分適用時に必要）</label>
-    <input type="date" id="weekStart" value="2026-01-20">
+    <label>対象週（差分適用時に必要）</label>
+    <select id="weekStart" onchange="updateButtonStates()"></select>
   </div>
 
   <!-- 操作ボタン -->
   <div class="section">
     <div class="section-title">自動化操作</div>
 
-    <button class="btn-primary" onclick="onExpandClick()">
-      1. 月間スケジュール展開
+    <button class="btn-info" onclick="onTestClick()">
+      1. 接続テスト
     </button>
 
+    <button class="btn-primary" id="expandBtn" onclick="onExpandClick()">
+      2. 月間スケジュール展開
+    </button>
+    <div class="lock-msg" id="expandLock" style="display:none;"></div>
+
     <button class="btn-success" onclick="onExportClick()">
-      2. CSV出力（Driveに保存）
+      3. CSV出力（Driveに保存）
     </button>
 
     <button class="btn-warning" onclick="onDiffClick()">
-      3. 差分確認（プレビュー）
+      4. 差分確認（プレビュー）
     </button>
 
-    <button class="btn-danger" onclick="onApplyClick()">
-      4. 差分適用（カイポケに反映）
+    <button class="btn-danger" id="applyBtn" onclick="onApplyClick()">
+      5. 差分適用（カイポケに反映）
     </button>
+    <div class="lock-msg" id="applyLock" style="display:none;"></div>
+  </div>
 
-    <button class="btn-info" onclick="onTestClick()">
-      5. 接続テスト
-    </button>
+  <!-- インターロック設定 -->
+  <div class="section">
+    <div class="section-title" style="cursor:pointer;" onclick="toggleInterlock()">
+      インターロック設定 <span id="interlockArrow">▶</span>
+    </div>
+    <div id="interlockPanel" style="display:none;">
+      <label>月間展開 - 制限月（この月以降のみ実行可）</label>
+      <div class="interlock-row">
+        <select id="expandMinMonth"></select>
+        <button class="btn-primary" onclick="saveExpandMin()">🔒保存</button>
+      </div>
+      <label>月間展開 - 完了月（クリックで解除 🔒）</label>
+      <div class="completed-tags" id="expandCompleted"><span style="font-size:11px;color:#999;">なし</span></div>
+      <hr style="border:none;border-top:1px solid #ddd;margin:12px 0;">
+      <label>差分適用 - 制限週（この週以降のみ実行可）</label>
+      <div class="interlock-row">
+        <select id="applyMinWeek"></select>
+        <button class="btn-primary" onclick="saveApplyMin()">🔒保存</button>
+      </div>
+      <label>差分適用 - 完了週（クリックで解除 🔒）</label>
+      <div class="completed-tags" id="applyCompleted"><span style="font-size:11px;color:#999;">なし</span></div>
+    </div>
   </div>
 
   <!-- ローディング表示 -->
@@ -249,28 +242,259 @@
     }
 
     // ==========================================
+    // インターロック状態
+    // ==========================================
+    var interlock = { expandMinMonth: null, expandCompleted: [], applyMinWeek: null, applyCompleted: [] };
+
+    // ==========================================
     // 初期化
     // ==========================================
     function initializeMain() {
-      // 現在の月をデフォルト選択
+      // 月選択オプションを動的生成
+      var select = document.getElementById("targetMonth");
       var now = new Date();
-      var currentMonth = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2);
-      var monthSelect = document.getElementById("targetMonth");
-      for (var i = 0; i < monthSelect.options.length; i++) {
-        if (monthSelect.options[i].value === currentMonth) {
-          monthSelect.selectedIndex = i;
-          break;
-        }
+      var year = now.getFullYear();
+      select.innerHTML = '';
+      for (var m = 1; m <= 12; m++) {
+        var val = year + '-' + ('0' + m).slice(-2);
+        var opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = year + '年' + m + '月';
+        select.appendChild(opt);
       }
-      // 週開始日も今月の20日に設定
-      document.getElementById("weekStart").value = currentMonth + "-20";
+      var currentMonth = year + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+      select.value = currentMonth;
 
+      // 週プルダウンを生成
+      onMonthChange();
+
+      // インターロック読み込み
+      loadInterlock();
+
+      // ステータス確認
       refreshStatus();
+
+      // 接続テストを自動実行
+      onTestClick();
     }
 
     window.onload = function() {
       document.getElementById('passwordInput').focus();
     };
+
+    // ==========================================
+    // 週プルダウン生成
+    // ==========================================
+    function getWeeksForMonth(yearMonth) {
+      var parts = yearMonth.split('-');
+      var year = parseInt(parts[0]);
+      var month = parseInt(parts[1]) - 1;
+      var weeks = [];
+      var date = new Date(year, month, 1);
+      while (date.getDay() !== 1) { date.setDate(date.getDate() + 1); }
+      var weekNum = 1;
+      while (date.getMonth() === month) {
+        var mm = ('0' + (date.getMonth() + 1)).slice(-2);
+        var dd = ('0' + date.getDate()).slice(-2);
+        var dateStr = date.getFullYear() + '-' + mm + '-' + dd;
+        weeks.push({ value: dateStr, label: dateStr + '（' + (month + 1) + '月' + weekNum + '週目）' });
+        weekNum++;
+        date.setDate(date.getDate() + 7);
+      }
+      return weeks;
+    }
+
+    function onMonthChange() {
+      var month = getSelectedMonth();
+      var weeks = getWeeksForMonth(month);
+      var sel = document.getElementById("weekStart");
+      sel.innerHTML = '';
+      weeks.forEach(function(w) {
+        var opt = document.createElement('option');
+        opt.value = w.value;
+        opt.textContent = w.label;
+        sel.appendChild(opt);
+      });
+      updateButtonStates();
+    }
+
+    // ==========================================
+    // インターロック
+    // ==========================================
+    function loadInterlock() {
+      google.script.run
+        .withSuccessHandler(function(settings) {
+          interlock = settings;
+          updateButtonStates();
+          populateInterlockPanel();
+        })
+        .withFailureHandler(function() {})
+        .getInterlockSettings();
+    }
+
+    function checkExpandAllowed(month) {
+      if (interlock.expandMinMonth && month < interlock.expandMinMonth) {
+        return { allowed: false, reason: interlock.expandMinMonth.replace(/^\d{4}-0?/, '').replace(/^(\d+)/, function(m){return parseInt(m);}) + '月以降のみ展開可能です' };
+      }
+      if (interlock.expandCompleted.indexOf(month) >= 0) {
+        return { allowed: false, reason: month + ' は展開完了済みです' };
+      }
+      return { allowed: true };
+    }
+
+    function checkApplyAllowed(weekStart) {
+      if (!weekStart) return { allowed: true };
+      if (interlock.applyMinWeek && weekStart < interlock.applyMinWeek) {
+        return { allowed: false, reason: interlock.applyMinWeek + ' 以降のみ差分適用可能です' };
+      }
+      if (interlock.applyCompleted.indexOf(weekStart) >= 0) {
+        return { allowed: false, reason: weekStart + ' は差分適用完了済みです' };
+      }
+      return { allowed: true };
+    }
+
+    function updateButtonStates() {
+      var month = getSelectedMonth();
+      var weekStart = getWeekStart();
+
+      var ec = checkExpandAllowed(month);
+      var expandBtn = document.getElementById('expandBtn');
+      var expandLock = document.getElementById('expandLock');
+      if (expandBtn) { expandBtn.disabled = !ec.allowed; }
+      if (expandLock) { expandLock.style.display = ec.allowed ? 'none' : 'block'; expandLock.textContent = ec.allowed ? '' : '🔒 ' + ec.reason; }
+
+      var ac = checkApplyAllowed(weekStart);
+      var applyBtn = document.getElementById('applyBtn');
+      var applyLock = document.getElementById('applyLock');
+      if (applyBtn) { applyBtn.disabled = !ac.allowed; }
+      if (applyLock) { applyLock.style.display = ac.allowed ? 'none' : 'block'; applyLock.textContent = ac.allowed ? '' : '🔒 ' + ac.reason; }
+    }
+
+    function toggleInterlock() {
+      var panel = document.getElementById('interlockPanel');
+      var arrow = document.getElementById('interlockArrow');
+      if (panel.style.display === 'none') { panel.style.display = 'block'; arrow.textContent = '▼'; }
+      else { panel.style.display = 'none'; arrow.textContent = '▶'; }
+    }
+
+    function populateInterlockPanel() {
+      var now = new Date();
+      var year = now.getFullYear();
+
+      // 展開制限月プルダウン
+      var expandSel = document.getElementById('expandMinMonth');
+      expandSel.innerHTML = '<option value="">制限なし</option>';
+      for (var m = 1; m <= 12; m++) {
+        var val = year + '-' + ('0' + m).slice(-2);
+        var opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = year + '年' + m + '月';
+        expandSel.appendChild(opt);
+      }
+      if (interlock.expandMinMonth) expandSel.value = interlock.expandMinMonth;
+
+      // 差分制限週プルダウン（全月の週を表示）
+      var applySel = document.getElementById('applyMinWeek');
+      applySel.innerHTML = '<option value="">制限なし</option>';
+      for (var m2 = 1; m2 <= 12; m2++) {
+        var monthStr = year + '-' + ('0' + m2).slice(-2);
+        var weeks = getWeeksForMonth(monthStr);
+        weeks.forEach(function(w) {
+          var opt = document.createElement('option');
+          opt.value = w.value;
+          opt.textContent = w.label;
+          applySel.appendChild(opt);
+        });
+      }
+      if (interlock.applyMinWeek) applySel.value = interlock.applyMinWeek;
+
+      renderCompletedTags();
+    }
+
+    function renderCompletedTags() {
+      var ec = document.getElementById('expandCompleted');
+      if (interlock.expandCompleted.length === 0) {
+        ec.innerHTML = '<span style="font-size:11px;color:#999;">なし</span>';
+      } else {
+        ec.innerHTML = '';
+        interlock.expandCompleted.forEach(function(m) {
+          var tag = document.createElement('span');
+          tag.className = 'completed-tag';
+          tag.textContent = m + ' ✓';
+          tag.title = 'クリックで解除（パスワード必要）';
+          tag.onclick = function() { unlockExpand(m); };
+          ec.appendChild(tag);
+        });
+      }
+      var ac = document.getElementById('applyCompleted');
+      if (interlock.applyCompleted.length === 0) {
+        ac.innerHTML = '<span style="font-size:11px;color:#999;">なし</span>';
+      } else {
+        ac.innerHTML = '';
+        interlock.applyCompleted.forEach(function(w) {
+          var tag = document.createElement('span');
+          tag.className = 'completed-tag';
+          tag.textContent = w + ' ✓';
+          tag.title = 'クリックで解除（パスワード必要）';
+          tag.onclick = function() { unlockApply(w); };
+          ac.appendChild(tag);
+        });
+      }
+    }
+
+    function saveExpandMin() {
+      var val = document.getElementById('expandMinMonth').value;
+      var pw = prompt('パスワードを入力してください');
+      if (pw === null) return;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) { interlock.expandMinMonth = val || null; updateButtonStates(); alert('保存しました'); }
+          else { alert(r.message); }
+        })
+        .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
+        .saveInterlockSetting('展開制限月', val, pw);
+    }
+
+    function saveApplyMin() {
+      var val = document.getElementById('applyMinWeek').value;
+      var pw = prompt('パスワードを入力してください');
+      if (pw === null) return;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) { interlock.applyMinWeek = val || null; updateButtonStates(); alert('保存しました'); }
+          else { alert(r.message); }
+        })
+        .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
+        .saveInterlockSetting('差分制限週', val, pw);
+    }
+
+    function unlockExpand(month) {
+      if (!confirm(month + ' の展開完了ロックを解除しますか？')) return;
+      var pw = prompt('パスワードを入力してください');
+      if (pw === null) return;
+      var newList = interlock.expandCompleted.filter(function(m) { return m !== month; });
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) { interlock.expandCompleted = newList; updateButtonStates(); renderCompletedTags(); alert('解除しました'); }
+          else { alert(r.message); }
+        })
+        .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
+        .saveInterlockSetting('展開完了月', newList.join(','), pw);
+    }
+
+    function unlockApply(weekStart) {
+      if (!confirm(weekStart + ' の差分適用完了ロックを解除しますか？')) return;
+      var pw = prompt('パスワードを入力してください');
+      if (pw === null) return;
+      var newList = interlock.applyCompleted.filter(function(w) { return w !== weekStart; });
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) { interlock.applyCompleted = newList; updateButtonStates(); renderCompletedTags(); alert('解除しました'); }
+          else { alert(r.message); }
+        })
+        .withFailureHandler(function(e) { alert('エラー: ' + e.message); })
+        .saveInterlockSetting('差分完了週', newList.join(','), pw);
+    }
 
     // ==========================================
     // UI操作
@@ -284,10 +508,11 @@
     function hideLoading() {
       document.getElementById("loading").className = "loading";
       disableAllButtons(false);
+      updateButtonStates();
     }
 
     function disableAllButtons(disabled) {
-      var buttons = document.querySelectorAll("button");
+      var buttons = document.querySelectorAll("#mainContent button");
       for (var i = 0; i < buttons.length; i++) {
         buttons[i].disabled = disabled;
       }
@@ -335,15 +560,11 @@
     }
 
     // ==========================================
-    // 月間スケジュール展開
+    // 接続テスト（1番目）
     // ==========================================
-    function onExpandClick() {
-      if (!confirm("月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）")) {
-        return;
-      }
-
-      showLoading("月間スケジュール展開中...\n（61名分、約2〜5分かかります）");
-      showResult("処理開始...");
+    function onTestClick() {
+      showLoading("接続テスト中...");
+      showResult("サーバーとの接続をテストしています...");
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -356,16 +577,47 @@
           showResult("エラー: " + error.message, true);
           refreshStatus();
         })
-        .runExpand(getSelectedMonth());
+        .runConnectionTest();
     }
 
     // ==========================================
-    // CSV出力
+    // 月間スケジュール展開（2番目）
+    // ==========================================
+    function onExpandClick() {
+      var month = getSelectedMonth();
+      var check = checkExpandAllowed(month);
+      if (!check.allowed) { alert('🔒 ' + check.reason); return; }
+      if (!confirm("月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）")) return;
+
+      showLoading("月間スケジュール展開中...\n（61名分、約2〜5分かかります）");
+      showResult("処理開始...");
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          showResult(result.message, !result.success);
+          refreshStatus();
+          if (result.success) {
+            google.script.run.withSuccessHandler(function() {
+              interlock.expandCompleted.push(month);
+              updateButtonStates();
+              renderCompletedTags();
+            }).markExpandCompleted(month);
+          }
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showResult("エラー: " + error.message, true);
+          refreshStatus();
+        })
+        .runExpand(month);
+    }
+
+    // ==========================================
+    // CSV出力（3番目）
     // ==========================================
     function onExportClick() {
-      if (!confirm("CSVを出力してGoogle Driveに保存しますか？")) {
-        return;
-      }
+      if (!confirm("CSVを出力してGoogle Driveに保存しますか？")) return;
 
       showLoading("CSV出力中...");
       showResult("処理開始...");
@@ -385,14 +637,11 @@
     }
 
     // ==========================================
-    // 差分確認
+    // 差分確認（4番目）
     // ==========================================
     function onDiffClick() {
       var weekStart = getWeekStart();
-      if (!weekStart) {
-        alert("対象週の開始日を入力してください");
-        return;
-      }
+      if (!weekStart) { alert("対象週を選択してください"); return; }
 
       showLoading("差分確認中...");
       showResult("処理開始...");
@@ -410,18 +659,14 @@
     }
 
     // ==========================================
-    // 差分適用
+    // 差分適用（5番目）
     // ==========================================
     function onApplyClick() {
       var weekStart = getWeekStart();
-      if (!weekStart) {
-        alert("対象週の開始日を入力してください");
-        return;
-      }
-
-      if (!confirm("差分をカイポケに適用しますか？\n\n※ この操作は取り消せません")) {
-        return;
-      }
+      if (!weekStart) { alert("対象週を選択してください"); return; }
+      var check = checkApplyAllowed(weekStart);
+      if (!check.allowed) { alert('🔒 ' + check.reason); return; }
+      if (!confirm("差分をカイポケに適用しますか？\n\n※ この操作は取り消せません")) return;
 
       showLoading("差分適用中...");
       showResult("処理開始...");
@@ -431,6 +676,13 @@
           hideLoading();
           showResult(result.message, !result.success);
           refreshStatus();
+          if (result.success) {
+            google.script.run.withSuccessHandler(function() {
+              interlock.applyCompleted.push(weekStart);
+              updateButtonStates();
+              renderCompletedTags();
+            }).markApplyCompleted(weekStart);
+          }
         })
         .withFailureHandler(function(error) {
           hideLoading();
@@ -438,27 +690,6 @@
           refreshStatus();
         })
         .runApply(getSelectedMonth(), weekStart);
-    }
-
-    // ==========================================
-    // 接続テスト
-    // ==========================================
-    function onTestClick() {
-      showLoading("接続テスト中...");
-      showResult("サーバーとの接続をテストしています...");
-
-      google.script.run
-        .withSuccessHandler(function(result) {
-          hideLoading();
-          showResult(result.message, !result.success);
-          refreshStatus();
-        })
-        .withFailureHandler(function(error) {
-          hideLoading();
-          showResult("エラー: " + error.message, true);
-          refreshStatus();
-        })
-        .runConnectionTest();
     }
   </script>
 </body>
