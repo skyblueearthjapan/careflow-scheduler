@@ -6,7 +6,7 @@
 var API_BASE_URL = "https://kaipoke-api.net";
 
 // Google DriveのフォルダID（共有フォルダのID）
-var DRIVE_FOLDER_ID = "1ABCxxxxxxxxxxxxxxxx";
+var DRIVE_FOLDER_ID = "1tQJKZDjonFwiY6wYYgx1iVgu4cM98vRp";
 
 // ==========================================
 // サーバー状態確認
@@ -108,11 +108,10 @@ function runExpand(month) {
 // ==========================================
 function runExport(month) {
   var url = API_BASE_URL + "/api/export";
+  var targetMonth = month || getCurrentMonth();
 
   var payload = {
-    "month": month || getCurrentMonth(),
-    "upload_to_drive": true,
-    "drive_folder_id": DRIVE_FOLDER_ID
+    "month": targetMonth
   };
 
   var options = {
@@ -128,14 +127,29 @@ function runExport(month) {
     var result = JSON.parse(response.getContentText());
 
     if (statusCode === 200 && result.success) {
-      var msg = "CSV出力完了!\n出力先: " + result.result.file_path;
-      if (result.result.drive_file_id) {
-        msg += "\nGoogle Driveにアップロード済み";
+      var csvContent = result.result.csv_content;
+      var driveResult = null;
+
+      // csv_contentがあればGoogle Driveに保存
+      if (csvContent) {
+        driveResult = saveCsvToDrive_(csvContent, targetMonth);
       }
+
+      var msg = "CSV出力完了!";
+      if (result.result.file_path) {
+        msg += "\nVPS出力先: " + result.result.file_path;
+      }
+      if (driveResult && driveResult.success) {
+        msg += "\nGoogle Drive保存: " + driveResult.fileName;
+      } else if (csvContent && driveResult && !driveResult.success) {
+        msg += "\nDrive保存エラー: " + driveResult.message;
+      }
+
       return {
         "success": true,
         "message": msg,
-        "data": result.result
+        "data": result.result,
+        "driveFileId": driveResult ? driveResult.fileId : null
       };
     } else if (statusCode === 409) {
       return {
@@ -152,6 +166,45 @@ function runExport(month) {
     return {
       "success": false,
       "message": "サーバー接続エラー: " + e.message
+    };
+  }
+}
+
+/**
+ * CSVテキストをGoogle Driveに保存
+ * @param {string} csvContent - CSV文字列
+ * @param {string} month - 対象月（YYYY-MM形式）
+ * @return {Object} {success, fileId, fileName, message}
+ */
+function saveCsvToDrive_(csvContent, month) {
+  try {
+    var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    var monthStr = month.replace("-", "");
+    var fileName = "kaipoke_export_" + monthStr + ".csv";
+
+    // 既存ファイルがあれば削除（上書き）
+    var existingFiles = folder.getFilesByName(fileName);
+    while (existingFiles.hasNext()) {
+      existingFiles.next().setTrashed(true);
+    }
+
+    // BOM付きUTF-8で保存（Excel対応）
+    var bom = "\uFEFF";
+    var blob = Utilities.newBlob(bom + csvContent, "text/csv", fileName);
+    var file = folder.createFile(blob);
+
+    return {
+      "success": true,
+      "fileId": file.getId(),
+      "fileName": fileName,
+      "message": "保存完了"
+    };
+  } catch (e) {
+    return {
+      "success": false,
+      "fileId": null,
+      "fileName": null,
+      "message": e.message
     };
   }
 }
