@@ -84,8 +84,11 @@ function kaipoke_exportCsv(weekStartStr) {
   // 患者マスタ読み込み（保険区分・患者名参照用）
   var patientMap = kaipoke_loadPatientMaster_(ss);
 
+  // イベントリクエスト読み込み（住所参照用）
+  var eventAddressMap = kaipoke_loadEventAddresses_(ss);
+
   // 同一訪問をグルーピング（イベント含む）
-  var visitGroups = kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd, patientMap);
+  var visitGroups = kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd, patientMap, eventAddressMap);
 
   // グループをCSV行に変換（保険区分対応）
   var csvRows = kaipoke_buildCsvRows_(visitGroups, tz, patientMap);
@@ -160,7 +163,7 @@ function kaipoke_getExportFolderUrl() {
  * 通常訪問: groupKey = 日付|patient_id|開始時刻|終了時刻
  * イベント: groupKey = EV|日付|visit_id|開始時刻|終了時刻
  */
-function kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd, patientMap) {
+function kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd, patientMap, eventAddressMap) {
   var groups = {};
 
   data.forEach(function(row) {
@@ -224,6 +227,13 @@ function kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd, patientMap) {
       // 備考追加
       if (noteRaw && groups[groupKey].notes.indexOf(noteRaw) === -1) {
         groups[groupKey].notes.push(noteRaw);
+      }
+
+      // イベントの住所を備考に追加（event_id = visitIdから"EV_"を除いた部分）
+      var eventId = visitId.replace(/^EV_/, '');
+      var evAddress = eventAddressMap[eventId] || '';
+      if (evAddress && groups[groupKey].notes.indexOf(evAddress) === -1) {
+        groups[groupKey].notes.push(evAddress);
       }
 
     } else {
@@ -414,6 +424,34 @@ function kaipoke_loadPatientMaster_(ss) {
       name: nameIdx >= 0 ? String(row[nameIdx] || '').trim() : '',
       insurance: insuranceIdx >= 0 ? String(row[insuranceIdx] || '').trim() : '医療保険'
     };
+  }
+
+  return map;
+}
+
+/**
+ * イベントリクエストを読み込み、event_id → 住所 のMapを返す
+ */
+function kaipoke_loadEventAddresses_(ss) {
+  var map = {};
+  var sheet = ss.getSheetByName('イベントリクエスト');
+  if (!sheet || sheet.getLastRow() <= 1) return map;
+
+  var values = sheet.getDataRange().getValues();
+  var header = values[0].map(function(h) { return String(h || '').trim(); });
+
+  var idIdx = kaipoke_findIdx_(header, 'event_id');
+  var addressIdx = kaipoke_findIdx_(header, '住所');
+
+  if (idIdx < 0 || addressIdx < 0) return map;
+
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    var eid = String(row[idIdx] || '').trim();
+    var addr = String(row[addressIdx] || '').trim();
+    if (eid && addr) {
+      map[eid] = addr;
+    }
   }
 
   return map;
