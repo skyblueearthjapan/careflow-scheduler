@@ -81,11 +81,14 @@ function kaipoke_exportCsv(weekStartStr) {
     weekEnd.setDate(weekEnd.getDate() + 6);
   }
 
-  // 同一訪問をグルーピング
-  var visitGroups = kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd);
+  // 患者マスタ読み込み（保険区分・患者名参照用）
+  var patientMap = kaipoke_loadPatientMaster_(ss);
 
-  // グループをCSV行に変換
-  var csvRows = kaipoke_buildCsvRows_(visitGroups, tz);
+  // 同一訪問をグルーピング（イベント含む）
+  var visitGroups = kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd, patientMap);
+
+  // グループをCSV行に変換（保険区分対応）
+  var csvRows = kaipoke_buildCsvRows_(visitGroups, tz, patientMap);
 
   if (csvRows.length === 0) {
     throw new Error('出力対象のデータがありません');
@@ -135,7 +138,7 @@ function kaipoke_exportCsv(weekStartStr) {
     url: file.getUrl(),
     fileName: fileName,
     rowCount: csvRows.length,
-    message: csvRows.length + '件の訪問データをCSV出力しました'
+    message: csvRows.length + '件のデータをCSV出力しました'
   };
 }
 
@@ -153,16 +156,16 @@ function kaipoke_getExportFolderUrl() {
 // ============================================================
 
 /**
- * 割当結果を同一訪問でグルーピング
- * groupKey = 日付|patient_id|開始時刻|終了時刻
+ * 割当結果を同一訪問でグルーピング（イベント含む）
+ * 通常訪問: groupKey = 日付|patient_id|開始時刻|終了時刻
+ * イベント: groupKey = EV|日付|visit_id|開始時刻|終了時刻
  */
-function kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd) {
+function kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd, patientMap) {
   var groups = {};
 
   data.forEach(function(row) {
-    // EV_で始まる行（イベント）はスキップ
     var visitId = idx.visitId >= 0 ? String(row[idx.visitId] || '') : '';
-    if (visitId.indexOf('EV_') === 0) return;
+    var isEvent = visitId.indexOf('EV_') === 0;
 
     // 日付チェック
     var dateObj = idx.date >= 0 ? kaipoke_parseDate_(row[idx.date]) : null;
@@ -173,45 +176,90 @@ function kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd) {
       if (dateObj < weekStart || dateObj > weekEnd) return;
     }
 
-    var patientId = idx.patientId >= 0 ? String(row[idx.patientId] || '').trim() : '';
-    if (!patientId) return;
-
     var startStr = kaipoke_formatTime_(row[idx.start], tz);
     var endStr = kaipoke_formatTime_(row[idx.end], tz);
     if (!startStr) return;
 
-    // グループキー
     var dateStr = Utilities.formatDate(dateObj, tz, 'yyyy/MM/dd');
-    var groupKey = dateStr + '|' + patientId + '|' + startStr + '|' + endStr;
 
-    if (!groups[groupKey]) {
-      groups[groupKey] = {
-        dateObj: dateObj,
-        dateStr: dateStr,
-        patientId: patientId,
-        patientName: idx.patientName >= 0 ? String(row[idx.patientName] || '') : '',
-        startStr: startStr,
-        endStr: endStr,
-        svcMin: idx.svcMin >= 0 ? row[idx.svcMin] : '',
-        staff: [],
-        notes: []
-      };
-    }
+    if (isEvent) {
+      // イベント行の処理
+      var noteRaw = idx.note >= 0 ? String(row[idx.note] || '').trim() : '';
 
-    // スタッフ追加
-    var staffId = idx.staffId >= 0 ? String(row[idx.staffId] || '').trim() : '';
-    var staffName = idx.staffName >= 0 ? String(row[idx.staffName] || '').trim() : '';
-    if (staffName) {
-      groups[groupKey].staff.push({
-        staffId: staffId,
-        staffName: staffName
-      });
-    }
+      // 備考からpatient_idを抽出（例: "（P004）"）
+      var evPatientId = '';
+      var evPatientName = 'なし';
+      var pidMatch = noteRaw.match(/（(P\d+)）/);
+      if (pidMatch) {
+        evPatientId = pidMatch[1];
+        if (patientMap[evPatientId]) {
+          evPatientName = patientMap[evPatientId].name;
+        }
+      }
 
-    // 備考追加
-    var note = idx.note >= 0 ? String(row[idx.note] || '').trim() : '';
-    if (note && groups[groupKey].notes.indexOf(note) === -1) {
-      groups[groupKey].notes.push(note);
+      var groupKey = 'EV|' + dateStr + '|' + visitId + '|' + startStr + '|' + endStr;
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          dateObj: dateObj,
+          dateStr: dateStr,
+          patientId: evPatientId,
+          patientName: evPatientName,
+          startStr: startStr,
+          endStr: endStr,
+          svcMin: idx.svcMin >= 0 ? row[idx.svcMin] : '',
+          isEvent: true,
+          staff: [],
+          notes: []
+        };
+      }
+
+      // スタッフ追加
+      var evStaffId = idx.staffId >= 0 ? String(row[idx.staffId] || '').trim() : '';
+      var evStaffName = idx.staffName >= 0 ? String(row[idx.staffName] || '').trim() : '';
+      if (evStaffName) {
+        groups[groupKey].staff.push({ staffId: evStaffId, staffName: evStaffName });
+      }
+
+      // 備考追加
+      if (noteRaw && groups[groupKey].notes.indexOf(noteRaw) === -1) {
+        groups[groupKey].notes.push(noteRaw);
+      }
+
+    } else {
+      // 通常訪問の処理
+      var patientId = idx.patientId >= 0 ? String(row[idx.patientId] || '').trim() : '';
+      if (!patientId) return;
+
+      var groupKey = dateStr + '|' + patientId + '|' + startStr + '|' + endStr;
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          dateObj: dateObj,
+          dateStr: dateStr,
+          patientId: patientId,
+          patientName: idx.patientName >= 0 ? String(row[idx.patientName] || '') : '',
+          startStr: startStr,
+          endStr: endStr,
+          svcMin: idx.svcMin >= 0 ? row[idx.svcMin] : '',
+          isEvent: false,
+          staff: [],
+          notes: []
+        };
+      }
+
+      // スタッフ追加
+      var staffId = idx.staffId >= 0 ? String(row[idx.staffId] || '').trim() : '';
+      var staffName = idx.staffName >= 0 ? String(row[idx.staffName] || '').trim() : '';
+      if (staffName) {
+        groups[groupKey].staff.push({ staffId: staffId, staffName: staffName });
+      }
+
+      // 備考追加
+      var note = idx.note >= 0 ? String(row[idx.note] || '').trim() : '';
+      if (note && groups[groupKey].notes.indexOf(note) === -1) {
+        groups[groupKey].notes.push(note);
+      }
     }
   });
 
@@ -219,9 +267,9 @@ function kaipoke_groupVisits_(data, idx, tz, weekStart, weekEnd) {
 }
 
 /**
- * グループをCSV行に変換
+ * グループをCSV行に変換（保険区分・イベント対応）
  */
-function kaipoke_buildCsvRows_(groups, tz) {
+function kaipoke_buildCsvRows_(groups, tz, patientMap) {
   var rows = [];
   var config = KAIPOKE_EXPORT_CONFIG;
 
@@ -256,6 +304,29 @@ function kaipoke_buildCsvRows_(groups, tz) {
     // 日付は日のみ（カイポケ形式）
     var dayOnly = g.dateObj.getDate();
 
+    // 業務種別・サービス内容の決定
+    var gyomuType = '';
+    var serviceContent = '';
+
+    if (g.isEvent) {
+      // イベント
+      gyomuType = 'イベント';
+      serviceContent = '';
+    } else {
+      // 通常訪問：患者マスタの保険区分を参照
+      var insurance = '医療保険'; // デフォルト
+      if (g.patientId && patientMap[g.patientId]) {
+        insurance = patientMap[g.patientId].insurance || '医療保険';
+      }
+      if (insurance === '介護保険') {
+        gyomuType = '介護保険';
+        serviceContent = '訪看Ⅰ３';
+      } else {
+        gyomuType = '医療保険';
+        serviceContent = '精神基本療養費Ⅰ・正看';
+      }
+    }
+
     // 行データ作成
     // [職員名1, 職種1, 職員名2, 職種2, 同行2, 職員名3, 職種3, 同行3,
     //  事業所名, 日付, 曜日, 利用者, 業務種別, サービス内容, 開始時間, 終了時間, 提供時間, 備考]
@@ -271,9 +342,9 @@ function kaipoke_buildCsvRows_(groups, tz) {
       config.PROVIDER_NAME, // 事業所名
       dayOnly,             // 日付（日のみ）
       dowJp,               // 曜日
-      g.patientName,       // 利用者
-      '',                  // 業務種別（空）
-      '',                  // サービス内容（空）
+      g.patientName,       // 利用者（イベント時：患者名 or "なし"）
+      gyomuType,           // 業務種別
+      serviceContent,      // サービス内容
       g.startStr,          // 開始時間
       g.endStr,            // 終了時間
       g.svcMin,            // 提供時間
@@ -315,6 +386,37 @@ function kaipoke_uniqueStaff_(staffList) {
 function kaipoke_getDayOfWeek_(dateObj) {
   var days = ['日', '月', '火', '水', '木', '金', '土'];
   return days[dateObj.getDay()];
+}
+
+/**
+ * 患者マスタを読み込み、patient_id → { name, insurance } のMapを返す
+ */
+function kaipoke_loadPatientMaster_(ss) {
+  var map = {};
+  var sheet = ss.getSheetByName('患者マスタ');
+  if (!sheet || sheet.getLastRow() <= 1) return map;
+
+  var values = sheet.getDataRange().getValues();
+  var header = values[0].map(function(h) { return String(h || '').trim(); });
+
+  var idIdx = kaipoke_findIdx_(header, 'patient_id');
+  var nameIdx = kaipoke_findIdx_(header, '患者名');
+  var insuranceIdx = kaipoke_findIdx_(header, '保険区分');
+
+  if (idIdx < 0) return map;
+
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    var pid = String(row[idIdx] || '').trim();
+    if (!pid) continue;
+
+    map[pid] = {
+      name: nameIdx >= 0 ? String(row[nameIdx] || '').trim() : '',
+      insurance: insuranceIdx >= 0 ? String(row[insuranceIdx] || '').trim() : '医療保険'
+    };
+  }
+
+  return map;
 }
 
 // ============================================================
