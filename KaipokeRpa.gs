@@ -328,43 +328,67 @@ function checkDiff(month, weekStart) {
     console.log('[checkDiff] statusCode=' + statusCode + ' responseBody=' + response.getContentText().substring(0, 500));
 
     if (statusCode === 200 && result.success) {
-      // レスポンス構造: { success, result: { total_corrections, summary: {...}, corrections: [...], drive_file: {...} } }
+      // レスポンス構造: { success, result: { total_corrections, summary: {...}, corrections: [...], drive_file: {...}, csv_content: "..." } }
       var r = result.result || {};
       var s = r.summary || {};
       var additions    = s.additions    || 0;
       var deletions    = s.deletions    || 0;
       var edits        = s.edits        || 0;
+      var dateChangeActions = s.date_change_actions || 0;
       var timeChanges  = s.time_changes || 0;
       var staffChanges = s.staff_changes || 0;
       var dateChanges  = s.date_changes || 0;
       var events       = s.events       || 0;
-      var totalChanges = r.total_corrections || (additions + deletions + edits);
+      var totalChanges = r.total_corrections || (additions + deletions + edits + dateChangeActions);
 
-      console.log('[checkDiff] summary: additions=' + additions + ' deletions=' + deletions + ' edits=' + edits + ' events=' + events + ' total=' + totalChanges);
+      console.log('[checkDiff] summary: additions=' + additions + ' deletions=' + deletions + ' edits=' + edits + ' date_change_actions=' + dateChangeActions + ' events=' + events + ' total=' + totalChanges);
 
-      // 差分結果シートへ書き込み
-      try {
-        displayDiffSummary(r);
-      } catch (dispErr) {
-        console.error('[checkDiff] displayDiffSummary error:', dispErr);
+      // --- GAS側でcsv_contentをDriveにアップロード ---
+      var uploadedFileId = null;
+      var csvContentStr = r.csv_content || '';
+      var driveFileInfo = r.drive_file || {};
+      if (csvContentStr && driveFileInfo.folder_id && driveFileInfo.filename) {
+        try {
+          var uploadFolder = DriveApp.getFolderById(driveFileInfo.folder_id);
+          // 既存の同名ファイルを削除
+          var existingFiles = uploadFolder.getFilesByName(driveFileInfo.filename);
+          while (existingFiles.hasNext()) {
+            existingFiles.next().setTrashed(true);
+          }
+          var newFile = uploadFolder.createFile(driveFileInfo.filename, csvContentStr, MimeType.CSV);
+          uploadedFileId = newFile.getId();
+          console.log('[checkDiff] Drive upload完了: ' + driveFileInfo.filename + ' fileId=' + uploadedFileId);
+        } catch (uploadErr) {
+          console.error('[checkDiff] Drive upload失敗:', uploadErr);
+        }
+      } else {
+        console.log('[checkDiff] csv_contentまたはdrive_file情報が不足のためDriveアップロードをスキップ');
       }
 
       // 差分検証を実行
       var verification = verifyDiffResult(r, weekRange);
       console.log('[checkDiff] verification ok=' + verification.ok);
 
+      // 差分結果シートへ書き込み
+      try {
+        displayDiffSummary(r, uploadedFileId);
+      } catch (dispErr) {
+        console.error('[checkDiff] displayDiffSummary error:', dispErr);
+      }
+
       // 検証フラグをPropertiesServiceに保存
       var props = PropertiesService.getScriptProperties();
       props.setProperty('diff_verified', verification.ok ? 'true' : 'false');
       props.setProperty('diff_week_start', weekStart);
-      if (r.drive_file && r.drive_file.file_id) {
-        props.setProperty('diff_file_id', r.drive_file.file_id);
+      if (uploadedFileId) {
+        props.setProperty('diff_file_id', uploadedFileId);
       }
 
       var summaryMsg = "差分確認結果（" + weekStart + " 〜 " + weekRange.endDate + "）:\n" +
                    "追加予定: " + additions + "件\n" +
                    "削除予定: " + deletions + "件\n" +
                    "編集予定: " + edits + "件\n" +
+                   "日付移動: " + dateChangeActions + "件\n" +
                    "時間変更: " + timeChanges + "件\n" +
                    "職員変更: " + staffChanges + "件\n" +
                    "日付変更: " + dateChanges + "件\n" +
@@ -550,6 +574,13 @@ function runApply(month, weekStart) {
 
 /**
  * 差分結果を最適化CSVと照合し、整合性を検証する
+ * チェック1: csv_content存在確認
+ * チェック2: CSV行数一致
+ * チェック3: 追加利用者の存在確認
+ * チェック4: アクション合計一致 (add + delete + edit + date_change_actions == total)
+ * チェック5: 業務種別の整合性 (addアクションの業務種別が最適化CSVと一致)
+ * チェック6: 業務種別合計一致
+ *
  * @param {Object} diffResult - /api/diff のレスポンス result
  * @param {Object} weekRange - { startStr, endStr, endDate }
  * @returns {Object} { ok: boolean, message: string }
@@ -558,27 +589,31 @@ function verifyDiffResult(diffResult, weekRange) {
   var errors = [];
   var warnings = [];
 
-  // === チェック1: Drive上の差分結果CSVが存在するか ===
-  var driveFile = diffResult.drive_file;
-  if (!driveFile || !driveFile.file_id) {
-    warnings.push('差分結果CSVがDriveにアップロードされていません（VPS側の機能が未対応の可能性）');
-  } else {
-    try {
-      // === チェック2: 差分結果CSVをDriveから読み込み、行数が一致するか ===
-      var csvFile = DriveApp.getFileById(driveFile.file_id);
-      var csvContent = csvFile.getBlob().getDataAsString('UTF-8');
-      if (csvContent.charCodeAt(0) === 0xFEFF) {
-        csvContent = csvContent.substring(1);
-      }
-      var csvRows = Utilities.parseCsv(csvContent);
-      var csvDataRows = csvRows.length - 1; // ヘッダー除く
+  // === チェック1: csv_contentが存在するか ===
+  var csvContentStr = diffResult.csv_content || '';
+  if (!csvContentStr) {
+    errors.push('APIレスポンスにcsv_contentが含まれていません');
+    // csv_contentがないとチェック2もできないので早期リターン
+    var message1 = '【検証NG】差分適用は実行できません';
+    message1 += '\n\n[エラー]\n- ' + errors[0];
+    return { ok: false, message: message1 };
+  }
 
-      if (csvDataRows !== diffResult.total_corrections) {
-        errors.push('CSV行数とAPI件数が不一致: CSV=' + csvDataRows + '行, API=' + diffResult.total_corrections + '件');
-      }
-    } catch (driveErr) {
-      warnings.push('Drive CSV読み込みエラー: ' + driveErr.message);
+  // === チェック2: CSV行数一致 ===
+  try {
+    var csvForParse = csvContentStr;
+    // BOM除去
+    if (csvForParse.charCodeAt(0) === 0xFEFF) {
+      csvForParse = csvForParse.substring(1);
     }
+    var csvRows = Utilities.parseCsv(csvForParse);
+    var csvDataRows = csvRows.length - 1; // ヘッダー除く
+
+    if (csvDataRows !== diffResult.total_corrections) {
+      errors.push('CSV行数とAPI件数が不一致: CSV=' + csvDataRows + '行, API=' + diffResult.total_corrections + '件');
+    }
+  } catch (csvErr) {
+    warnings.push('CSVパースエラー: ' + csvErr.message);
   }
 
   // === チェック3: 最適化CSVと照合（追加利用者の存在確認） ===
@@ -594,10 +629,10 @@ function verifyDiffResult(diffResult, weekRange) {
       } else {
         var optimizedRows = Utilities.parseCsv(optimizedContent);
 
-        // 最適化CSVの利用者リストを取得（列12=利用者）
+        // 最適化CSVの利用者リストを取得（列12=利用者, 0-indexed: index 11）
         var optimizedUsers = {};
         for (var oi = 1; oi < optimizedRows.length; oi++) {
-          var userName = (optimizedRows[oi][11] || '').trim(); // 0-indexed: 列12=index11=利用者
+          var userName = (optimizedRows[oi][11] || '').trim();
           if (userName) {
             optimizedUsers[userName] = true;
           }
@@ -612,6 +647,31 @@ function verifyDiffResult(diffResult, weekRange) {
             }
           }
         }
+
+        // === チェック5: 業務種別の整合性チェック（addアクションの業務種別が最適化CSVと一致） ===
+        var optimizedBusinessTypes = {};
+        for (var obi = 1; obi < optimizedRows.length; obi++) {
+          var obUserName = (optimizedRows[obi][11] || '').trim(); // 列12=利用者
+          var obBT = (optimizedRows[obi][12] || '').trim();       // 列13=業務種別
+          if (obUserName && obBT) {
+            if (!optimizedBusinessTypes[obUserName]) {
+              optimizedBusinessTypes[obUserName] = {};
+            }
+            optimizedBusinessTypes[obUserName][obBT] = true;
+          }
+        }
+
+        for (var cbi = 0; cbi < corrections.length; cbi++) {
+          var cb = corrections[cbi];
+          if (cb.action === 'add' && cb.business_type && cb.user_name) {
+            var userBTs = optimizedBusinessTypes[cb.user_name];
+            if (userBTs && !userBTs[cb.business_type]) {
+              var existingBTs = Object.keys(userBTs).join(', ');
+              warnings.push('「' + cb.user_name + '」の業務種別「' + cb.business_type +
+                '」が最適化CSVと異なります（最適化CSV: ' + existingBTs + '）');
+            }
+          }
+        }
       }
     } catch (optErr) {
       warnings.push('最適化CSV照合エラー: ' + optErr.message);
@@ -622,7 +682,6 @@ function verifyDiffResult(diffResult, weekRange) {
   var summary = diffResult.summary || {};
   var totalActions = (summary.additions || 0) + (summary.deletions || 0) + (summary.edits || 0) + (summary.date_change_actions || 0);
   if (diffResult.total_corrections && totalActions !== diffResult.total_corrections) {
-    // イベントが含まれる場合は差異が出る可能性があるのでwarningに
     warnings.push('アクション合計: add(' + (summary.additions || 0) +
       ')+delete(' + (summary.deletions || 0) +
       ')+edit(' + (summary.edits || 0) +
@@ -631,7 +690,7 @@ function verifyDiffResult(diffResult, weekRange) {
       ' vs total=' + diffResult.total_corrections);
   }
 
-  // === チェック5: 業務種別の分布チェック ===
+  // === チェック6: 業務種別の分布チェック ===
   var byBT = summary.by_business_type || {};
   var btKeys = Object.keys(byBT);
   if (btKeys.length > 0) {
@@ -678,8 +737,9 @@ function verifyDiffResult(diffResult, weekRange) {
 /**
  * 差分結果のサマリーを「差分結果」シートに表示する
  * @param {Object} result - /api/diff レスポンスの result
+ * @param {string} [uploadedFileId] - GAS側でDriveにアップロードしたファイルのID
  */
-function displayDiffSummary(result) {
+function displayDiffSummary(result, uploadedFileId) {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName('差分結果');
 
@@ -739,16 +799,21 @@ function displayDiffSummary(result) {
       range.setBackground('#f8d7da');  // 赤（削除）
     } else if (action === 'edit') {
       range.setBackground('#fff3cd');  // 黄（編集）
+    } else if (action === 'date_change') {
+      range.setBackground('#cce5ff');  // 青（日付移動）
     }
   }
 
   // Drive情報を最下部に表示
-  if (result.drive_file) {
-    var infoRow = corrections.length + 4;
+  var driveFileInfo = result.drive_file || {};
+  var infoRow = corrections.length + 4;
+  if (uploadedFileId) {
     sheet.getRange(infoRow, 1).setValue('Drive File ID:');
-    sheet.getRange(infoRow, 2).setValue(result.drive_file.file_id || '');
+    sheet.getRange(infoRow, 2).setValue(uploadedFileId);
+  }
+  if (driveFileInfo.filename) {
     sheet.getRange(infoRow + 1, 1).setValue('Drive Filename:');
-    sheet.getRange(infoRow + 1, 2).setValue(result.drive_file.filename || '');
+    sheet.getRange(infoRow + 1, 2).setValue(driveFileInfo.filename);
   }
 
   // 列幅自動調整
