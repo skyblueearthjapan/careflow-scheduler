@@ -620,12 +620,13 @@ function verifyDiffResult(diffResult, weekRange) {
 
   // === チェック4: サマリーの妥当性チェック（アクション合計一致） ===
   var summary = diffResult.summary || {};
-  var totalActions = (summary.additions || 0) + (summary.deletions || 0) + (summary.edits || 0);
+  var totalActions = (summary.additions || 0) + (summary.deletions || 0) + (summary.edits || 0) + (summary.date_change_actions || 0);
   if (diffResult.total_corrections && totalActions !== diffResult.total_corrections) {
     // イベントが含まれる場合は差異が出る可能性があるのでwarningに
     warnings.push('アクション合計: add(' + (summary.additions || 0) +
       ')+delete(' + (summary.deletions || 0) +
       ')+edit(' + (summary.edits || 0) +
+      ')+date_change(' + (summary.date_change_actions || 0) +
       ')=' + totalActions +
       ' vs total=' + diffResult.total_corrections);
   }
