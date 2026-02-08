@@ -14,7 +14,7 @@ var KAIPOKE_EXPORT_CONFIG = {
   OUTPUT_FOLDER_NAME: 'カイポケCSV出力',
 
   // 事業所名（固定値）
-  PROVIDER_NAME: '訪問看護ステーションよりそい',
+  PROVIDER_NAME: '訪問看護ステーションよりより',
 
   // 職種（固定値）
   JOB_TYPE: '看護師',
