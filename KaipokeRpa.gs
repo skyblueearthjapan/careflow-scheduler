@@ -365,8 +365,8 @@ function checkDiff(month, weekStart) {
         console.log('[checkDiff] csv_contentまたはdrive_file情報が不足のためDriveアップロードをスキップ');
       }
 
-      // 差分検証を実行
-      var verification = verifyDiffResult(r, weekRange);
+      // 差分検証を実行（現行CSVも渡して削除対象の存在確認に使用）
+      var verification = verifyDiffResult(r, weekRange, currentCsvContent);
       console.log('[checkDiff] verification ok=' + verification.ok);
 
       // 差分結果シートへ書き込み
@@ -580,12 +580,15 @@ function runApply(month, weekStart) {
  * チェック4: アクション合計一致 (add + delete + edit + date_change_actions == total)
  * チェック5: 業務種別の整合性 (addアクションの業務種別が最適化CSVと一致)
  * チェック6: 業務種別合計一致
+ * チェック7: addエントリの内容照合（最適化CSVの利用者+日付+開始時間で一致確認）
+ * チェック8: deleteエントリの存在確認（現行CSVに削除対象が存在するか）
  *
  * @param {Object} diffResult - /api/diff のレスポンス result
  * @param {Object} weekRange - { startStr, endStr, endDate }
+ * @param {string} [currentCsvContent] - カイポケ現行CSVの内容（チェック8用）
  * @returns {Object} { ok: boolean, message: string }
  */
-function verifyDiffResult(diffResult, weekRange) {
+function verifyDiffResult(diffResult, weekRange, currentCsvContent) {
   var errors = [];
   var warnings = [];
 
@@ -672,10 +675,62 @@ function verifyDiffResult(diffResult, weekRange) {
             }
           }
         }
+
+        // === チェック7: addエントリの内容照合（最適化CSV） ===
+        // 最適化CSVをマップ化（利用者名+日付+開始時間 → true）
+        var optimizedMap = {};
+        for (var omi = 1; omi < optimizedRows.length; omi++) {
+          var omRow = optimizedRows[omi];
+          var omKey = (omRow[11] || '').trim() + '|' + (omRow[9] || '').trim() + '|' + (omRow[14] || '').trim();
+          optimizedMap[omKey] = true;
+        }
+
+        for (var aci = 0; aci < corrections.length; aci++) {
+          var ac = corrections[aci];
+          if (ac.action === 'add') {
+            var addKey = (ac.user_name || '') + '|' + (ac.date_to || '') + '|' + (ac.start_time_to || '');
+            if (!optimizedMap[addKey]) {
+              errors.push('追加「' + ac.user_name + '」(' + ac.date_to + '日 ' + ac.start_time_to + ')が最適化CSVに見つかりません');
+            }
+          }
+        }
       }
     } catch (optErr) {
       warnings.push('最適化CSV照合エラー: ' + optErr.message);
     }
+  }
+
+  // === チェック8: deleteエントリの存在確認（現行CSV） ===
+  if (currentCsvContent) {
+    try {
+      var currentForParse = currentCsvContent;
+      if (currentForParse.charCodeAt(0) === 0xFEFF) {
+        currentForParse = currentForParse.substring(1);
+      }
+      var currentRows = Utilities.parseCsv(currentForParse);
+
+      // 現行CSVをマップ化（利用者名+日付+開始時間 → true）
+      var currentMap = {};
+      for (var cri = 1; cri < currentRows.length; cri++) {
+        var crRow = currentRows[cri];
+        var crKey = (crRow[11] || '').trim() + '|' + (crRow[9] || '').trim() + '|' + (crRow[14] || '').trim();
+        currentMap[crKey] = true;
+      }
+
+      for (var dci = 0; dci < corrections.length; dci++) {
+        var dc = corrections[dci];
+        if (dc.action === 'delete') {
+          var delKey = (dc.user_name || '') + '|' + (dc.date_from || '') + '|' + (dc.start_time_from || '');
+          if (!currentMap[delKey]) {
+            warnings.push('削除対象「' + dc.user_name + '」(' + dc.date_from + '日 ' + dc.start_time_from + ')が現行CSVに見つかりません');
+          }
+        }
+      }
+    } catch (curErr) {
+      warnings.push('現行CSV照合エラー: ' + curErr.message);
+    }
+  } else {
+    warnings.push('現行CSVが利用できないため、削除対象の存在確認をスキップしました');
   }
 
   // === チェック4: サマリーの妥当性チェック（アクション合計一致） ===
