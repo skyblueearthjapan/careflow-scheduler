@@ -2613,28 +2613,17 @@
     // ============================================================
 
     function exportKaipokeCsv() {
-      // 週を指定するかどうか確認
-      var weekStartStr = null;
-      var useWeek = confirm('現在の週のデータのみ出力しますか？\n\n「OK」→ 現在週のみ\n「キャンセル」→ 全データ');
-
-      if (useWeek) {
-        // 監査ビューの週開始日があれば使用
-        if (auditState && auditState.weekStartStr) {
-          weekStartStr = auditState.weekStartStr;
-        } else {
-          // なければ今週の月曜日を計算
-          var today = new Date();
-          var day = today.getDay();
-          var diff = today.getDate() - day + (day === 0 ? -6 : 1); // 月曜日に調整
-          var monday = new Date(today.setDate(diff));
-          var yyyy = monday.getFullYear();
-          var mm = ('0' + (monday.getMonth() + 1)).slice(-2);
-          var dd = ('0' + monday.getDate()).slice(-2);
-          weekStartStr = yyyy + '/' + mm + '/' + dd;
-        }
+      // 対象週セレクタから選択値を取得
+      var weekStartStr = getSelectedWeekStart();
+      if (!weekStartStr) {
+        showToast('対象週が選択されていません', 'error');
+        return;
       }
 
-      var msg = weekStartStr ? 'CSV出力中... (' + weekStartStr + '〜)' : 'CSV出力中... (全データ)';
+      // YYYY-MM-DD → YYYY/MM/DD 形式に変換
+      weekStartStr = weekStartStr.replace(/-/g, '/');
+
+      var msg = 'CSV出力中... (' + weekStartStr + '〜)';
       showToast(msg, 'info', 10000);
 
       google.script.run
