@@ -1332,7 +1332,7 @@
             <div class="kaipoke-lock-msg" id="kaipokeExpandLock" style="display:none;"></div>
             <button class="kaipoke-btn success" onclick="kaipokeExport()">3. CSV出力（Driveに保存）</button>
             <button class="kaipoke-btn warning" onclick="kaipokeDiff()">4. 差分確認（プレビュー）</button>
-            <button class="kaipoke-btn danger" id="kaipokeApplyBtn" onclick="kaipokeApply()">5. 差分適用（カイポケに反映）</button>
+            <button class="kaipoke-btn danger" id="kaipokeApplyBtn" onclick="kaipokeApply()" disabled style="opacity:0.5" title="先に差分確認（プレビュー）を実行してください">5. 差分適用（カイポケに反映）</button>
             <div class="kaipoke-lock-msg" id="kaipokeApplyLock" style="display:none;"></div>
           </div>
 
@@ -3064,27 +3064,59 @@
         .runExport(kaipokeGetMonth());
     }
 
+    // 差分検証状態を管理
+    var kaipokeDiffVerified = false;
+
     function kaipokeDiff() {
       var weekStart = kaipokeGetWeekStart();
       if (!weekStart) { alert('対象週の開始日を入力してください'); return; }
-      kaipokeShowLoading('差分確認中...');
-      kaipokeShowResult('処理開始...');
+      kaipokeShowLoading('差分確認・検証中...');
+      kaipokeShowResult('差分確認を開始... APIリクエスト送信中');
+
+      // 差分確認開始時に適用ボタンを無効化
+      kaipokeDiffVerified = false;
+      kaipokeUpdateApplyButton();
 
       google.script.run
         .withSuccessHandler(function(result) {
           kaipokeHideLoading();
           kaipokeShowResult(result.message, !result.success);
+
+          // 検証結果に基づいて適用ボタンを制御
+          if (result.success && result.verified) {
+            kaipokeDiffVerified = true;
+          } else {
+            kaipokeDiffVerified = false;
+          }
+          kaipokeUpdateApplyButton();
         })
         .withFailureHandler(function(error) {
           kaipokeHideLoading();
           kaipokeShowResult('エラー: ' + error.message, true);
+          kaipokeDiffVerified = false;
+          kaipokeUpdateApplyButton();
         })
         .checkDiff(kaipokeGetMonth(), weekStart);
+    }
+
+    function kaipokeUpdateApplyButton() {
+      var applyBtn = document.getElementById('kaipokeApplyBtn');
+      if (!applyBtn) return;
+      if (kaipokeDiffVerified) {
+        applyBtn.disabled = false;
+        applyBtn.style.opacity = '1';
+        applyBtn.title = '差分検証OK - 適用可能';
+      } else {
+        applyBtn.disabled = true;
+        applyBtn.style.opacity = '0.5';
+        applyBtn.title = '先に差分確認（プレビュー）を実行してください';
+      }
     }
 
     function kaipokeApply() {
       var weekStart = kaipokeGetWeekStart();
       if (!weekStart) { alert('対象週を選択してください'); return; }
+      if (!kaipokeDiffVerified) { alert('先に「差分確認（プレビュー）」を実行し、検証を完了してください。'); return; }
       var check = kaipokeCheckApplyAllowed(weekStart);
       if (!check.allowed) { alert('🔒 ' + check.reason); return; }
       if (!confirm('差分をカイポケに適用しますか？\n\n※ この操作は取り消せません')) return;
@@ -3097,6 +3129,9 @@
           kaipokeShowResult(result.message, !result.success);
           kaipokeRefreshStatus();
           if (result.success) {
+            // 差分適用完了後、検証状態をリセット
+            kaipokeDiffVerified = false;
+            kaipokeUpdateApplyButton();
             // 差分適用完了を自動記録
             google.script.run.withSuccessHandler(function() {
               kaipokeInterlock.applyCompleted.push(weekStart);
