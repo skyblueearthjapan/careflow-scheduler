@@ -902,29 +902,15 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     var lastRow = sheet.getLastRow();
     var header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
 
-    // ★必要な列が存在しない場合は自動追加
+    // ★必要な列が存在しない場合は自動追加（末尾に追加）
     var requiredColumns = {
       'スタッフマスタ': ['割当量'],
       '患者マスタ': ['訪問頻度', '訪問週', '保険区分'],
       '個別変更リクエスト': ['時間タイプ', '希望最早', '希望最遅']
     };
-    // 備考の前に挿入すべき列
-    var insertBeforeNote = { '保険区分': true };
     var columnsToAdd = requiredColumns[formType] || [];
     columnsToAdd.forEach(function(colName) {
       if (header.indexOf(colName) < 0) {
-        if (insertBeforeNote[colName]) {
-          // 備考列の前に挿入
-          var noteIdx = header.indexOf('備考');
-          if (noteIdx >= 0) {
-            sheet.insertColumnAfter(noteIdx); // noteIdxは0-based、insertColumnAfterは1-based列番号
-            sheet.getRange(1, noteIdx + 1).setValue(colName);
-            header.splice(noteIdx, 0, colName);
-            numCols++;
-            return;
-          }
-        }
-        // デフォルト：末尾に追加
         var newColIdx = numCols + 1;
         sheet.getRange(1, newColIdx).setValue(colName);
         header.push(colName);
@@ -998,6 +984,7 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       'staffType': '指定タイプ',
       'ngStaff': 'NGスタッフID',
       'contPref': '継続希望',
+      'insuranceType': '保険区分',
       'note': '備考',
       // スタッフマスタ用
       'staffName': 'スタッフ名',
