@@ -384,6 +384,14 @@ function checkDiff(month, weekStart) {
         props.setProperty('diff_file_id', uploadedFileId);
       }
 
+      // 修正データを隠しシートに保存（適用時にcorrection_dataとして使用）
+      try {
+        storeCorrections_(r.corrections || []);
+        console.log('[checkDiff] corrections保存完了: ' + (r.corrections || []).length + '件');
+      } catch (storeErr) {
+        console.error('[checkDiff] corrections保存エラー:', storeErr);
+      }
+
       var summaryMsg = "差分確認結果（" + weekStart + " 〜 " + weekRange.endDate + "）:\n" +
                    "追加予定: " + additions + "件\n" +
                    "削除予定: " + deletions + "件\n" +
@@ -429,12 +437,11 @@ function checkDiff(month, weekStart) {
 }
 
 // ==========================================
-// 差分適用 - パターンB: CSV内容を直接送信
+// 差分適用 - correction_dataを直接送信
 // ==========================================
 function runApply(month, weekStart) {
   var url = API_BASE_URL + "/api/apply";
   var targetMonth = month || getCurrentMonth();
-  var monthStr = targetMonth.replace("-", "");
 
   // weekStart必須チェック
   if (!weekStart) {
@@ -461,43 +468,25 @@ function runApply(month, weekStart) {
     };
   }
 
-  // 週範囲を算出
+  // 保存済みの修正データを取得
+  var corrections = getStoredCorrections_();
+  if (!corrections || corrections.length === 0) {
+    return {
+      "success": false,
+      "message": "エラー: 修正データが見つかりません。\n再度「差分確認（プレビュー）」を実行してください。"
+    };
+  }
+
   var weekRange = getWeekRange_(weekStart);
-  console.log('[runApply] month=' + targetMonth + ' weekStart=' + weekStart + ' weekEnd=' + weekRange.endDate);
+  console.log('[runApply] month=' + targetMonth + ' weekStart=' + weekStart + ' corrections=' + corrections.length + '件');
 
-  // --- Google DriveからCSVを読み込み ---
-  var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-
-  // 1. kaipoke_current_YYYYMM.csv を読み込み
-  var currentFileName = "kaipoke_current_" + monthStr + ".csv";
-  var currentCsvContent = readCsvContentFromDrive_(folder, currentFileName);
-  if (currentCsvContent === null) {
-    return {
-      "success": false,
-      "message": "エラー: Google Driveに「" + currentFileName + "」が見つかりません。\n先にCSV出力（ステップ3）を実行してください。"
-    };
-  }
-  console.log('[runApply] currentCSV読み込み完了: ' + currentFileName);
-
-  // 2. gas_optimized_YYYYMMDD_YYYYMMDD.csv を読み込み
-  var optimizedFileName = "gas_optimized_" + weekRange.startStr + "_" + weekRange.endStr + ".csv";
-  var optimizedCsvContent = readCsvContentFromDrive_(folder, optimizedFileName);
-  if (optimizedCsvContent === null) {
-    return {
-      "success": false,
-      "message": "エラー: Google Driveに「" + optimizedFileName + "」が見つかりません。\n先にGAS側のCSV出力を実行してください。"
-    };
-  }
-  console.log('[runApply] optimizedCSV読み込み完了: ' + optimizedFileName);
-
-  // 3. CSV内容を直接送信（week_start/week_endはYYYYMMDD形式）
+  // correction_dataを直接送信
   var payload = {
-    "current_csv_content": currentCsvContent,
-    "optimized_csv_content": optimizedCsvContent,
-    "week_start": weekRange.startStr,
-    "week_end": weekRange.endStr
+    "correction_data": corrections,
+    "month": targetMonth,
+    "dry_run": false,
+    "headed": true
   };
-  console.log('[runApply] payload keys: ' + Object.keys(payload).join(', ') + ' week_start=' + weekRange.startStr + ' week_end=' + weekRange.endStr);
 
   var options = {
     "method": "post",
@@ -514,34 +503,62 @@ function runApply(month, weekStart) {
     console.log('[runApply] statusCode=' + statusCode + ' responseBody=' + response.getContentText().substring(0, 500));
 
     if (statusCode === 200 && result.success) {
-      // レスポンス構造: { success, result: { total_corrections, summary: {...}, corrections: [...] } }
       var r = result.result || {};
-      var s = r.summary || {};
-      var additions    = s.additions    || 0;
-      var deletions    = s.deletions    || 0;
-      var edits        = s.edits        || 0;
-      var timeChanges  = s.time_changes || 0;
-      var staffChanges = s.staff_changes || 0;
-      var dateChanges  = s.date_changes || 0;
-      var totalChanges = r.total_corrections || (additions + deletions + edits + timeChanges);
 
-      console.log('[runApply] summary: additions=' + additions + ' deletions=' + deletions + ' edits=' + edits + ' total=' + totalChanges);
+      // 適用結果シートへ書き込み
+      try {
+        writeApplyResultToSheet(r);
+      } catch (sheetErr) {
+        console.error('[runApply] writeApplyResultToSheet error:', sheetErr);
+      }
 
       // 適用完了後、検証フラグをクリア
       props.setProperty('diff_verified', 'false');
       props.deleteProperty('diff_week_start');
       props.deleteProperty('diff_file_id');
 
+      // 結果メッセージ
+      var total = r.total || 0;
+      var successCount = r.success || 0;
+      var failed = r.failed || 0;
+      var skipped = r.skipped || 0;
+      var scheduleTotal = r.schedule_total || 0;
+      var eventTotal = r.event_total || 0;
+
+      var msg = "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n\n" +
+                "成功: " + successCount + "件\n" +
+                "失敗: " + failed + "件\n" +
+                "スキップ: " + skipped + "件\n" +
+                "合計: " + total + "件\n" +
+                "（スケジュール: " + scheduleTotal + "件、イベント: " + eventTotal + "件）";
+
+      // 失敗・スキップの詳細
+      var details = r.details || [];
+      var failedItems = [];
+      var skippedItems = [];
+      for (var i = 0; i < details.length; i++) {
+        var d = details[i];
+        if (d.status === 'failed' || d.status === 'error') {
+          failedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
+        } else if (d.status === 'skipped') {
+          skippedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
+        }
+      }
+
+      if (failedItems.length > 0) {
+        msg += '\n\n--- 失敗 ---\n' + failedItems.join('\n');
+      }
+      if (skippedItems.length > 0) {
+        msg += '\n\n--- スキップ ---\n' + skippedItems.join('\n');
+      }
+
+      if (failed > 0 || skipped > 0) {
+        msg += '\n\n詳細は「適用結果」シートを確認してください。';
+      }
+
       return {
         "success": true,
-        "message": "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n" +
-                   "追加: " + additions + "件\n" +
-                   "削除: " + deletions + "件\n" +
-                   "編集: " + edits + "件\n" +
-                   "時間変更: " + timeChanges + "件\n" +
-                   "職員変更: " + staffChanges + "件\n" +
-                   "日付変更: " + dateChanges + "件\n" +
-                   "適用合計: " + totalChanges + "件",
+        "message": msg,
         "data": r
       };
     } else if (statusCode === 400) {
@@ -1125,6 +1142,150 @@ function setDriveFolderId(folderId) {
       "success": false,
       "message": "接続エラー: " + e.message
     };
+  }
+}
+
+// ==========================================
+// 修正データの永続化（隠しシート方式）
+// ==========================================
+
+/**
+ * 修正データを隠しシートに保存（適用時にcorrection_dataとして使用）
+ * PropertiesServiceは9KB制限があるため、シートに保存する
+ * @param {Array} corrections - 修正データ配列
+ */
+function storeCorrections_(corrections) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('_corrections_cache');
+  if (!sheet) {
+    sheet = ss.insertSheet('_corrections_cache');
+    sheet.hideSheet();
+  }
+  sheet.clear();
+  sheet.getRange(1, 1).setValue(JSON.stringify(corrections));
+}
+
+/**
+ * 保存済みの修正データを取得
+ * @returns {Array} 修正データ配列
+ */
+function getStoredCorrections_() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('_corrections_cache');
+  if (!sheet) return [];
+  var json = sheet.getRange(1, 1).getValue();
+  return json ? JSON.parse(json) : [];
+}
+
+// ==========================================
+// 未割当職員チェック
+// ==========================================
+
+/**
+ * 保存済みの修正データから未割当（staff1_to="未割当"）の件数と詳細を返す
+ * サイドバーから呼び出され、適用前の警告に使用
+ * @returns {Object} { hasUnassigned, count, message }
+ */
+function getUnassignedWarning() {
+  var corrections = getStoredCorrections_();
+  var unassigned = [];
+  for (var i = 0; i < corrections.length; i++) {
+    var c = corrections[i];
+    if (c.staff1_to === '未割当') {
+      unassigned.push(c);
+    }
+  }
+
+  if (unassigned.length === 0) {
+    return { hasUnassigned: false, count: 0, message: '' };
+  }
+
+  var lines = [];
+  for (var j = 0; j < unassigned.length; j++) {
+    var u = unassigned[j];
+    lines.push('  ' + (u.user_name || '') + ' ' + (u.date_to || '') + '日 ' +
+      (u.start_time_to || '') + '-' + (u.end_time_to || '') + ' (' + (u.action || '') + ')');
+  }
+
+  return {
+    hasUnassigned: true,
+    count: unassigned.length,
+    message: '以下の ' + unassigned.length + ' 件は職員が「未割当」です。\n' +
+      'カイポケ上では職員未選択（\'-\'）として登録されます。\n\n' +
+      lines.join('\n') + '\n\nこのまま適用しますか？'
+  };
+}
+
+// ==========================================
+// 適用結果シートへの書き込み
+// ==========================================
+
+/**
+ * 適用結果を「適用結果」シートに書き込む
+ * @param {Object} result - /api/apply レスポンスの result
+ */
+function writeApplyResultToSheet(result) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('適用結果');
+  if (!sheet) {
+    sheet = ss.insertSheet('適用結果');
+  }
+  sheet.clear();
+
+  // ヘッダー（9列）
+  var headers = ['利用者/職員', '日付', 'アクション', '業務種別',
+                  'ステータス', '理由', 'イベント名', 'Phase', 'タイムスタンプ'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4a86c8').setFontColor('#ffffff');
+
+  // サマリー行（2行目）
+  var timestamp = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm:ss');
+  var summaryRow = [
+    '合計: ' + (result.total || 0) + '件', '',
+    '成功: ' + (result.success || 0), '',
+    '失敗: ' + (result.failed || 0),
+    'スキップ: ' + (result.skipped || 0), '', '', timestamp
+  ];
+  sheet.getRange(2, 1, 1, headers.length).setValues([summaryRow]);
+  sheet.getRange(2, 1, 1, headers.length).setFontWeight('bold').setBackground('#e2e3e5');
+
+  // 詳細データ（3行目～）
+  var details = result.details || [];
+  if (details.length > 0) {
+    var rows = [];
+    for (var i = 0; i < details.length; i++) {
+      var d = details[i];
+      rows.push([
+        d.user || d.staff || '',
+        d.date || '',
+        d.action || '',
+        d.business_type || '',
+        d.status || '',
+        d.reason || '',
+        d.event_name || '',
+        (d.action === 'event_add') ? 'Phase 2' : 'Phase 1',
+        timestamp
+      ]);
+    }
+    sheet.getRange(3, 1, rows.length, headers.length).setValues(rows);
+
+    // 色分け
+    var colorMap = {
+      'success': '#d4edda',
+      'failed': '#f8d7da',
+      'error': '#f8d7da',
+      'skipped': '#fff3cd'
+    };
+    for (var j = 0; j < rows.length; j++) {
+      var status = rows[j][4];
+      var color = colorMap[status] || '#ffffff';
+      sheet.getRange(3 + j, 1, 1, headers.length).setBackground(color);
+    }
+  }
+
+  // 列幅自動調整
+  for (var col = 1; col <= headers.length; col++) {
+    sheet.autoResizeColumn(col);
   }
 }
 

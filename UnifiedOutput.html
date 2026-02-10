@@ -3119,33 +3119,49 @@
       if (!kaipokeDiffVerified) { alert('先に「差分確認（プレビュー）」を実行し、検証を完了してください。'); return; }
       var check = kaipokeCheckApplyAllowed(weekStart);
       if (!check.allowed) { alert('🔒 ' + check.reason); return; }
-      if (!confirm('差分をカイポケに適用しますか？\n\n※ この操作は取り消せません')) return;
-      kaipokeShowLoading('差分適用中...');
-      kaipokeShowResult('処理開始...');
 
+      // Step 1: 未割当職員チェック
       google.script.run
-        .withSuccessHandler(function(result) {
-          kaipokeHideLoading();
-          kaipokeShowResult(result.message, !result.success);
-          kaipokeRefreshStatus();
-          if (result.success) {
-            // 差分適用完了後、検証状態をリセット
-            kaipokeDiffVerified = false;
-            kaipokeUpdateApplyButton();
-            // 差分適用完了を自動記録
-            google.script.run.withSuccessHandler(function() {
-              kaipokeInterlock.applyCompleted.push(weekStart);
-              kaipokeUpdateButtonStates();
-              kaipokeRenderCompletedTags();
-            }).markApplyCompleted(weekStart);
+        .withSuccessHandler(function(warning) {
+          // 未割当がある場合は警告
+          if (warning.hasUnassigned) {
+            if (!confirm(warning.message)) return;
           }
+          // Step 2: 最終確認
+          if (!confirm('差分をカイポケに適用しますか？\n\n※ この操作は取り消せません')) return;
+
+          // Step 3: 適用実行
+          kaipokeShowLoading('差分適用中...');
+          kaipokeShowResult('差分適用を開始しました。完了までお待ちください...');
+
+          google.script.run
+            .withSuccessHandler(function(result) {
+              kaipokeHideLoading();
+              kaipokeShowResult(result.message, !result.success);
+              kaipokeRefreshStatus();
+              if (result.success) {
+                // 差分適用完了後、検証状態をリセット
+                kaipokeDiffVerified = false;
+                kaipokeUpdateApplyButton();
+                // 差分適用完了を自動記録
+                google.script.run.withSuccessHandler(function() {
+                  kaipokeInterlock.applyCompleted.push(weekStart);
+                  kaipokeUpdateButtonStates();
+                  kaipokeRenderCompletedTags();
+                }).markApplyCompleted(weekStart);
+              }
+            })
+            .withFailureHandler(function(error) {
+              kaipokeHideLoading();
+              kaipokeShowResult('エラー: ' + error.message, true);
+              kaipokeRefreshStatus();
+            })
+            .runApply(kaipokeGetMonth(), weekStart);
         })
         .withFailureHandler(function(error) {
-          kaipokeHideLoading();
-          kaipokeShowResult('エラー: ' + error.message, true);
-          kaipokeRefreshStatus();
+          alert('未割当チェックエラー: ' + error.message);
         })
-        .runApply(kaipokeGetMonth(), weekStart);
+        .getUnassignedWarning();
     }
 
     function kaipokeOpenEmergencyStop() {
