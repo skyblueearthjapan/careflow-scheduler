@@ -525,12 +525,17 @@ function runApply(month, weekStart) {
       var scheduleTotal = r.schedule_total || 0;
       var eventTotal = r.event_total || 0;
 
+      var executionTime = r.execution_time_sec || 0;
+      var completedAt = r.completed_at || '';
+
       var msg = "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n\n" +
                 "成功: " + successCount + "件\n" +
                 "失敗: " + failed + "件\n" +
                 "スキップ: " + skipped + "件\n" +
                 "合計: " + total + "件\n" +
-                "（スケジュール: " + scheduleTotal + "件、イベント: " + eventTotal + "件）";
+                "（スケジュール: " + scheduleTotal + "件、イベント: " + eventTotal + "件）\n\n" +
+                "実行時間: " + executionTime + "秒\n" +
+                "完了時刻: " + completedAt;
 
       // 失敗・スキップの詳細
       var details = r.details || [];
@@ -1239,9 +1244,10 @@ function writeApplyResultToSheet(result) {
   sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4a86c8').setFontColor('#ffffff');
 
   // サマリー行（2行目）
-  var timestamp = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm:ss');
+  var timestamp = result.completed_at || Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm:ss');
+  var executionTimeStr = result.execution_time_sec ? (result.execution_time_sec + '秒') : '';
   var summaryRow = [
-    '合計: ' + (result.total || 0) + '件', '',
+    '合計: ' + (result.total || 0) + '件', executionTimeStr,
     '成功: ' + (result.success || 0), '',
     '失敗: ' + (result.failed || 0),
     'スキップ: ' + (result.skipped || 0), '', '', timestamp
@@ -1281,6 +1287,26 @@ function writeApplyResultToSheet(result) {
       var color = colorMap[status] || '#ffffff';
       sheet.getRange(3 + j, 1, 1, headers.length).setBackground(color);
     }
+  }
+
+  // warnings行を追加（詳細データの後）
+  var warnings = result.warnings || [];
+  if (warnings.length > 0) {
+    var nextRow = 3 + (details.length > 0 ? details.length : 0);
+    // 空行を挟む
+    nextRow++;
+    // 警告ヘッダー行
+    var warningHeader = ['--- 警告 (' + warnings.length + '件) ---', '', '', '', '', '', '', '', ''];
+    sheet.getRange(nextRow, 1, 1, headers.length).setValues([warningHeader]);
+    sheet.getRange(nextRow, 1, 1, headers.length).setFontWeight('bold').setBackground('#fff3cd');
+    nextRow++;
+    // 各警告行
+    var warningRows = [];
+    for (var w = 0; w < warnings.length; w++) {
+      warningRows.push([warnings[w], '', '', '', 'warning', '', '', '', timestamp]);
+    }
+    sheet.getRange(nextRow, 1, warningRows.length, headers.length).setValues(warningRows);
+    sheet.getRange(nextRow, 1, warningRows.length, headers.length).setBackground('#fff3cd');
   }
 
   // 列幅自動調整
