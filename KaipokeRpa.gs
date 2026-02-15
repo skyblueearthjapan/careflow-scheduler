@@ -496,99 +496,146 @@ function runApply(month, weekStart) {
   };
 
   try {
+    // 1) /api/apply を呼ぶ（即座に返る）
     var response = UrlFetchApp.fetch(url, options);
     var statusCode = response.getResponseCode();
-    var result = JSON.parse(response.getContentText());
+    var startResult = JSON.parse(response.getContentText());
 
-    console.log('[runApply] statusCode=' + statusCode + ' responseBody=' + response.getContentText().substring(0, 500));
+    console.log('[runApply] start statusCode=' + statusCode + ' responseBody=' + response.getContentText().substring(0, 500));
 
-    if (statusCode === 200 && result.success) {
-      var r = result.result || {};
-
-      // 適用結果シートへ書き込み
-      try {
-        writeApplyResultToSheet(r);
-      } catch (sheetErr) {
-        console.error('[runApply] writeApplyResultToSheet error:', sheetErr);
-      }
-
-      // 適用結果をキャッシュに保存（適用後検証で使用）
-      try {
-        storeApplyResult_(r);
-      } catch (cacheErr) {
-        console.error('[runApply] storeApplyResult_ error:', cacheErr);
-      }
-
-      // 適用完了後、検証フラグをクリア
-      props.setProperty('diff_verified', 'false');
-      props.deleteProperty('diff_week_start');
-      props.deleteProperty('diff_file_id');
-
-      // 結果メッセージ
-      var total = r.total || 0;
-      var successCount = r.success || 0;
-      var failed = r.failed || 0;
-      var skipped = r.skipped || 0;
-      var scheduleTotal = r.schedule_total || 0;
-      var eventTotal = r.event_total || 0;
-
-      var executionTime = r.execution_time_sec || 0;
-      var completedAt = r.completed_at || '';
-
-      var msg = "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n\n" +
-                "成功: " + successCount + "件\n" +
-                "失敗: " + failed + "件\n" +
-                "スキップ: " + skipped + "件\n" +
-                "合計: " + total + "件\n" +
-                "（スケジュール: " + scheduleTotal + "件、イベント: " + eventTotal + "件）\n\n" +
-                "実行時間: " + executionTime + "秒\n" +
-                "完了時刻: " + completedAt;
-
-      // 失敗・スキップの詳細
-      var details = r.details || [];
-      var failedItems = [];
-      var skippedItems = [];
-      for (var i = 0; i < details.length; i++) {
-        var d = details[i];
-        if (d.status === 'failed' || d.status === 'error') {
-          failedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
-        } else if (d.status === 'skipped') {
-          skippedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
-        }
-      }
-
-      if (failedItems.length > 0) {
-        msg += '\n\n--- 失敗 ---\n' + failedItems.join('\n');
-      }
-      if (skippedItems.length > 0) {
-        msg += '\n\n--- スキップ ---\n' + skippedItems.join('\n');
-      }
-
-      if (failed > 0 || skipped > 0) {
-        msg += '\n\n詳細は「適用結果」シートを確認してください。';
-      }
-
-      return {
-        "success": true,
-        "message": msg,
-        "data": r
-      };
-    } else if (statusCode === 400) {
+    if (statusCode === 400) {
       return {
         "success": false,
-        "message": "パラメータエラー: " + (result.error || result.message || "不明なエラー")
-      };
-    } else if (statusCode === 409) {
-      return {
-        "success": false,
-        "message": "エラー: " + (result.error || result.message || "不明なエラー")
-      };
-    } else {
-      return {
-        "success": false,
-        "message": "エラー: " + (result.error || result.message || "不明なエラー")
+        "message": "パラメータエラー: " + (startResult.error || startResult.message || "不明なエラー")
       };
     }
+    if (statusCode === 409) {
+      return {
+        "success": false,
+        "message": "エラー: " + (startResult.error || startResult.message || "不明なエラー")
+      };
+    }
+    if (statusCode !== 200 || !startResult.success) {
+      return {
+        "success": false,
+        "message": "エラー: " + (startResult.error || startResult.message || "不明なエラー")
+      };
+    }
+
+    // 2) /api/apply/result をポーリング（10秒間隔で最大60回 = 10分）
+    console.log('[runApply] Polling for result...');
+    var pollUrl = API_BASE_URL + "/api/apply/result";
+    var pollOptions = {
+      "method": "get",
+      "muteHttpExceptions": true
+    };
+
+    var applyResult = null;
+    for (var poll = 0; poll < 60; poll++) {
+      Utilities.sleep(10000); // 10秒待機
+      try {
+        var pollResp = UrlFetchApp.fetch(pollUrl, pollOptions);
+        var pollStatus = pollResp.getResponseCode();
+        var pollData = JSON.parse(pollResp.getContentText());
+
+        console.log('[runApply] poll #' + (poll + 1) + ' status=' + (pollData.status || 'unknown'));
+
+        if (pollData.status === 'completed' || pollData.status === 'error') {
+          applyResult = pollData;
+          break;
+        }
+        // 'running' or 'pending' → 継続ポーリング
+      } catch (pollErr) {
+        console.error('[runApply] poll error:', pollErr);
+        // ネットワークエラーは無視して次のポーリングへ
+      }
+    }
+
+    if (!applyResult) {
+      return {
+        "success": false,
+        "message": "タイムアウト: 適用処理が10分以内に完了しませんでした。\nVPSサーバーの状態を確認してください。"
+      };
+    }
+
+    if (applyResult.status === 'error') {
+      return {
+        "success": false,
+        "message": "適用エラー: " + (applyResult.error || applyResult.message || "不明なエラー")
+      };
+    }
+
+    // 3) 完了 → 結果処理
+    var r = applyResult.result || applyResult;
+
+    // 適用結果シートへ書き込み
+    try {
+      writeApplyResultToSheet(r);
+    } catch (sheetErr) {
+      console.error('[runApply] writeApplyResultToSheet error:', sheetErr);
+    }
+
+    // 適用結果をキャッシュに保存（適用後検証で使用）
+    try {
+      storeApplyResult_(r);
+    } catch (cacheErr) {
+      console.error('[runApply] storeApplyResult_ error:', cacheErr);
+    }
+
+    // 適用完了後、検証フラグをクリア
+    props.setProperty('diff_verified', 'false');
+    props.deleteProperty('diff_week_start');
+    props.deleteProperty('diff_file_id');
+
+    // 結果メッセージ
+    var total = r.total || 0;
+    var successCount = r.success || 0;
+    var failed = r.failed || 0;
+    var skipped = r.skipped || 0;
+    var scheduleTotal = r.schedule_total || 0;
+    var eventTotal = r.event_total || 0;
+
+    var executionTime = r.execution_time_sec || 0;
+    var completedAt = r.completed_at || '';
+
+    var msg = "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n\n" +
+              "成功: " + successCount + "件\n" +
+              "失敗: " + failed + "件\n" +
+              "スキップ: " + skipped + "件\n" +
+              "合計: " + total + "件\n" +
+              "（スケジュール: " + scheduleTotal + "件、イベント: " + eventTotal + "件）\n\n" +
+              "実行時間: " + executionTime + "秒\n" +
+              "完了時刻: " + completedAt;
+
+    // 失敗・スキップの詳細
+    var details = r.details || [];
+    var failedItems = [];
+    var skippedItems = [];
+    for (var i = 0; i < details.length; i++) {
+      var d = details[i];
+      if (d.status === 'failed' || d.status === 'error') {
+        failedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
+      } else if (d.status === 'skipped') {
+        skippedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
+      }
+    }
+
+    if (failedItems.length > 0) {
+      msg += '\n\n--- 失敗 ---\n' + failedItems.join('\n');
+    }
+    if (skippedItems.length > 0) {
+      msg += '\n\n--- スキップ ---\n' + skippedItems.join('\n');
+    }
+
+    if (failed > 0 || skipped > 0) {
+      msg += '\n\n詳細は「適用結果」シートを確認してください。';
+    }
+
+    return {
+      "success": true,
+      "message": msg,
+      "data": r
+    };
   } catch (e) {
     return {
       "success": false,
