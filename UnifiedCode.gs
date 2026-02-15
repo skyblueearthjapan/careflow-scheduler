@@ -3020,6 +3020,19 @@ function 割当結果を作成_(ss) {
     staffDateMap[key].push(i);
   });
 
+  // --- 2名体制ペアマップ構築 ---
+  var coupledVisitMap = {};  // { "V001": [rowIdx1, rowIdx2] }
+  resultRows.forEach(function(r, i) {
+    var vid = r[0];
+    if (!vid || typeof vid !== 'string') return;
+    var m = vid.match(/^(V\d+)-(\d+)$/);
+    if (m) {
+      var baseId = m[1];
+      if (!coupledVisitMap[baseId]) coupledVisitMap[baseId] = [];
+      coupledVisitMap[baseId].push(i);
+    }
+  });
+
   // ★移動距離計算専用：患者行のみ（イベントはpid空なので除外）
   var staffDateMapForMove = {};
   resultRows.forEach(function(r, i){
@@ -3101,6 +3114,72 @@ function 割当結果を作成_(ss) {
       if (latestMin != null && e > latestMin) return null; // 時間切れ
     }
     return null; // ループ防止（見つからない）
+  }
+
+  // --- 2名体制ペアの時刻同期関数 ---
+  function syncCoupledVisitTimes_(resultRows, coupledVisitMap, staffDateMap, tz) {
+    var EXTRA_BUFFER = 15; // 分
+
+    Object.keys(coupledVisitMap).forEach(function(baseId) {
+      var indices = coupledVisitMap[baseId];
+      if (indices.length !== 2) return;
+
+      var r1 = resultRows[indices[0]];
+      var r2 = resultRows[indices[1]];
+
+      // 両方にスタッフが割当済みか確認
+      if (!r1[3] || !r2[3]) return;
+
+      var s1 = rowStartMin_(r1), e1 = rowEndMin_(r1);
+      var s2 = rowStartMin_(r2), e2 = rowEndMin_(r2);
+
+      if (s1 === s2 && e1 === e2) return; // 既に同期済み
+
+      // 同期先時刻を決定: 遅い方の開始時刻に合わせる
+      var targetStart = Math.max(s1, s2);
+      var svcMin = (e1 - s1) || (e2 - s2) || 60;
+      var targetEnd = targetStart + svcMin;
+
+      // 時間窓制約チェック
+      var earliest1 = toMinutes(r1[12]) || 0;
+      var latest1 = toMinutes(r1[13]) || 1440;
+      var earliest2 = toMinutes(r2[12]) || 0;
+      var latest2 = toMinutes(r2[13]) || 1440;
+      var commonEarliest = Math.max(earliest1, earliest2);
+      var commonLatest = Math.min(latest1, latest2);
+
+      if (targetStart < commonEarliest) targetStart = commonEarliest;
+      if (targetStart > commonLatest) targetStart = commonLatest;
+      targetEnd = targetStart + svcMin;
+
+      // 両スタッフの当日スケジュールで衝突チェック
+      var canPlace = true;
+      [indices[0], indices[1]].forEach(function(rIdx) {
+        var row = resultRows[rIdx];
+        var staffId = row[3];
+        var dateStr = Utilities.formatDate(row[1], tz, 'yyyy/MM/dd');
+        var key = staffId + '|' + dateStr;
+        var dayIndices = staffDateMap[key] || [];
+
+        dayIndices.forEach(function(otherIdx) {
+          if (otherIdx === indices[0] || otherIdx === indices[1]) return;
+          var otherS = rowStartMin_(resultRows[otherIdx]);
+          var otherE = rowEndMin_(resultRows[otherIdx]);
+          if (overlap_(targetStart, targetEnd + EXTRA_BUFFER, otherS, otherE + EXTRA_BUFFER)) {
+            canPlace = false;
+          }
+        });
+      });
+
+      if (canPlace) {
+        setRowTimeByMinutes_(r1, targetStart, targetEnd);
+        setRowTimeByMinutes_(r2, targetStart, targetEnd);
+      } else {
+        // フォールバック: 備考に警告を追加
+        r1[14] = (r1[14] || '') + ' [時刻同期不可:要手動調整]';
+        r2[14] = (r2[14] || '') + ' [時刻同期不可:要手動調整]';
+      }
+    });
   }
 
   Object.keys(staffDateMap).forEach(function(key){
@@ -3311,6 +3390,9 @@ function 割当結果を作成_(ss) {
     }
   });
 
+  // --- 時刻調整後の2名体制ペア同期 ---
+  syncCoupledVisitTimes_(resultRows, coupledVisitMap, staffDateMap, tz);
+
   // ============================================================
   // Level 1: 未割当訪問の再挿入（別スタッフへの振り分け試行）
   // ============================================================
@@ -3325,6 +3407,30 @@ function 割当結果を作成_(ss) {
       unassignedRows.push({ idx: ui, row: uRow });
     }
   }
+
+  // --- 2名ペアの原子性保証: 片方が未割当なら、もう片方も未割当にする ---
+  Object.keys(coupledVisitMap).forEach(function(baseId) {
+    var indices = coupledVisitMap[baseId];
+    if (indices.length !== 2) return;
+    var r1 = resultRows[indices[0]];
+    var r2 = resultRows[indices[1]];
+    var assigned1 = !!r1[3] && r1[4] !== '未割当';
+    var assigned2 = !!r2[3] && r2[4] !== '未割当';
+    if (assigned1 !== assigned2) {
+      // 片方だけ割当済み → 両方未割当にする
+      var unassignIdx = assigned1 ? indices[0] : indices[1];
+      var row = resultRows[unassignIdx];
+      // staffDateMapから除去
+      var sKey = row[3] + '|' + Utilities.formatDate(row[1], tz, 'yyyy/MM/dd');
+      if (staffDateMap[sKey]) {
+        staffDateMap[sKey] = staffDateMap[sKey].filter(function(i) { return i !== unassignIdx; });
+      }
+      row[3] = ''; row[4] = '未割当';
+      row[14] = (row[14] || '') + ' [2名体制:ペア未確保のため未割当]';
+      // unassignedRowsにも追加
+      unassignedRows.push({ idx: unassignIdx, row: row });
+    }
+  });
 
   if (unassignedRows.length > 0) {
     // 候補スタッフを選定する関数
@@ -3544,6 +3650,9 @@ function 割当結果を作成_(ss) {
     }
   }
 
+  // --- Level 1再挿入後の2名体制ペア同期 ---
+  syncCoupledVisitTimes_(resultRows, coupledVisitMap, staffDateMap, tz);
+
   // ============================================================
   // Level3: 距離最適化（安全版）
   // - EV/固定は動かさない
@@ -3637,6 +3746,12 @@ function 割当結果を作成_(ss) {
       return route;
     }
 
+    // 2名体制の行はルート最適化の並べ替え対象外（アンカー化用セット）
+    var coupledPlacedSet = {};
+    Object.keys(coupledVisitMap).forEach(function(baseId) {
+      coupledVisitMap[baseId].forEach(function(idx) { coupledPlacedSet[idx] = true; });
+    });
+
     // staffDateMap を使って「スタッフ×日」ごとに処理
     Object.keys(staffDateMap).forEach(function(key){
       var idxList = staffDateMap[key];
@@ -3676,6 +3791,12 @@ function 割当結果を作成_(ss) {
 
         // アンカー：EV or 固定（時間確定）
         if (isEv || (timeType === '固定' && s != null && e != null && e > s)) {
+          if (s != null && e != null && e > s) anchors.push({ idx: rIdx, s: s, e: e });
+          return;
+        }
+
+        // 2名体制の行はアンカーとして扱う（ルート最適化で並べ替えない）
+        if (coupledPlacedSet[rIdx]) {
           if (s != null && e != null && e > s) anchors.push({ idx: rIdx, s: s, e: e });
           return;
         }
@@ -3772,6 +3893,9 @@ function 割当結果を作成_(ss) {
 
   // Level3距離最適化を実行
   applyLevel3RouteOptimizeSafe_();
+
+  // --- Level 3最適化後の2名体制ペア同期（最終同期） ---
+  syncCoupledVisitTimes_(resultRows, coupledVisitMap, staffDateMap, tz);
 
   // ============================================================
   // 出力前に「時刻セル」をシリアル(0〜1)へ正規化（型混在対策）
