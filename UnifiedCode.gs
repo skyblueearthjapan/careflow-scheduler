@@ -2470,6 +2470,12 @@ function 割当結果を作成_(ss) {
   function getAssignCount(staffId, dateStr) { return assignCountMap[staffId + '|' + dateStr] || 0; }
   function incAssignCount(staffId, dateStr) { var k = staffId + '|' + dateStr; assignCountMap[k] = (assignCountMap[k] || 0) + 1; }
 
+  function getSoftCap_(staff) {
+    if (staff.allocPref === '多め') return staff.maxPerDay;
+    if (staff.allocPref === '少なめ') return Math.max(1, staff.maxPerDay - 2);
+    return Math.max(1, staff.maxPerDay - 1); // 均等
+  }
+
   var patientWeekCount = {};
   function getPatientWeekCount(pid, staffId) { return patientWeekCount[pid + '|' + staffId] || 0; }
   function incPatientWeekCount(pid, staffId) { var k = pid + '|' + staffId; patientWeekCount[k] = (patientWeekCount[k] || 0) + 1; }
@@ -2696,7 +2702,7 @@ function 割当結果を作成_(ss) {
         }
       }
       var count = getAssignCount(st.id, dateStr);
-      if (count >= st.maxPerDay) return false;
+      if (count >= getSoftCap_(st)) return false;
 
       // スタッフ個別変更リクエストによる制限チェック
       if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) {
@@ -2767,7 +2773,7 @@ function 割当結果を作成_(ss) {
             }
           }
           var dayCount = getAssignCount(st.id, dateStr);
-          if (dayCount >= st.maxPerDay) { debugExcludeReasons[st.id] = 'maxPerDay'; return; }
+          if (dayCount >= getSoftCap_(st)) { debugExcludeReasons[st.id] = 'softCap'; return; }
 
           // スタッフ個別変更リクエストによる制限チェック
           if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) { debugExcludeReasons[st.id] = 'staffAvailability'; return; }
@@ -2775,15 +2781,11 @@ function 割当結果を作成_(ss) {
           var distKm = calcDistanceKm(plat, plng, st.lat, st.lng);
           var thisPatientCount = getPatientWeekCount(pid, st.id);
 
-          // ★割当量設定による調整：多め→優先（-2）、少なめ→後回し（+2）、均等→調整なし
-          var allocOffset = st.allocPref === '多め' ? -2 : (st.allocPref === '少なめ' ? 2 : 0);
-          var adjustedDayCount = dayCount + allocOffset;
-
           // ★ローテーション優先時: 今週既にこの患者に割り当てられたスタッフは候補から除外
           // ただし、除外すると候補がいなくなる場合に備えて、別リストにも保持
           // ★追加：動的に追跡した直前割当スタッフかどうかのフラグ
           var isDynamicPrev = (contPref === 'ローテーション優先' && dynamicPrevSid && st.id === dynamicPrevSid);
-          candidates.push({ staff: st, dayCount: dayCount, adjustedDayCount: adjustedDayCount, patientCount: thisPatientCount,
+          candidates.push({ staff: st, dayCount: dayCount, adjustedDayCount: dayCount, patientCount: thisPatientCount,
                            distKm: distKm, distScore: distToScore(distKm), samePatientToday: false,
                            assignedThisWeek: thisPatientCount > 0, isDynamicPrev: isDynamicPrev });
         });
@@ -2884,11 +2886,8 @@ function 割当結果を作成_(ss) {
 
           // ★追加：動的に追跡した直前割当スタッフかどうかのフラグ
           var isDynamicPrevFb = (contPref === 'ローテーション優先' && dynamicPrevSid && st.id === dynamicPrevSid);
-          // ★割当量設定による調整：多め→優先（-2）、少なめ→後回し（+2）、均等→調整なし
           var dayCountFb = getAssignCount(st.id, dateStr);
-          var allocOffsetFb = st.allocPref === '多め' ? -2 : (st.allocPref === '少なめ' ? 2 : 0);
-          var adjustedDayCountFb = dayCountFb + allocOffsetFb;
-          var candidateObj = { staff: st, dayCount: dayCountFb, adjustedDayCount: adjustedDayCountFb, patientCount: getPatientWeekCount(pid, st.id), isDynamicPrev: isDynamicPrevFb };
+          var candidateObj = { staff: st, dayCount: dayCountFb, adjustedDayCount: dayCountFb, patientCount: getPatientWeekCount(pid, st.id), isDynamicPrev: isDynamicPrevFb };
 
           // ★maxPerDay制限チェック：上限に達していなければfallbackに追加、達していれば除外
           if (dayCountFb < st.maxPerDay) {
@@ -3462,6 +3461,10 @@ function 割当結果を作成_(ss) {
         }
         if (isDayOff) continue;
 
+        // 4) maxPerDay制限チェック
+        var staffCount = getAssignCount(staff.id, dateStr);
+        if (staffCount >= staff.maxPerDay) continue;
+
         // 3) 距離でスコア（近い順）
         var distScore = 9999;
         if (pLat != null && pLng != null && staff.lat != null && staff.lng != null) {
@@ -3617,6 +3620,7 @@ function 割当結果を作成_(ss) {
           if (!staffDateMap[newKey]) staffDateMap[newKey] = [];
           staffDateMap[newKey].push(uIdx);
 
+          incAssignCount(cStaffId, uDateStr);
           reinsertedCount++;
           break;
         }
