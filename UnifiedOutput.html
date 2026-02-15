@@ -1865,9 +1865,19 @@
     };
 
     function showAuditView() {
-      // 既に監査モードでデータがある場合は表示のみ
+      // 既に監査モードでデータがある場合: 対象週が変わっていなければスキップ
       if (isAuditMode && auditState.data) {
-        console.log('showAuditView: 既に監査モード、データあり');
+        var selectedWeekCheck = getSelectedWeekStart();
+        var currentAuditDate = document.getElementById('auditWeekStart').value;
+        if (selectedWeekCheck && selectedWeekCheck !== currentAuditDate) {
+          // 対象週が変わった → 再同期して再読み込み
+          document.getElementById('auditWeekStart').value = selectedWeekCheck;
+          auditState.data = null;
+          auditRetryCount = 0;
+          loadAuditData();
+        } else {
+          console.log('showAuditView: 既に監査モード、データあり（週変更なし）');
+        }
         return;
       }
 
@@ -1889,9 +1899,13 @@
       // ステータスバー更新
       setStatus('', '監査ビュー');
 
-      // 週開始日を初期化（今週の月曜）- 初回のみ
+      // 週開始日を対象週セレクタに同期（未選択時は今週の月曜）
       var dateInput = document.getElementById('auditWeekStart');
-      if (!dateInput.value) {
+      var selectedWeek = getSelectedWeekStart();
+      if (selectedWeek) {
+        // jobTargetWeek の値 (YYYY-MM-DD) をそのまま設定
+        dateInput.value = selectedWeek;
+      } else if (!dateInput.value) {
         var today = new Date();
         var day = today.getDay();
         var diff = (day === 0) ? -6 : 1 - day;
