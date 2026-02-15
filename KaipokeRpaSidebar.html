@@ -696,6 +696,22 @@
               updateButtonStates();
               renderCompletedTags();
             }).markApplyCompleted(weekStart);
+
+            // 適用後検証の提案
+            if (confirm('差分適用が完了しました。\n\nカイポケからCSVを再出力して、適用結果を検証しますか？\n（検証にはCSV再エクスポートのため数分かかります）')) {
+              showLoading('適用後検証中（CSV再出力 + 照合）...');
+              showResult('カイポケからCSVを再出力しています...');
+              google.script.run
+                .withSuccessHandler(function(vResult) {
+                  hideLoading();
+                  showResult(vResult.message, !vResult.success);
+                })
+                .withFailureHandler(function(vError) {
+                  hideLoading();
+                  showResult('検証エラー: ' + vError.message, true);
+                })
+                .runPostApplyVerification(getSelectedMonth());
+            }
           }
         })
         .withFailureHandler(function(error) {

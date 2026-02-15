@@ -512,6 +512,13 @@ function runApply(month, weekStart) {
         console.error('[runApply] writeApplyResultToSheet error:', sheetErr);
       }
 
+      // 適用結果をキャッシュに保存（適用後検証で使用）
+      try {
+        storeApplyResult_(r);
+      } catch (cacheErr) {
+        console.error('[runApply] storeApplyResult_ error:', cacheErr);
+      }
+
       // 適用完了後、検証フラグをクリア
       props.setProperty('diff_verified', 'false');
       props.deleteProperty('diff_week_start');
@@ -1696,4 +1703,380 @@ function showKaipokeRpaSidebar() {
     .setTitle('カイポケ自動化')
     .setWidth(350);
   SpreadsheetApp.getUi().showSidebar(html);
+}
+
+// ==========================================
+// 適用後検証（ステップ6・7）
+// ==========================================
+
+/**
+ * 適用後検証メインフロー
+ * runApply()完了後にUIから呼ばれる
+ * @param {string} month - 対象月（YYYY-MM形式）
+ * @returns {Object} { success, message, verifyResults }
+ */
+function runPostApplyVerification(month) {
+  var targetMonth = month || getCurrentMonth();
+
+  // 1) 保存済みの修正データを取得
+  var corrections = getStoredCorrections_();
+  if (!corrections || corrections.length === 0) {
+    return { success: false, message: 'エラー: 修正データが見つかりません。' };
+  }
+
+  // 2) /api/export を呼び出して適用後CSVを取得
+  console.log('[postApplyVerify] Exporting post-apply CSV for month=' + targetMonth);
+  var url = API_BASE_URL + "/api/export";
+  var payload = { "month": targetMonth };
+  var options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(payload),
+    "muteHttpExceptions": true
+  };
+
+  var csvContent;
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    var statusCode = response.getResponseCode();
+    var result = JSON.parse(response.getContentText());
+
+    if (statusCode !== 200 || !result.success) {
+      return { success: false, message: 'CSV再出力エラー: ' + (result.error || result.message || '不明なエラー') };
+    }
+    csvContent = result.result.csv_content;
+    if (!csvContent) {
+      return { success: false, message: 'CSV再出力エラー: csv_contentが空です' };
+    }
+  } catch (e) {
+    return { success: false, message: 'サーバー接続エラー: ' + e.message };
+  }
+
+  // 3) Google Driveに保存
+  try {
+    var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    var monthStr = targetMonth.replace("-", "");
+    var fileName = "kaipoke_current_" + monthStr + "_post_apply.csv";
+
+    var existingFiles = folder.getFilesByName(fileName);
+    while (existingFiles.hasNext()) {
+      existingFiles.next().setTrashed(true);
+    }
+    var bom = "\uFEFF";
+    var blob = Utilities.newBlob(bom + csvContent, "text/csv", fileName);
+    folder.createFile(blob);
+    console.log('[postApplyVerify] Saved post-apply CSV: ' + fileName);
+  } catch (e) {
+    console.error('[postApplyVerify] Drive save error:', e);
+  }
+
+  // 4) 適用結果を取得（_apply_result_cacheから）
+  var applyResult = getStoredApplyResult_();
+
+  // 5) 照合
+  var verifyResults = verifyApplyResult(corrections, csvContent, applyResult);
+
+  // 6) 検証結果シートに書き込み
+  try {
+    writeVerificationResultToSheet(verifyResults);
+  } catch (e) {
+    console.error('[postApplyVerify] writeVerificationResultToSheet error:', e);
+  }
+
+  // 7) サマリーメッセージ作成
+  var okCount = 0, failCount = 0, skipCount = 0;
+  for (var i = 0; i < verifyResults.length; i++) {
+    var v = verifyResults[i].verification;
+    if (v === 'OK') okCount++;
+    else if (v === 'FAIL') failCount++;
+    else skipCount++;
+  }
+
+  var msg = '【適用後検証完了】\n\n' +
+            '合計: ' + verifyResults.length + '件\n' +
+            'OK: ' + okCount + '件\n' +
+            'FAIL: ' + failCount + '件\n' +
+            'スキップ: ' + skipCount + '件';
+
+  if (failCount > 0) {
+    msg += '\n\n--- 不一致 ---';
+    for (var j = 0; j < verifyResults.length; j++) {
+      if (verifyResults[j].verification === 'FAIL') {
+        var c = verifyResults[j].correction;
+        msg += '\n  ' + (c.user_name || '') + ' ' + (c.date_to || c.date_from || '') + '日 ' + (c.action || '') + ' [' + (verifyResults[j].reason || '') + ']';
+      }
+    }
+    msg += '\n\n詳細は「検証結果」シートを確認してください。';
+  }
+
+  return {
+    success: true,
+    message: msg,
+    verifyResults: { total: verifyResults.length, ok: okCount, fail: failCount, skipped: skipCount }
+  };
+}
+
+/**
+ * 修正データ配列と適用後CSVを照合
+ * @param {Array} corrections - 修正データ配列
+ * @param {string} postApplyCsvContent - 適用後CSVテキスト
+ * @param {Object} applyResult - 適用結果（details含む）
+ * @returns {Array} 検証結果配列
+ */
+function verifyApplyResult(corrections, postApplyCsvContent, applyResult) {
+  var csvRows = Utilities.parseCsv(postApplyCsvContent);
+  // ヘッダー行を除外してデータ行のみ
+  var postData = [];
+  for (var i = 1; i < csvRows.length; i++) {
+    if (csvRows[i].length >= 16) {
+      postData.push(csvRows[i]);
+    }
+  }
+
+  // applyResult.details をマップ化（user+date+action → status）
+  var detailMap = {};
+  var details = (applyResult && applyResult.details) ? applyResult.details : [];
+  for (var d = 0; d < details.length; d++) {
+    var det = details[d];
+    var key = (det.user || det.staff || '') + '|' + (det.date || '') + '|' + (det.action || '');
+    detailMap[key] = det.status || '';
+  }
+
+  var results = [];
+  for (var c = 0; c < corrections.length; c++) {
+    var corr = corrections[c];
+    var action = corr.action || '';
+
+    // event_add はCSV照合不可 → 適用ステータスを信頼
+    if (action === 'event_add') {
+      var evKey = (corr.staff_name || corr.user_name || '') + '|' + (corr.date_to || '') + '|event_add';
+      var evStatus = detailMap[evKey] || 'unknown';
+      results.push({
+        correction: corr,
+        verification: (evStatus === 'success') ? 'OK' : 'skipped',
+        reason: 'イベント: 適用ステータス=' + evStatus
+      });
+      continue;
+    }
+
+    // 適用時に失敗/スキップだったものは検証もスキップ
+    var corrKey = (corr.user_name || '') + '|' + (corr.date_to || corr.date_from || '') + '|' + action;
+    var applyStatus = detailMap[corrKey] || '';
+    if (applyStatus === 'failed' || applyStatus === 'error' || applyStatus === 'skipped') {
+      results.push({
+        correction: corr,
+        verification: 'skipped',
+        reason: '適用時ステータス: ' + applyStatus
+      });
+      continue;
+    }
+
+    // CSV照合
+    var vResult = verifySingleCorrection(corr, postData);
+    results.push(vResult);
+  }
+
+  return results;
+}
+
+/**
+ * 1件の修正がCSVに反映されているか検証
+ * CSVカラム: 職員名１(0), 職種１(1), 職員名２(2), 職種２(3), 同行２(4),
+ *            職員名３(5), 職種３(6), 同行３(7), 事業所名(8),
+ *            日付(9), 曜日(10), 利用者(11), 業務種別(12), サービス内容(13),
+ *            開始時間(14), 終了時間(15), 提供時間（分）(16), 備考(17)
+ * @param {Object} correction - 修正データ1件
+ * @param {Array} postData - CSVデータ行配列（ヘッダー除外済み）
+ * @returns {Object} { correction, verification, reason }
+ */
+function verifySingleCorrection(correction, postData) {
+  var action = correction.action || '';
+  var userName = (correction.user_name || '').trim();
+
+  if (action === 'delete') {
+    var dateFrom = String(correction.date_from || '').trim();
+    var startFrom = (correction.start_time_from || '').trim();
+    // 削除対象がCSVに存在しないことを確認
+    var found = false;
+    for (var i = 0; i < postData.length; i++) {
+      var row = postData[i];
+      var csvUser = (row[11] || '').trim();
+      var csvDate = (row[9] || '').trim();
+      var csvStart = (row[14] || '').trim();
+      if (csvUser === userName && csvDate === dateFrom && csvStart === startFrom) {
+        found = true;
+        break;
+      }
+    }
+    return {
+      correction: correction,
+      verification: found ? 'FAIL' : 'OK',
+      reason: found ? '削除対象がまだCSVに存在' : '削除確認OK'
+    };
+  }
+
+  if (action === 'add' || action === 'edit') {
+    var dateTo = String(correction.date_to || '').trim();
+    var startTo = (correction.start_time_to || '').trim();
+    var endTo = (correction.end_time_to || '').trim();
+    var matched = false;
+    for (var j = 0; j < postData.length; j++) {
+      var row2 = postData[j];
+      var csvUser2 = (row2[11] || '').trim();
+      var csvDate2 = (row2[9] || '').trim();
+      var csvStart2 = (row2[14] || '').trim();
+      var csvEnd2 = (row2[15] || '').trim();
+      if (csvUser2 === userName && csvDate2 === dateTo && csvStart2 === startTo && csvEnd2 === endTo) {
+        matched = true;
+        break;
+      }
+    }
+    return {
+      correction: correction,
+      verification: matched ? 'OK' : 'FAIL',
+      reason: matched ? (action === 'add' ? '追加確認OK' : '編集確認OK') : (action === 'add' ? '追加エントリがCSVに未反映' : '編集後エントリがCSVに未反映')
+    };
+  }
+
+  if (action === 'date_change') {
+    var dcDateFrom = String(correction.date_from || '').trim();
+    var dcStartFrom = (correction.start_time_from || '').trim();
+    var dcDateTo = String(correction.date_to || '').trim();
+    var dcStartTo = (correction.start_time_to || '').trim();
+    var dcEndTo = (correction.end_time_to || '').trim();
+    var oldExists = false;
+    var newExists = false;
+    for (var k = 0; k < postData.length; k++) {
+      var row3 = postData[k];
+      var csvUser3 = (row3[11] || '').trim();
+      var csvDate3 = (row3[9] || '').trim();
+      var csvStart3 = (row3[14] || '').trim();
+      var csvEnd3 = (row3[15] || '').trim();
+      if (csvUser3 === userName) {
+        if (csvDate3 === dcDateFrom && csvStart3 === dcStartFrom) oldExists = true;
+        if (csvDate3 === dcDateTo && csvStart3 === dcStartTo && csvEnd3 === dcEndTo) newExists = true;
+      }
+    }
+    var ok = newExists && !oldExists;
+    var reason = '';
+    if (ok) {
+      reason = '日付変更確認OK';
+    } else if (!newExists && oldExists) {
+      reason = '新日付にエントリなし、旧日付にまだ存在';
+    } else if (newExists && oldExists) {
+      reason = '旧日付のエントリがまだ存在';
+    } else {
+      reason = '新日付にエントリなし';
+    }
+    return {
+      correction: correction,
+      verification: ok ? 'OK' : 'FAIL',
+      reason: reason
+    };
+  }
+
+  // 未知のアクション
+  return {
+    correction: correction,
+    verification: 'skipped',
+    reason: '未対応アクション: ' + action
+  };
+}
+
+/**
+ * 検証結果を「検証結果」シートに書き込み
+ * @param {Array} verifyResults - 検証結果配列
+ */
+function writeVerificationResultToSheet(verifyResults) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('検証結果');
+  if (!sheet) {
+    sheet = ss.insertSheet('検証結果');
+  }
+  sheet.clear();
+
+  // ヘッダー（10列）
+  var headers = ['利用者', '日付(前)', '日付(後)', 'アクション', '業務種別',
+                  'サービス内容', '検証結果', '理由', '適用ステータス', 'タイムスタンプ'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4a86c8').setFontColor('#ffffff');
+
+  // サマリー行（2行目）
+  var okCount = 0, failCount = 0, skipCount = 0;
+  for (var s = 0; s < verifyResults.length; s++) {
+    var v = verifyResults[s].verification;
+    if (v === 'OK') okCount++;
+    else if (v === 'FAIL') failCount++;
+    else skipCount++;
+  }
+  var timestamp = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm:ss');
+  var summaryRow = [
+    '検証合計: ' + verifyResults.length + '件', '',
+    'OK: ' + okCount, '', 'FAIL: ' + failCount,
+    'スキップ: ' + skipCount, '', '', '', timestamp
+  ];
+  sheet.getRange(2, 1, 1, headers.length).setValues([summaryRow]);
+  sheet.getRange(2, 1, 1, headers.length).setFontWeight('bold').setBackground('#e2e3e5');
+
+  // 詳細データ（3行目～）
+  if (verifyResults.length > 0) {
+    var rows = [];
+    for (var i = 0; i < verifyResults.length; i++) {
+      var vr = verifyResults[i];
+      var c = vr.correction || {};
+      rows.push([
+        c.user_name || '',
+        c.date_from || '',
+        c.date_to || '',
+        c.action || '',
+        c.business_type || '',
+        c.service_content || '',
+        vr.verification || '',
+        vr.reason || '',
+        '',
+        timestamp
+      ]);
+    }
+    sheet.getRange(3, 1, rows.length, headers.length).setValues(rows);
+
+    // 色分け
+    var colorMap = { 'OK': '#d4edda', 'FAIL': '#f8d7da', 'skipped': '#fff3cd' };
+    for (var j = 0; j < rows.length; j++) {
+      var verResult = rows[j][6];
+      var color = colorMap[verResult] || '#ffffff';
+      sheet.getRange(3 + j, 1, 1, headers.length).setBackground(color);
+    }
+  }
+
+  // 列幅自動調整
+  for (var col = 1; col <= headers.length; col++) {
+    sheet.autoResizeColumn(col);
+  }
+}
+
+/**
+ * 適用結果を隠しシートに保存（検証時に参照するため）
+ * @param {Object} applyResult - 適用結果オブジェクト
+ */
+function storeApplyResult_(applyResult) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('_apply_result_cache');
+  if (!sheet) {
+    sheet = ss.insertSheet('_apply_result_cache');
+    sheet.hideSheet();
+  }
+  sheet.clear();
+  sheet.getRange(1, 1).setValue(JSON.stringify(applyResult));
+}
+
+/**
+ * 保存済みの適用結果を取得
+ * @returns {Object} 適用結果オブジェクト
+ */
+function getStoredApplyResult_() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('_apply_result_cache');
+  if (!sheet) return {};
+  var json = sheet.getRange(1, 1).getValue();
+  return json ? JSON.parse(json) : {};
 }

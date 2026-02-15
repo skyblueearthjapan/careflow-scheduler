@@ -3163,6 +3163,11 @@
                   kaipokeUpdateButtonStates();
                   kaipokeRenderCompletedTags();
                 }).markApplyCompleted(weekStart);
+
+                // 適用後検証の提案
+                if (confirm('差分適用が完了しました。\n\nカイポケからCSVを再出力して、適用結果を検証しますか？\n（検証にはCSV再エクスポートのため数分かかります）')) {
+                  kaipokeRunPostApplyVerification();
+                }
               }
             })
             .withFailureHandler(function(error) {
@@ -3176,6 +3181,22 @@
           alert('未割当チェックエラー: ' + error.message);
         })
         .getUnassignedWarning();
+    }
+
+    function kaipokeRunPostApplyVerification() {
+      kaipokeShowLoading('適用後検証中（CSV再出力 + 照合）...');
+      kaipokeShowResult('カイポケからCSVを再出力しています。完了までお待ちください...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          kaipokeHideLoading();
+          kaipokeShowResult(result.message, !result.success);
+        })
+        .withFailureHandler(function(error) {
+          kaipokeHideLoading();
+          kaipokeShowResult('検証エラー: ' + error.message, true);
+        })
+        .runPostApplyVerification(kaipokeGetMonth());
     }
 
     function kaipokeOpenEmergencyStop() {
