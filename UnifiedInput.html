@@ -50,7 +50,7 @@
     .header-badge { font-size: 11px; background: var(--color-orange); padding: 4px 10px; border-radius: 12px; font-weight: 500; }
     .header-status { font-size: 12px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 12px; }
     .main-container { flex: 1; display: flex; overflow: hidden; }
-    .left-panel { flex: 1; padding: 16px; overflow: hidden; background: var(--color-white); display: flex; flex-direction: column; min-height: 0; }
+    .left-panel { flex: 1; padding: 16px; overflow: auto; background: var(--color-white); display: flex; flex-direction: column; }
     .status-bar {
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 12px; padding: 10px 14px;
@@ -66,18 +66,13 @@
     }
     .refresh-btn:hover { background: var(--color-green-dark); }
     .refresh-btn:disabled { background: var(--color-disabled); cursor: not-allowed; }
-    #mainContent { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-    #normalTableArea, #specialWeekArea { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    #mainContent { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    #normalTableArea, #specialWeekArea { flex: 1; display: flex; flex-direction: column; }
     .table-container {
       flex: 1;
-      min-height: 0; /* flexbox内で縮小を許可 */
-      max-height: calc(100vh - 180px); /* 明示的な高さ制限 */
       overflow: scroll; /* 縦横スクロールバーを常に表示 */
       border: 1px solid var(--color-green-light);
       border-radius: 8px;
-      /* Firefox用スクロールバー常時表示 */
-      scrollbar-width: auto;
-      scrollbar-color: var(--color-green) #f1f1f1;
     }
     /* スクロールバーのスタイル（常時表示） */
     .table-container::-webkit-scrollbar {
@@ -928,7 +923,7 @@
       html += '<div style="background:white;border-radius:4px;border:1px solid #ddd;">';
       html += '<div style="padding:8px 12px;background:#7b1fa2;color:white;font-weight:bold;font-size:13px;">ヘッダ一覧（患者×週単位）' +
         '<span style="font-weight:normal;margin-left:8px;font-size:11px;">クリックで明細をフィルタ</span></div>';
-      html += '<div class="table-container" style="max-height:250px;overflow:scroll;">';
+      html += '<div class="table-container">';
       html += '<table class="data-table" id="swHeaderTable"><thead><tr>';
       html += '<th style="width:30px;"></th><th>ID</th><th>患者ID</th><th>患者名</th><th>モード</th><th>個別変更扱い</th><th>理由</th>';
       html += '</tr></thead><tbody>';
@@ -956,7 +951,7 @@
       html += '<div style="padding:8px 12px;background:#1976d2;color:white;font-weight:bold;font-size:13px;">明細一覧（日付×時間）' +
         (selectedId ? '<span style="font-weight:normal;margin-left:8px;font-size:11px;">フィルタ中: ' + selectedId + '</span>' : '') +
         '<button onclick="clearSpecialWeekHeaderFilter()" style="margin-left:12px;padding:2px 8px;font-size:10px;cursor:pointer;">全表示</button></div>';
-      html += '<div class="table-container" style="max-height:300px;overflow:scroll;">';
+      html += '<div class="table-container">';
       html += '<table class="data-table" id="swDetailTable"><thead><tr>';
       html += '<th>ヘッダID</th><th>患者名</th><th>日付</th><th>行ラベル</th><th>時間タイプ</th><th>開始</th><th>終了</th><th>希望最早</th><th>希望最遅</th><th>サービス時間</th><th>スタッフ数</th><th>備考</th><th>個別変更扱い</th>';
       html += '</tr></thead><tbody>';
@@ -1081,26 +1076,6 @@
       document.getElementById('dataTable').innerHTML = '<thead>' + headerHtml + '</thead><tbody>' + rowsHtml + '</tbody>';
       attachTableEvents();
 
-      // スクロールバーの再計算を強制（タブ切り替え後の表示問題対策）
-      forceScrollbarRecalc();
-    }
-
-    // スクロールバー再計算ヘルパー関数
-    function forceScrollbarRecalc() {
-      var tableContainer = document.querySelector('#normalTableArea .table-container');
-      if (!tableContainer) return;
-
-      // requestAnimationFrameで描画後に実行
-      requestAnimationFrame(function() {
-        // overflowを一時的にhiddenにしてからscrollに戻す
-        tableContainer.style.overflow = 'hidden';
-        // 次のフレームで復元
-        requestAnimationFrame(function() {
-          tableContainer.style.overflow = 'scroll';
-          // 念のためスクロール位置をリセット
-          tableContainer.scrollLeft = tableContainer.scrollLeft;
-        });
-      });
     }
 
     function formatCellDisplay(value, headerName) {
