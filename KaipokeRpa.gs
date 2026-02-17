@@ -106,6 +106,7 @@ function emergencyStop() {
 // ==========================================
 function runExpand(month) {
   var url = API_BASE_URL + "/api/expand";
+  var statusUrl = API_BASE_URL + "/api/status";
 
   var payload = {
     "month": month || getCurrentMonth()
@@ -115,42 +116,75 @@ function runExpand(month) {
     "method": "post",
     "contentType": "application/json",
     "payload": JSON.stringify(payload),
-    "muteHttpExceptions": true
+    "muteHttpExceptions": true  // 524でも例外にしない
   };
 
+  // 1) expand リクエスト送信
+  var result = null;
   try {
     var response = UrlFetchApp.fetch(url, options);
     var statusCode = response.getResponseCode();
-    var result = JSON.parse(response.getContentText());
 
-    if (statusCode === 200 && result.success) {
-      var r = result.result;
-      return {
-        "success": true,
-        "message": "展開完了!\n" +
-                   "成功: " + r.success + "件\n" +
-                   "スキップ: " + r.skipped + "件\n" +
-                   "失敗: " + r.failed + "件\n" +
-                   "合計: " + r.total + "件",
-        "data": r
-      };
-    } else if (statusCode === 409) {
+    if (statusCode === 409) {
+      var errBody = JSON.parse(response.getContentText());
       return {
         "success": false,
-        "message": "エラー: " + result.error
-      };
-    } else {
-      return {
-        "success": false,
-        "message": "エラー: " + (result.error || "不明なエラー")
+        "message": "エラー: " + errBody.error
       };
     }
+
+    result = JSON.parse(response.getContentText());
   } catch (e) {
+    // 524タイムアウト（Cloudflare）またはJSONパースエラー
+    // → サーバー側は処理継続中なのでポーリングで待つ
+    console.log('[runExpand] レスポンスタイムアウト（524想定）。サーバー側の完了を待ちます... error=' + e.message);
+    result = null;
+  }
+
+  // 2) 正常レスポンスが得られた場合はそのまま返す
+  if (result && result.success) {
+    var r = result.result;
     return {
-      "success": false,
-      "message": "サーバー接続エラー: " + e.message
+      "success": true,
+      "message": "展開完了!\n" +
+                 "成功: " + r.success + "件\n" +
+                 "スキップ: " + r.skipped + "件\n" +
+                 "失敗: " + r.failed + "件\n" +
+                 "合計: " + r.total + "件",
+      "data": r
     };
   }
+
+  // 3) 正常レスポンスが得られなかった場合、/api/status をポーリングで完了を待つ
+  console.log('[runExpand] Polling /api/status for completion...');
+  var maxRetries = 40; // 最大40回 × 15秒 = 10分
+  for (var i = 0; i < maxRetries; i++) {
+    Utilities.sleep(15000); // 15秒待機
+
+    try {
+      var statusRes = UrlFetchApp.fetch(statusUrl, { "muteHttpExceptions": true });
+      var status = JSON.parse(statusRes.getContentText());
+
+      // current_task.running が false になったら完了
+      if (!status.current_task || !status.current_task.running) {
+        console.log('[runExpand] 展開完了（サーバー確認済み） poll #' + (i + 1));
+        return {
+          "success": true,
+          "message": "展開完了!（サーバー側で正常終了）\n\n※ Cloudflareタイムアウトにより詳細結果は取得できませんでした。\nVPSログで結果を確認してください。"
+        };
+      }
+      console.log('[runExpand] 実行中... (' + (i + 1) + '/' + maxRetries + ')');
+    } catch (pollError) {
+      console.error('[runExpand] ステータス確認エラー:', pollError.message);
+      // ネットワークエラーは無視して次のポーリングへ
+    }
+  }
+
+  // タイムアウト
+  return {
+    "success": false,
+    "message": "タイムアウト: 展開の完了確認が10分以内に完了しませんでした。\nVPSサーバーの状態を確認してください。"
+  };
 }
 
 // ==========================================
