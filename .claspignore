@@ -1,0 +1,19 @@
+# Git
+.git/**
+.gitignore
+
+# clasp
+.clasp.json
+.claspignore
+
+# Docs / screenshots
+docs/**
+スクショ／相談/**
+
+# Node
+node_modules/**
+package.json
+package-lock.json
+
+# Other
+**/*.md
