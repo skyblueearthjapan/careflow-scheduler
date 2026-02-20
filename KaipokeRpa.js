@@ -556,7 +556,7 @@ function runApply(month, weekStart) {
       };
     }
 
-    // 2) /api/apply/result をポーリング（10秒間隔で最大60回 = 10分）
+    // 2) /api/apply/result をポーリング（進捗ベースのタイムアウト）
     console.log('[runApply] Polling for result...');
     var pollUrl = API_BASE_URL + "/api/apply/result";
     var pollOptions = {
@@ -564,32 +564,65 @@ function runApply(month, weekStart) {
       "muteHttpExceptions": true
     };
 
+    var POLL_INTERVAL_SEC = 15;
+    var STALE_TIMEOUT_SEC = 5 * 60;      // 進捗停滞タイムアウト（5分）
+    var ABSOLUTE_TIMEOUT_SEC = 30 * 60;   // 絶対タイムアウト（30分）
+
+    var pollStartTime = new Date().getTime();
+    var lastProcessed = -1;
+    var lastProgressTime = new Date().getTime();
+
     var applyResult = null;
-    for (var poll = 0; poll < 60; poll++) {
-      Utilities.sleep(10000); // 10秒待機
+    while (true) {
+      Utilities.sleep(POLL_INTERVAL_SEC * 1000);
+
+      var elapsed = (new Date().getTime() - pollStartTime) / 1000;
+
+      // 絶対タイムアウト（30分）
+      if (elapsed > ABSOLUTE_TIMEOUT_SEC) {
+        return {
+          "success": false,
+          "message": "タイムアウト: 適用処理が30分以内に完了しませんでした。\nサーバー側で処理は継続中の可能性があります。VPSサーバーの状態を確認してください。"
+        };
+      }
+
       try {
         var pollResp = UrlFetchApp.fetch(pollUrl, pollOptions);
-        var pollStatus = pollResp.getResponseCode();
         var pollData = JSON.parse(pollResp.getContentText());
 
-        console.log('[runApply] poll #' + (poll + 1) + ' status=' + (pollData.status || 'unknown'));
+        console.log('[runApply] poll elapsed=' + Math.round(elapsed) + 's status=' + (pollData.status || 'unknown'));
 
         if (pollData.status === 'completed' || pollData.status === 'error') {
           applyResult = pollData;
           break;
         }
-        // 'running' or 'pending' → 継続ポーリング
+
+        // 実行中 — 進捗を確認
+        if (pollData.status === 'running' && pollData.progress) {
+          var currentProcessed = pollData.progress.processed || 0;
+
+          if (currentProcessed > lastProcessed) {
+            lastProcessed = currentProcessed;
+            lastProgressTime = new Date().getTime();
+            console.log('[runApply] 進捗: ' + currentProcessed + '/' + pollData.progress.total +
+                        ' (' + pollData.progress.phase + ': ' + pollData.progress.current_name + ')');
+          }
+
+          // 進捗停滞チェック
+          var staleSec = (new Date().getTime() - lastProgressTime) / 1000;
+          if (staleSec > STALE_TIMEOUT_SEC) {
+            return {
+              "success": false,
+              "message": "タイムアウト: 進捗が" + Math.round(staleSec / 60) + "分間停滞しています。\n" +
+                         "最後の進捗: " + lastProcessed + "/" + (pollData.progress.total || '?') + "件\n" +
+                         "サーバーの状態を確認してください。"
+            };
+          }
+        }
       } catch (pollErr) {
         console.error('[runApply] poll error:', pollErr);
         // ネットワークエラーは無視して次のポーリングへ
       }
-    }
-
-    if (!applyResult) {
-      return {
-        "success": false,
-        "message": "タイムアウト: 適用処理が10分以内に完了しませんでした。\nVPSサーバーの状態を確認してください。"
-      };
     }
 
     if (applyResult.status === 'error') {
