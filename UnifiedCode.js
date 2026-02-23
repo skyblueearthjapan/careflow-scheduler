@@ -3122,6 +3122,7 @@ function 割当結果を作成_(ss) {
   }
 
   // --- 2名体制ペアの時刻同期関数 ---
+  // 両スタッフの共通空き時間を探索して同期する（強化版）
   function syncCoupledVisitTimes_(resultRows, coupledVisitMap, staffDateMap, tz) {
     var EXTRA_BUFFER = 15; // 分
 
@@ -3140,47 +3141,172 @@ function 割当結果を作成_(ss) {
 
       if (s1 === s2 && e1 === e2) return; // 既に同期済み
 
-      // 同期先時刻を決定: 遅い方の開始時刻に合わせる
-      var targetStart = Math.max(s1, s2);
-      var svcMin = (e1 - s1) || (e2 - s2) || 60;
-      var targetEnd = targetStart + svcMin;
+      // サービス時間を計算
+      var svcMin = (e1 != null && s1 != null && e1 > s1) ? (e1 - s1) :
+                   (e2 != null && s2 != null && e2 > s2) ? (e2 - s2) :
+                   (Number(r1[10]) || Number(r2[10]) || 60);
 
-      // 時間窓制約チェック
-      var earliest1 = toMinutes(r1[12]) || 0;
-      var latest1 = toMinutes(r1[13]) || 1440;
-      var earliest2 = toMinutes(r2[12]) || 0;
-      var latest2 = toMinutes(r2[13]) || 1440;
-      var commonEarliest = Math.max(earliest1, earliest2);
-      var commonLatest = Math.min(latest1, latest2);
+      // 時間窓制約（timeType による補完込み）
+      function getTimeWindow(row) {
+        var earliest = toMinutes(row[12]);
+        var latest = toMinutes(row[13]);
+        var tt = String(row[11] || '').trim();
+        if (earliest == null || latest == null) {
+          if (tt === '午前')      { earliest = earliest != null ? earliest : 9 * 60;  latest = latest != null ? latest : 12 * 60; }
+          else if (tt === '午後') { earliest = earliest != null ? earliest : 13 * 60; latest = latest != null ? latest : 17 * 60; }
+          else if (tt === '終日') { earliest = earliest != null ? earliest : 9 * 60;  latest = latest != null ? latest : 18 * 60; }
+        }
+        return { earliest: earliest != null ? earliest : 0, latest: latest != null ? latest : 1440 };
+      }
 
-      if (targetStart < commonEarliest) targetStart = commonEarliest;
-      if (targetStart > commonLatest) targetStart = commonLatest;
-      targetEnd = targetStart + svcMin;
+      var tw1 = getTimeWindow(r1);
+      var tw2 = getTimeWindow(r2);
+      var commonEarliest = Math.max(tw1.earliest, tw2.earliest);
+      var commonLatest = Math.min(tw1.latest, tw2.latest);
 
-      // 両スタッフの当日スケジュールで衝突チェック
-      var canPlace = true;
-      [indices[0], indices[1]].forEach(function(rIdx) {
-        var row = resultRows[rIdx];
+      // 衍突チェック関数
+      function hasConflict(targetS, targetE) {
+        for (var ii = 0; ii < 2; ii++) {
+          var rIdx = indices[ii];
+          var row = resultRows[rIdx];
+          var staffId = row[3];
+          var dateStr = Utilities.formatDate(row[1], tz, 'yyyy/MM/dd');
+          var key = staffId + '|' + dateStr;
+          var dayIndices = staffDateMap[key] || [];
+          for (var j = 0; j < dayIndices.length; j++) {
+            var otherIdx = dayIndices[j];
+            if (otherIdx === indices[0] || otherIdx === indices[1]) continue;
+            var otherS = rowStartMin_(resultRows[otherIdx]);
+            var otherE = rowEndMin_(resultRows[otherIdx]);
+            if (otherS == null || otherE == null || otherE <= otherS) continue;
+            if (overlap_(targetS, targetE + EXTRA_BUFFER, otherS, otherE + EXTRA_BUFFER)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      // --- まず簡単なアプローチ: 遅い方の開始時刻に合わせる ---
+      var simpleTarget = Math.max(s1 || 0, s2 || 0);
+      if (simpleTarget < commonEarliest) simpleTarget = commonEarliest;
+      var simpleEnd = simpleTarget + svcMin;
+      if (simpleEnd > commonLatest) {
+        simpleTarget = commonLatest - svcMin;
+        simpleEnd = commonLatest;
+      }
+
+      if (simpleTarget >= commonEarliest && simpleEnd <= commonLatest && !hasConflict(simpleTarget, simpleEnd)) {
+        setRowTimeByMinutes_(r1, simpleTarget, simpleEnd);
+        setRowTimeByMinutes_(r2, simpleTarget, simpleEnd);
+        return;
+      }
+
+      // --- フォールバック: 両スタッフの共通空き時間を探索 ---
+
+      // 各スタッフの占有区間を収集（EXTRA_BUFFER 込みで拡張、ペア自身は除外）
+      function getExpandedOccupied(staffIdx) {
+        var row = resultRows[staffIdx];
         var staffId = row[3];
         var dateStr = Utilities.formatDate(row[1], tz, 'yyyy/MM/dd');
         var key = staffId + '|' + dateStr;
         var dayIndices = staffDateMap[key] || [];
+        var intervals = [];
 
-        dayIndices.forEach(function(otherIdx) {
-          if (otherIdx === indices[0] || otherIdx === indices[1]) return;
-          var otherS = rowStartMin_(resultRows[otherIdx]);
-          var otherE = rowEndMin_(resultRows[otherIdx]);
-          if (overlap_(targetStart, targetEnd + EXTRA_BUFFER, otherS, otherE + EXTRA_BUFFER)) {
-            canPlace = false;
+        for (var j = 0; j < dayIndices.length; j++) {
+          var otherIdx = dayIndices[j];
+          if (otherIdx === indices[0] || otherIdx === indices[1]) continue;
+          var os = rowStartMin_(resultRows[otherIdx]);
+          var oe = rowEndMin_(resultRows[otherIdx]);
+          if (os != null && oe != null && oe > os) {
+            intervals.push({ start: os - EXTRA_BUFFER, end: oe + EXTRA_BUFFER });
           }
-        });
-      });
+        }
 
-      if (canPlace) {
-        setRowTimeByMinutes_(r1, targetStart, targetEnd);
-        setRowTimeByMinutes_(r2, targetStart, targetEnd);
-      } else {
-        // フォールバック: 備考に警告を追加
+        // スタッフ制限（不可区間）も追加
+        var blocked = getStaffBlockedIntervals_(staffId, dateStr);
+        for (var k = 0; k < blocked.length; k++) {
+          intervals.push(blocked[k]);
+        }
+
+        // ソート＆マージ
+        intervals.sort(function(a, b) { return a.start - b.start; });
+        var merged = [];
+        for (var m = 0; m < intervals.length; m++) {
+          if (merged.length > 0 && intervals[m].start <= merged[merged.length - 1].end) {
+            merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, intervals[m].end);
+          } else {
+            merged.push({ start: intervals[m].start, end: intervals[m].end });
+          }
+        }
+        return merged;
+      }
+
+      // 占有区間の雙間（空き時間）を計算
+      function computeGaps(occupied, windowStart, windowEnd) {
+        var gaps = [];
+        var cursor = windowStart;
+        for (var j = 0; j < occupied.length; j++) {
+          if (occupied[j].end <= cursor) continue;
+          if (occupied[j].start > cursor) {
+            gaps.push({ s: cursor, e: occupied[j].start });
+          }
+          cursor = Math.max(cursor, occupied[j].end);
+        }
+        if (cursor < windowEnd) {
+          gaps.push({ s: cursor, e: windowEnd });
+        }
+        return gaps;
+      }
+
+      // 2つのgapリストの共通部分（交差）を計算
+      function intersectGaps(gaps1, gaps2) {
+        var result = [];
+        var i = 0, j = 0;
+        while (i < gaps1.length && j < gaps2.length) {
+          var s = Math.max(gaps1[i].s, gaps2[j].s);
+          var e = Math.min(gaps1[i].e, gaps2[j].e);
+          if (s < e) result.push({ s: s, e: e });
+          if (gaps1[i].e < gaps2[j].e) i++;
+          else j++;
+        }
+        return result;
+      }
+
+      // スタッフのシフト時間帯を取得
+      var shift1 = getStaffShift_(r1[3]);
+      var shift2 = getStaffShift_(r2[3]);
+      var windowStart = Math.max(commonEarliest, shift1.shiftStartMin || 0, shift2.shiftStartMin || 0);
+      var windowEnd = Math.min(commonLatest, shift1.shiftEndMin || 1440, shift2.shiftEndMin || 1440);
+
+      if (windowEnd - windowStart < svcMin) {
+        // 時間窓が狭すぎて配置不可
+        r1[14] = (r1[14] || '') + ' [時刻同期不可:時間窓不足]';
+        r2[14] = (r2[14] || '') + ' [時刻同期不可:時間窓不足]';
+        return;
+      }
+
+      var occ1 = getExpandedOccupied(indices[0]);
+      var occ2 = getExpandedOccupied(indices[1]);
+      var gaps1 = computeGaps(occ1, windowStart, windowEnd);
+      var gaps2 = computeGaps(occ2, windowStart, windowEnd);
+      var commonGaps = intersectGaps(gaps1, gaps2);
+
+      // 共通空き時間から配置可能な最初のスロットを探す
+      var placed = false;
+      for (var g = 0; g < commonGaps.length; g++) {
+        var gap = commonGaps[g];
+        var candidateStart = Math.max(gap.s, commonEarliest);
+        var candidateEnd = candidateStart + svcMin;
+        if (candidateEnd <= gap.e && candidateEnd <= commonLatest) {
+          setRowTimeByMinutes_(r1, candidateStart, candidateEnd);
+          setRowTimeByMinutes_(r2, candidateStart, candidateEnd);
+          placed = true;
+          break;
+        }
+      }
+
+      if (!placed) {
         r1[14] = (r1[14] || '') + ' [時刻同期不可:要手動調整]';
         r2[14] = (r2[14] || '') + ' [時刻同期不可:要手動調整]';
       }
