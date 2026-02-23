@@ -3032,6 +3032,12 @@ function 割当結果を作成_(ss) {
     }
   });
 
+  // 2名体制の行インデックスセット（Phase D/G でアンカー扱いにするため）
+  var coupledIndexSet = {};
+  Object.keys(coupledVisitMap).forEach(function(baseId) {
+    coupledVisitMap[baseId].forEach(function(idx) { coupledIndexSet[idx] = true; });
+  });
+
   // ★移動距離計算専用：患者行のみ（イベントはpid空なので除外）
   var staffDateMapForMove = {};
   resultRows.forEach(function(r, i){
@@ -3215,6 +3221,12 @@ function 割当結果を作成_(ss) {
         return;
       }
 
+      // 2名体制の訪問はアンカーとして扱う（ペアの時刻同期を保護）
+      if (coupledIndexSet[rIdx] && s != null && e != null && e > s) {
+        anchors.push({ idx: rIdx, s: s, e: e, kind: 'COUPLED' });
+        return;
+      }
+
       // それ以外は可動として扱う
       flexes.push(rIdx);
     });
@@ -3266,6 +3278,50 @@ function 割当結果を作成_(ss) {
             rowF[4] = '未割当';
             rowF[14] = (rowF[14] || '') + ' / 固定同士衝突で未割当';
             unassignedList.push({ date: rowF[1], youbi: rowF[2], pid: rowF[5], pname: rowF[6], needStaff: 1, slot: 1, reason: '固定同士が衝突' });
+            continue;
+          }
+
+          // EV vs COUPLED: EV優先（COUPLEDを落とす）
+          if (prev.kind === 'EV' && cur.kind === 'COUPLED') {
+            var rowCC = resultRows[cur.idx];
+            rowCC[3] = '';
+            rowCC[4] = '未割当';
+            rowCC[14] = (rowCC[14] || '') + ' / アンカー衝突(EV優先で2名体制未割当)';
+            unassignedList.push({ date: rowCC[1], youbi: rowCC[2], pid: rowCC[5], pname: rowCC[6], needStaff: 1, slot: 1, reason: 'アンカー衝突(EV優先)' });
+            continue;
+          }
+          if (prev.kind === 'COUPLED' && cur.kind === 'EV') {
+            var rowCP = resultRows[prev.idx];
+            rowCP[3] = '';
+            rowCP[4] = '未割当';
+            rowCP[14] = (rowCP[14] || '') + ' / アンカー衝突(EV優先で2名体制未割当)';
+            unassignedList.push({ date: rowCP[1], youbi: rowCP[2], pid: rowCP[5], pname: rowCP[6], needStaff: 1, slot: 1, reason: 'アンカー衝突(EV優先)' });
+            cleaned[cleaned.length - 1] = cur;
+            continue;
+          }
+
+          // COUPLED vs FIX: COUPLED優先（FIXを落とす）
+          if (prev.kind === 'COUPLED' && cur.kind === 'FIX') {
+            var rowCF = resultRows[cur.idx];
+            rowCF[3] = '';
+            rowCF[4] = '未割当';
+            rowCF[14] = (rowCF[14] || '') + ' / 2名体制優先で未割当';
+            unassignedList.push({ date: rowCF[1], youbi: rowCF[2], pid: rowCF[5], pname: rowCF[6], needStaff: 1, slot: 1, reason: '2名体制と固定が衝突' });
+            continue;
+          }
+          if (prev.kind === 'FIX' && cur.kind === 'COUPLED') {
+            var rowFC = resultRows[prev.idx];
+            rowFC[3] = '';
+            rowFC[4] = '未割当';
+            rowFC[14] = (rowFC[14] || '') + ' / 2名体制優先で未割当';
+            unassignedList.push({ date: rowFC[1], youbi: rowFC[2], pid: rowFC[5], pname: rowFC[6], needStaff: 1, slot: 1, reason: '2名体制と固定が衝突' });
+            cleaned[cleaned.length - 1] = cur;
+            continue;
+          }
+
+          // COUPLED同士: 両方残す（同じ患者のペアは別スタッフなので正常）
+          if (prev.kind === 'COUPLED' && cur.kind === 'COUPLED') {
+            cleaned.push(cur);
             continue;
           }
 
@@ -3750,11 +3806,7 @@ function 割当結果を作成_(ss) {
       return route;
     }
 
-    // 2名体制の行はルート最適化の並べ替え対象外（アンカー化用セット）
-    var coupledPlacedSet = {};
-    Object.keys(coupledVisitMap).forEach(function(baseId) {
-      coupledVisitMap[baseId].forEach(function(idx) { coupledPlacedSet[idx] = true; });
-    });
+    // 2名体制の行はルート最適化の並べ替え対象外（coupledIndexSet を使用）
 
     // staffDateMap を使って「スタッフ×日」ごとに処理
     Object.keys(staffDateMap).forEach(function(key){
@@ -3800,7 +3852,7 @@ function 割当結果を作成_(ss) {
         }
 
         // 2名体制の行はアンカーとして扱う（ルート最適化で並べ替えない）
-        if (coupledPlacedSet[rIdx]) {
+        if (coupledIndexSet[rIdx]) {
           if (s != null && e != null && e > s) anchors.push({ idx: rIdx, s: s, e: e });
           return;
         }
