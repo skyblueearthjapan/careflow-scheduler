@@ -565,12 +565,14 @@ function runApply(month, weekStart) {
     };
 
     var POLL_INTERVAL_SEC = 15;
-    var STALE_TIMEOUT_SEC = 5 * 60;      // 進捗停滞タイムアウト（5分）
+    var STALE_TIMEOUT_SEC = 10 * 60;     // サーバー応答停滞タイムアウト（10分）
     var ABSOLUTE_TIMEOUT_SEC = 30 * 60;   // 絶対タイムアウト（30分）
 
     var pollStartTime = new Date().getTime();
     var lastProcessed = -1;
-    var lastProgressTime = new Date().getTime();
+    var lastPhase = '';
+    var lastUpdatedAt = '';
+    var lastActivityTime = new Date().getTime();  // サーバー側の更新を検知したら更新
 
     var applyResult = null;
     while (true) {
@@ -597,23 +599,42 @@ function runApply(month, weekStart) {
           break;
         }
 
-        // 実行中 — 進捗を確認
+        // 実行中 — サーバー側のアクティビティを確認
         if (pollData.status === 'running' && pollData.progress) {
           var currentProcessed = pollData.progress.processed || 0;
+          var currentPhase = pollData.progress.phase || '';
+          var currentUpdatedAt = pollData.progress.updated_at || '';
 
-          if (currentProcessed > lastProcessed) {
-            lastProcessed = currentProcessed;
-            lastProgressTime = new Date().getTime();
-            console.log('[runApply] 進捗: ' + currentProcessed + '/' + pollData.progress.total +
-                        ' (' + pollData.progress.phase + ': ' + pollData.progress.current_name + ')');
+          // サーバー側の updated_at が変わった → サーバーは生きている
+          // processed が増えた → 処理が進んでいる
+          // phase が変わった → フェーズ遷移があった
+          var serverAlive = (currentUpdatedAt && currentUpdatedAt !== lastUpdatedAt);
+          var progressMade = (currentProcessed > lastProcessed);
+          var phaseChanged = (currentPhase && currentPhase !== lastPhase);
+
+          if (serverAlive || progressMade || phaseChanged) {
+            lastActivityTime = new Date().getTime();
           }
 
-          // 進捗停滞チェック
-          var staleSec = (new Date().getTime() - lastProgressTime) / 1000;
+          if (progressMade) {
+            lastProcessed = currentProcessed;
+            console.log('[runApply] 進捗: ' + currentProcessed + '/' + pollData.progress.total +
+                        ' (' + currentPhase + ': ' + pollData.progress.current_name + ')');
+          } else if (phaseChanged) {
+            console.log('[runApply] フェーズ変更: ' + lastPhase + ' → ' + currentPhase);
+          } else if (serverAlive) {
+            console.log('[runApply] サーバー応答あり (updated_at=' + currentUpdatedAt + ')');
+          }
+
+          lastPhase = currentPhase;
+          lastUpdatedAt = currentUpdatedAt;
+
+          // 停滞チェック: サーバー側の応答が全く変化しない場合のみ
+          var staleSec = (new Date().getTime() - lastActivityTime) / 1000;
           if (staleSec > STALE_TIMEOUT_SEC) {
             return {
               "success": false,
-              "message": "タイムアウト: 進捗が" + Math.round(staleSec / 60) + "分間停滞しています。\n" +
+              "message": "タイムアウト: サーバーの応答が" + Math.round(staleSec / 60) + "分間変化しません。\n" +
                          "最後の進捗: " + lastProcessed + "/" + (pollData.progress.total || '?') + "件\n" +
                          "サーバーの状態を確認してください。"
             };
