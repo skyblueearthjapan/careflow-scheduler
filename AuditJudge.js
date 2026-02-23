@@ -459,8 +459,9 @@ function audit_analyzeConditions_(dataset, pid, dateStr, youbi) {
       });
     }
 
-    // 性別制限
-    if (master.sexLimit && master.sexLimit !== '指定なし' && master.sexLimit !== '-') {
+    // 性別制限（「選択肢なし」「指定なし」「-」「なし」は制限なしとして除外）
+    if (master.sexLimit && master.sexLimit !== '指定なし' && master.sexLimit !== '-'
+        && master.sexLimit !== '選択肢なし' && master.sexLimit !== 'なし') {
       conditions.push({
         category: AUDIT_CONDITION_CATEGORY.STAFF,
         source: 'MASTER',
