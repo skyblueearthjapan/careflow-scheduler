@@ -746,7 +746,7 @@
       if (currentSheetName === '特別訪問週間') {
         isSpecialWeekMode = true;
         document.getElementById('normalTableArea').style.display = 'none';
-        document.getElementById('specialWeekArea').style.display = 'block';
+        document.getElementById('specialWeekArea').style.display = 'flex';
         if (!specialWeekSheetState.weekMonday) {
           specialWeekSheetState.weekMonday = getMonday(new Date());
         }
@@ -775,8 +775,8 @@
       localStorage.setItem('unifiedInput_lastSheet', sheetName);
       resetState();
       restoreNormalStatusBar();
-      // エリア切り替え（固定DOM）
-      document.getElementById('normalTableArea').style.display = 'block';
+      // エリア切り替え（固定DOM）— flex を維持するため 'flex' を指定
+      document.getElementById('normalTableArea').style.display = 'flex';
       document.getElementById('specialWeekArea').style.display = 'none';
       loadSheet(sheetName);
     }
@@ -797,7 +797,7 @@
 
       // エリア切り替え（固定DOM - 通常テーブルを隠し、特別訪問週間エリアを表示）
       document.getElementById('normalTableArea').style.display = 'none';
-      document.getElementById('specialWeekArea').style.display = 'block';
+      document.getElementById('specialWeekArea').style.display = 'flex';
 
       // 週初期化
       if (!specialWeekSheetState.weekMonday) {
