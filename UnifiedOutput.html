@@ -3618,13 +3618,13 @@
       var month = kaipokeGetMonth();
       var check = kaipokeCheckExpandAllowed(month);
       if (!check.allowed) { alert('🔒 ' + check.reason); return; }
-      if (!confirm('月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）\n\n※ 非常停止パネルが自動で開きます')) return;
+      if (!confirm('月間スケジュールを展開しますか？\n（所要時間: 15分～20分）\n\n※ 非常停止パネルが自動で開きます')) return;
 
       // 長時間処理の開始前に非常停止ダイアログを自動表示
       // サイドパネルはフリーズするので、独立ダイアログで非常停止可能にする
       google.script.run.showEmergencyStopDialog();
 
-      kaipokeShowLoading('月間スケジュール展開中...\n（約2〜5分かかります）');
+      kaipokeShowLoading('月間スケジュール展開中...\n（15分～20分かかります）');
       kaipokeShowResult('処理開始...');
 
       google.script.run

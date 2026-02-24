@@ -601,9 +601,9 @@
       var month = getSelectedMonth();
       var check = checkExpandAllowed(month);
       if (!check.allowed) { alert('🔒 ' + check.reason); return; }
-      if (!confirm("月間スケジュールを展開しますか？\n（所要時間: 約2〜5分）")) return;
+      if (!confirm("月間スケジュールを展開しますか？\n（所要時間: 15分～20分）")) return;
 
-      showLoading("月間スケジュール展開中...\n（61名分、約2〜5分かかります）");
+      showLoading("月間スケジュール展開中...\n（61名分、15分～20分かかります）");
       showResult("処理開始...");
 
       google.script.run
