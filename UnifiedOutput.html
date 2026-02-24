@@ -3717,12 +3717,27 @@
       }
     }
 
+    // ================================================================
+    // 差分適用 — クライアントサイドポーリング
+    // ================================================================
+    // ポーリング状態変数
+    var applyPollTimer = null;       // setInterval ID
+    var applyPollStart = 0;          // ポーリング開始時刻 (ms)
+    var applyLastActivity = 0;       // 最後のサーバー更新検知時刻 (ms)
+    var applyLastUpdatedAt = '';      // サーバーの progress.updated_at
+    var applyLastProcessed = -1;     // 最後に検知した処理済み件数
+    var applyWeekStart = '';          // 保存用（finalizeApplyに渡す）
+    var applyPollErrorCount = 0;     // 連続エラーカウント
+    var APPLY_POLL_INTERVAL = 15000; // ポーリング間隔（15秒）
+    var APPLY_STALE_TIMEOUT = 10 * 60 * 1000;    // 停滞タイムアウト（10分）
+    var APPLY_ABSOLUTE_TIMEOUT = 60 * 60 * 1000;  // 絶対タイムアウト（60分）
+
     function kaipokeApply() {
       var weekStart = kaipokeGetWeekStart();
       if (!weekStart) { alert('対象週を選択してください'); return; }
       if (!kaipokeDiffVerified) { alert('先に「差分確認（プレビュー）」を実行し、検証を完了してください。'); return; }
       var check = kaipokeCheckApplyAllowed(weekStart);
-      if (!check.allowed) { alert('🔒 ' + check.reason); return; }
+      if (!check.allowed) { alert(check.reason); return; }
 
       // Step 1: 未割当職員チェック
       google.script.run
@@ -3734,38 +3749,26 @@
           // Step 2: 最終確認
           if (!confirm('差分をカイポケに適用しますか？\n\n※ この操作は取り消せません')) return;
 
-          // Step 3: 適用実行
-          kaipokeShowLoading('差分適用中...');
-          kaipokeShowResult('差分適用を開始しました。完了までお待ちください...');
+          // Step 3: startApply を呼び出し（即座に返る）
+          kaipokeShowLoading('差分適用を開始しています...');
+          kaipokeShowResult('差分適用を開始しています...');
 
           google.script.run
             .withSuccessHandler(function(result) {
-              kaipokeHideLoading();
-              kaipokeShowResult(result.message, !result.success);
-              kaipokeRefreshStatus();
               if (result.success) {
-                // 差分適用完了後、検証状態をリセット
-                kaipokeDiffVerified = false;
-                kaipokeUpdateApplyButton();
-                // 差分適用完了を自動記録
-                google.script.run.withSuccessHandler(function() {
-                  kaipokeInterlock.applyCompleted.push(weekStart);
-                  kaipokeUpdateButtonStates();
-                  kaipokeRenderCompletedTags();
-                }).markApplyCompleted(weekStart);
-
-                // 適用後検証の提案
-                if (confirm('差分適用が完了しました。\n\nカイポケからCSVを再出力して、適用結果を検証しますか？\n（検証にはCSV再エクスポートのため数分かかります）')) {
-                  kaipokeRunPostApplyVerification();
-                }
+                // 適用開始成功 → クライアントサイドポーリング開始
+                applyStartPolling_(weekStart);
+              } else {
+                // 適用開始失敗
+                kaipokeHideLoading();
+                kaipokeShowResult(result.message, true);
               }
             })
             .withFailureHandler(function(error) {
               kaipokeHideLoading();
-              kaipokeShowResult('エラー: ' + error.message, true);
-              kaipokeRefreshStatus();
+              kaipokeShowResult('適用開始エラー: ' + error.message, true);
             })
-            .runApply(kaipokeGetMonth(), weekStart);
+            .startApply(kaipokeGetMonth(), weekStart);
         })
         .withFailureHandler(function(error) {
           alert('未割当チェックエラー: ' + error.message);
@@ -3773,20 +3776,295 @@
         .getUnassignedWarning();
     }
 
+    // ポーリング開始
+    function applyStartPolling_(weekStart) {
+      applyWeekStart = weekStart;
+      applyPollStart = Date.now();
+      applyLastActivity = Date.now();
+      applyLastUpdatedAt = '';
+      applyLastProcessed = -1;
+      applyPollErrorCount = 0;
+
+      applyUpdateProgress_(null);
+
+      applyPollTimer = setInterval(function() {
+        google.script.run
+          .withSuccessHandler(applyOnPollResult_)
+          .withFailureHandler(applyOnPollError_)
+          .pollApplyResult();
+      }, APPLY_POLL_INTERVAL);
+
+      console.log('[applyPolling] ポーリング開始 interval=' + APPLY_POLL_INTERVAL + 'ms');
+    }
+
+    // 各ポーリング結果処理
+    function applyOnPollResult_(data) {
+      applyPollErrorCount = 0;
+      var now = Date.now();
+      var elapsed = now - applyPollStart;
+
+      // --- completed ---
+      if (data.status === 'completed') {
+        console.log('[applyPolling] 完了検知');
+        applyStopPolling_();
+        document.getElementById('kaipokeLoadingText').innerText = '適用結果を処理しています...';
+
+        google.script.run
+          .withSuccessHandler(function(finalResult) {
+            kaipokeHideLoading();
+            kaipokeShowResult(finalResult.message, !finalResult.success);
+            kaipokeRefreshStatus();
+
+            if (finalResult.success) {
+              kaipokeDiffVerified = false;
+              kaipokeUpdateApplyButton();
+
+              google.script.run.withSuccessHandler(function() {
+                kaipokeInterlock.applyCompleted.push(applyWeekStart);
+                kaipokeUpdateButtonStates();
+                kaipokeRenderCompletedTags();
+              }).markApplyCompleted(applyWeekStart);
+
+              if (confirm('差分適用が完了しました。\n\nカイポケからCSVを再出力して、適用結果を検証しますか？\n（検証にはCSV再エクスポートのため数分かかります）')) {
+                kaipokeRunPostApplyVerification();
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            kaipokeHideLoading();
+            kaipokeShowResult('結果処理エラー: ' + error.message + '\n\nサーバー側の適用は完了しています。「適用結果」シートを手動で確認してください。', true);
+          })
+          .finalizeApply(JSON.stringify(data.result), applyWeekStart);
+        return;
+      }
+
+      // --- error ---
+      if (data.status === 'error') {
+        console.log('[applyPolling] エラー検知: ' + (data.error || ''));
+        applyStopPolling_();
+        kaipokeHideLoading();
+        kaipokeShowResult('適用エラー: ' + (data.error || data.message || '不明なエラー'), true);
+        kaipokeRefreshStatus();
+        return;
+      }
+
+      // --- running ---
+      if (data.status === 'running') {
+        applyUpdateProgress_(data.progress);
+
+        if (data.progress) {
+          var currentProcessed = data.progress.processed || 0;
+          var currentUpdatedAt = data.progress.updated_at || '';
+          var serverAlive = (currentUpdatedAt && currentUpdatedAt !== applyLastUpdatedAt);
+          var progressMade = (currentProcessed > applyLastProcessed);
+
+          if (serverAlive || progressMade) {
+            applyLastActivity = now;
+          }
+          if (progressMade) {
+            applyLastProcessed = currentProcessed;
+          }
+          applyLastUpdatedAt = currentUpdatedAt;
+        }
+
+        // 停滞チェック
+        var staleDuration = now - applyLastActivity;
+        if (staleDuration > APPLY_STALE_TIMEOUT) {
+          applyStopPolling_();
+          kaipokeHideLoading();
+          kaipokeShowResult(
+            'タイムアウト: サーバーの応答が' + Math.round(staleDuration / 60000) + '分間変化しません。\n' +
+            '最後の進捗: ' + applyLastProcessed + '/' + ((data.progress && data.progress.total) || '?') + '件\n' +
+            'サーバー側で処理は継続中の可能性があります。VPSサーバーの状態を確認してください。', true);
+          return;
+        }
+      }
+
+      // --- 絶対タイムアウト（60分） ---
+      if (elapsed > APPLY_ABSOLUTE_TIMEOUT) {
+        applyStopPolling_();
+        kaipokeHideLoading();
+        kaipokeShowResult(
+          'タイムアウト: 適用処理が60分以内に完了しませんでした。\n' +
+          'サーバー側で処理は継続中の可能性があります。VPSサーバーの状態を確認してください。', true);
+        return;
+      }
+
+      // --- no_result ---
+      if (data.status === 'no_result') {
+        console.log('[applyPolling] no_result — サーバー初期化待ち');
+      }
+    }
+
+    // ポーリングGASエラー
+    function applyOnPollError_(error) {
+      applyPollErrorCount++;
+      console.error('[applyPolling] poll error #' + applyPollErrorCount + ':', error.message);
+
+      if (applyPollErrorCount >= 3) {
+        applyStopPolling_();
+        kaipokeHideLoading();
+        kaipokeShowResult(
+          'ポーリングエラー: サーバーとの通信に3回連続で失敗しました。\n' +
+          'エラー: ' + error.message + '\n\n' +
+          'サーバー側で処理は継続中の可能性があります。VPSサーバーの状態を確認してください。', true);
+      }
+    }
+
+    // ポーリング停止
+    function applyStopPolling_() {
+      if (applyPollTimer !== null) {
+        clearInterval(applyPollTimer);
+        applyPollTimer = null;
+        console.log('[applyPolling] ポーリング停止');
+      }
+    }
+
+    // 進捗表示の更新
+    function applyUpdateProgress_(progress) {
+      var text = '差分適用中...';
+
+      if (progress) {
+        var processed = progress.processed || 0;
+        var total = progress.total || 0;
+        var phase = progress.phase || '';
+        var currentName = progress.current_name || '';
+        var successCount = progress.success || 0;
+        var failedCount = progress.failed || 0;
+        var skippedCount = progress.skipped || 0;
+
+        if (total > 0) {
+          text = '差分適用中... (' + processed + '/' + total + '件)';
+        }
+
+        if (phase || currentName) {
+          var phaseLabel = '';
+          if (phase === 'initializing') phaseLabel = '初期化中';
+          else if (phase === 'phase1') phaseLabel = 'Phase 1（スケジュール修正）';
+          else if (phase === 'phase2') phaseLabel = 'Phase 2（イベント追加）';
+          else phaseLabel = phase;
+
+          text += '\n';
+          if (phaseLabel) text += phaseLabel;
+          if (currentName) text += ': ' + currentName + ' を処理中';
+        }
+
+        if (processed > 0) {
+          text += '\n成功: ' + successCount + ' / 失敗: ' + failedCount + ' / スキップ: ' + skippedCount;
+        }
+      }
+
+      if (applyPollStart > 0) {
+        var elapsed = Math.round((Date.now() - applyPollStart) / 1000);
+        var min = Math.floor(elapsed / 60);
+        var sec = elapsed % 60;
+        text += '\n経過時間: ' + min + '分' + sec + '秒';
+      }
+
+      var loadingEl = document.getElementById('kaipokeLoadingText');
+      if (loadingEl) loadingEl.innerText = text;
+      var resultEl = document.getElementById('kaipokeResult');
+      if (resultEl) { resultEl.innerText = text; resultEl.className = 'kaipoke-result'; }
+    }
+
+    // ================================================================
+    // 適用後検証 — クライアントサイドポーリング
+    // ================================================================
+    var verifyPollTimer = null;
+    var verifyPollStart = 0;
+    var verifyPollErrorCount = 0;
+    var VERIFY_POLL_INTERVAL = 10000;  // 10秒間隔
+    var VERIFY_ABSOLUTE_TIMEOUT = 10 * 60 * 1000;  // 10分タイムアウト
+
     function kaipokeRunPostApplyVerification() {
-      kaipokeShowLoading('適用後検証中（CSV再出力 + 照合）...');
-      kaipokeShowResult('カイポケからCSVを再出力しています。完了までお待ちください...');
+      kaipokeShowLoading('適用後検証を開始しています...');
+      kaipokeShowResult('カイポケからCSVを再出力しています...');
 
       google.script.run
         .withSuccessHandler(function(result) {
-          kaipokeHideLoading();
-          kaipokeShowResult(result.message, !result.success);
+          if (result.success) {
+            kaipokeShowLoading('CSV出力中... ポーリングを開始します');
+            verifyStartPolling_();
+          } else {
+            kaipokeHideLoading();
+            kaipokeShowResult(result.message, true);
+          }
         })
         .withFailureHandler(function(error) {
           kaipokeHideLoading();
-          kaipokeShowResult('検証エラー: ' + error.message, true);
+          kaipokeShowResult('検証開始エラー: ' + error.message, true);
         })
-        .runPostApplyVerification(kaipokeGetMonth());
+        .startExportForVerification(kaipokeGetMonth());
+    }
+
+    function verifyStartPolling_() {
+      verifyPollStart = Date.now();
+      verifyPollErrorCount = 0;
+
+      verifyPollTimer = setInterval(function() {
+        google.script.run
+          .withSuccessHandler(verifyOnPollResult_)
+          .withFailureHandler(verifyOnPollError_)
+          .pollExportResult();
+      }, VERIFY_POLL_INTERVAL);
+    }
+
+    function verifyOnPollResult_(data) {
+      verifyPollErrorCount = 0;
+      var elapsed = Date.now() - verifyPollStart;
+
+      if (data.status === 'completed') {
+        verifyStopPolling_();
+        kaipokeShowLoading('検証処理中（照合 + シート書き込み）...');
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            kaipokeHideLoading();
+            kaipokeShowResult(result.message, !result.success);
+          })
+          .withFailureHandler(function(error) {
+            kaipokeHideLoading();
+            kaipokeShowResult('検証処理エラー: ' + error.message, true);
+          })
+          .finalizePostApplyVerification(JSON.stringify(data.result), kaipokeGetMonth());
+        return;
+      }
+
+      if (data.status === 'error') {
+        verifyStopPolling_();
+        kaipokeHideLoading();
+        kaipokeShowResult('CSV出力エラー: ' + (data.error || '不明なエラー'), true);
+        return;
+      }
+
+      if (data.status === 'running') {
+        var sec = Math.round(elapsed / 1000);
+        var min = Math.floor(sec / 60);
+        kaipokeShowLoading('CSV出力中... (経過: ' + min + '分' + (sec % 60) + '秒)');
+      }
+
+      if (elapsed > VERIFY_ABSOLUTE_TIMEOUT) {
+        verifyStopPolling_();
+        kaipokeHideLoading();
+        kaipokeShowResult('タイムアウト: CSV出力が10分以内に完了しませんでした。', true);
+        return;
+      }
+    }
+
+    function verifyOnPollError_(error) {
+      verifyPollErrorCount++;
+      if (verifyPollErrorCount >= 3) {
+        verifyStopPolling_();
+        kaipokeHideLoading();
+        kaipokeShowResult('検証ポーリングエラー: ' + error.message, true);
+      }
+    }
+
+    function verifyStopPolling_() {
+      if (verifyPollTimer !== null) {
+        clearInterval(verifyPollTimer);
+        verifyPollTimer = null;
+      }
     }
 
     function kaipokeOpenEmergencyStop() {

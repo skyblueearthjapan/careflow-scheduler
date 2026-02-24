@@ -471,9 +471,19 @@ function checkDiff(month, weekStart) {
 }
 
 // ==========================================
-// 差分適用 - correction_dataを直接送信
+// 差分適用 - 3分割（クライアントサイドポーリング対応）
 // ==========================================
-function runApply(month, weekStart) {
+// startApply()  → HTML側のsetInterval → pollApplyResult() → finalizeApply()
+// google.script.run のタイムアウトを回避するため、ポーリングをHTML側に移行
+
+/**
+ * 差分適用を開始する（即座に返る）
+ * バリデーション + POST /api/apply のみ。ポーリングは行わない。
+ * @param {string} month - 対象月 "YYYY-MM"
+ * @param {string} weekStart - 対象週開始日 "YYYY-MM-DD"
+ * @returns {Object} { success: boolean, message: string, weekRange?: Object }
+ */
+function startApply(month, weekStart) {
   var url = API_BASE_URL + "/api/apply";
   var targetMonth = month || getCurrentMonth();
 
@@ -530,12 +540,12 @@ function runApply(month, weekStart) {
   };
 
   try {
-    // 1) /api/apply を呼ぶ（即座に返る）
+    // POST /api/apply（即座に返る — サーバーはバックグラウンドで処理開始）
     var response = UrlFetchApp.fetch(url, options);
     var statusCode = response.getResponseCode();
     var startResult = JSON.parse(response.getContentText());
 
-    console.log('[runApply] start statusCode=' + statusCode + ' responseBody=' + response.getContentText().substring(0, 500));
+    console.log('[startApply] statusCode=' + statusCode + ' responseBody=' + response.getContentText().substring(0, 500));
 
     if (statusCode === 400) {
       return {
@@ -556,173 +566,10 @@ function runApply(month, weekStart) {
       };
     }
 
-    // 2) /api/apply/result をポーリング（進捗ベースのタイムアウト）
-    console.log('[runApply] Polling for result...');
-    var pollUrl = API_BASE_URL + "/api/apply/result";
-    var pollOptions = {
-      "method": "get",
-      "muteHttpExceptions": true
-    };
-
-    var POLL_INTERVAL_SEC = 15;
-    var STALE_TIMEOUT_SEC = 10 * 60;     // サーバー応答停滞タイムアウト（10分）
-    var ABSOLUTE_TIMEOUT_SEC = 30 * 60;   // 絶対タイムアウト（30分）
-
-    var pollStartTime = new Date().getTime();
-    var lastProcessed = -1;
-    var lastPhase = '';
-    var lastUpdatedAt = '';
-    var lastActivityTime = new Date().getTime();  // サーバー側の更新を検知したら更新
-
-    var applyResult = null;
-    while (true) {
-      Utilities.sleep(POLL_INTERVAL_SEC * 1000);
-
-      var elapsed = (new Date().getTime() - pollStartTime) / 1000;
-
-      // 絶対タイムアウト（30分）
-      if (elapsed > ABSOLUTE_TIMEOUT_SEC) {
-        return {
-          "success": false,
-          "message": "タイムアウト: 適用処理が30分以内に完了しませんでした。\nサーバー側で処理は継続中の可能性があります。VPSサーバーの状態を確認してください。"
-        };
-      }
-
-      try {
-        var pollResp = UrlFetchApp.fetch(pollUrl, pollOptions);
-        var pollData = JSON.parse(pollResp.getContentText());
-
-        console.log('[runApply] poll elapsed=' + Math.round(elapsed) + 's status=' + (pollData.status || 'unknown'));
-
-        if (pollData.status === 'completed' || pollData.status === 'error') {
-          applyResult = pollData;
-          break;
-        }
-
-        // 実行中 — サーバー側のアクティビティを確認
-        if (pollData.status === 'running' && pollData.progress) {
-          var currentProcessed = pollData.progress.processed || 0;
-          var currentPhase = pollData.progress.phase || '';
-          var currentUpdatedAt = pollData.progress.updated_at || '';
-
-          // サーバー側の updated_at が変わった → サーバーは生きている
-          // processed が増えた → 処理が進んでいる
-          // phase が変わった → フェーズ遷移があった
-          var serverAlive = (currentUpdatedAt && currentUpdatedAt !== lastUpdatedAt);
-          var progressMade = (currentProcessed > lastProcessed);
-          var phaseChanged = (currentPhase && currentPhase !== lastPhase);
-
-          if (serverAlive || progressMade || phaseChanged) {
-            lastActivityTime = new Date().getTime();
-          }
-
-          if (progressMade) {
-            lastProcessed = currentProcessed;
-            console.log('[runApply] 進捗: ' + currentProcessed + '/' + pollData.progress.total +
-                        ' (' + currentPhase + ': ' + pollData.progress.current_name + ')');
-          } else if (phaseChanged) {
-            console.log('[runApply] フェーズ変更: ' + lastPhase + ' → ' + currentPhase);
-          } else if (serverAlive) {
-            console.log('[runApply] サーバー応答あり (updated_at=' + currentUpdatedAt + ')');
-          }
-
-          lastPhase = currentPhase;
-          lastUpdatedAt = currentUpdatedAt;
-
-          // 停滞チェック: サーバー側の応答が全く変化しない場合のみ
-          var staleSec = (new Date().getTime() - lastActivityTime) / 1000;
-          if (staleSec > STALE_TIMEOUT_SEC) {
-            return {
-              "success": false,
-              "message": "タイムアウト: サーバーの応答が" + Math.round(staleSec / 60) + "分間変化しません。\n" +
-                         "最後の進捗: " + lastProcessed + "/" + (pollData.progress.total || '?') + "件\n" +
-                         "サーバーの状態を確認してください。"
-            };
-          }
-        }
-      } catch (pollErr) {
-        console.error('[runApply] poll error:', pollErr);
-        // ネットワークエラーは無視して次のポーリングへ
-      }
-    }
-
-    if (applyResult.status === 'error') {
-      return {
-        "success": false,
-        "message": "適用エラー: " + (applyResult.error || applyResult.message || "不明なエラー")
-      };
-    }
-
-    // 3) 完了 → 結果処理
-    var r = applyResult.result || applyResult;
-
-    // 適用結果シートへ書き込み
-    try {
-      writeApplyResultToSheet(r);
-    } catch (sheetErr) {
-      console.error('[runApply] writeApplyResultToSheet error:', sheetErr);
-    }
-
-    // 適用結果をキャッシュに保存（適用後検証で使用）
-    try {
-      storeApplyResult_(r);
-    } catch (cacheErr) {
-      console.error('[runApply] storeApplyResult_ error:', cacheErr);
-    }
-
-    // 適用完了後、検証フラグをクリア
-    props.setProperty('diff_verified', 'false');
-    props.deleteProperty('diff_week_start');
-    props.deleteProperty('diff_file_id');
-
-    // 結果メッセージ
-    var total = r.total || 0;
-    var successCount = r.success || 0;
-    var failed = r.failed || 0;
-    var skipped = r.skipped || 0;
-    var scheduleTotal = r.schedule_total || 0;
-    var eventTotal = r.event_total || 0;
-
-    var executionTime = r.execution_time_sec || 0;
-    var completedAt = r.completed_at || '';
-
-    var msg = "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n\n" +
-              "成功: " + successCount + "件\n" +
-              "失敗: " + failed + "件\n" +
-              "スキップ: " + skipped + "件\n" +
-              "合計: " + total + "件\n" +
-              "（スケジュール: " + scheduleTotal + "件、イベント: " + eventTotal + "件）\n\n" +
-              "実行時間: " + executionTime + "秒\n" +
-              "完了時刻: " + completedAt;
-
-    // 失敗・スキップの詳細
-    var details = r.details || [];
-    var failedItems = [];
-    var skippedItems = [];
-    for (var i = 0; i < details.length; i++) {
-      var d = details[i];
-      if (d.status === 'failed' || d.status === 'error') {
-        failedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
-      } else if (d.status === 'skipped') {
-        skippedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
-      }
-    }
-
-    if (failedItems.length > 0) {
-      msg += '\n\n--- 失敗 ---\n' + failedItems.join('\n');
-    }
-    if (skippedItems.length > 0) {
-      msg += '\n\n--- スキップ ---\n' + skippedItems.join('\n');
-    }
-
-    if (failed > 0 || skipped > 0) {
-      msg += '\n\n詳細は「適用結果」シートを確認してください。';
-    }
-
     return {
       "success": true,
-      "message": msg,
-      "data": r
+      "message": "適用を開始しました",
+      "weekRange": weekRange
     };
   } catch (e) {
     return {
@@ -730,6 +577,101 @@ function runApply(month, weekStart) {
       "message": "サーバー接続エラー: " + e.message
     };
   }
+}
+
+/**
+ * 1回のポーリング（即座に返る）
+ * GET /api/apply/result を1回呼んで結果をそのまま返す。
+ * HTML側から setInterval で繰り返し呼ばれる。実行時間: 1-2秒
+ * @returns {Object} サーバーのレスポンス
+ */
+function pollApplyResult() {
+  var pollUrl = API_BASE_URL + "/api/apply/result";
+  var resp = UrlFetchApp.fetch(pollUrl, { "method": "get", "muteHttpExceptions": true });
+  return JSON.parse(resp.getContentText());
+}
+
+/**
+ * 適用完了後の後処理（即座に返る）
+ * シート書き込み・キャッシュ保存・フラグクリア・結果メッセージ構築
+ * HTML側から google.script.run.finalizeApply(JSON.stringify(data.result), weekStart) で呼ばれる。
+ * @param {string} applyResultJson - 適用結果のJSON文字列
+ * @param {string} weekStart - 対象週開始日 "YYYY-MM-DD"
+ * @returns {Object} { success: boolean, message: string }
+ */
+function finalizeApply(applyResultJson, weekStart) {
+  var r = JSON.parse(applyResultJson);
+  var weekRange = getWeekRange_(weekStart);
+  var props = PropertiesService.getScriptProperties();
+
+  // 適用結果シートへ書き込み
+  try {
+    writeApplyResultToSheet(r);
+  } catch (sheetErr) {
+    console.error('[finalizeApply] writeApplyResultToSheet error:', sheetErr);
+  }
+
+  // 適用結果をキャッシュに保存（適用後検証で使用）
+  try {
+    storeApplyResult_(r);
+  } catch (cacheErr) {
+    console.error('[finalizeApply] storeApplyResult_ error:', cacheErr);
+  }
+
+  // 適用完了後、検証フラグをクリア
+  props.setProperty('diff_verified', 'false');
+  props.deleteProperty('diff_week_start');
+  props.deleteProperty('diff_file_id');
+
+  // 結果メッセージ
+  var total = r.total || 0;
+  var successCount = r.success || 0;
+  var failed = r.failed || 0;
+  var skipped = r.skipped || 0;
+  var scheduleTotal = r.schedule_total || 0;
+  var eventTotal = r.event_total || 0;
+
+  var executionTime = r.execution_time_sec || 0;
+  var completedAt = r.completed_at || '';
+
+  var msg = "差分適用完了!（" + weekStart + " 〜 " + weekRange.endDate + "）\n\n" +
+            "成功: " + successCount + "件\n" +
+            "失敗: " + failed + "件\n" +
+            "スキップ: " + skipped + "件\n" +
+            "合計: " + total + "件\n" +
+            "（スケジュール: " + scheduleTotal + "件、イベント: " + eventTotal + "件）\n\n" +
+            "実行時間: " + executionTime + "秒\n" +
+            "完了時刻: " + completedAt;
+
+  // 失敗・スキップの詳細
+  var details = r.details || [];
+  var failedItems = [];
+  var skippedItems = [];
+  for (var i = 0; i < details.length; i++) {
+    var d = details[i];
+    if (d.status === 'failed' || d.status === 'error') {
+      failedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
+    } else if (d.status === 'skipped') {
+      skippedItems.push('  ' + (d.user || d.staff || '') + ' ' + d.date + '日 ' + d.action + ' [' + (d.reason || '不明') + ']');
+    }
+  }
+
+  if (failedItems.length > 0) {
+    msg += '\n\n--- 失敗 ---\n' + failedItems.join('\n');
+  }
+  if (skippedItems.length > 0) {
+    msg += '\n\n--- スキップ ---\n' + skippedItems.join('\n');
+  }
+
+  if (failed > 0 || skipped > 0) {
+    msg += '\n\n詳細は「適用結果」シートを確認してください。';
+  }
+
+  return {
+    "success": true,
+    "message": msg,
+    "data": r
+  };
 }
 
 // ==========================================
@@ -1841,14 +1783,139 @@ function showKaipokeRpaSidebar() {
 }
 
 // ==========================================
-// 適用後検証（ステップ6・7）
+// 適用後検証（ステップ6・7）— クライアントサイドポーリング対応
 // ==========================================
 
 /**
- * 適用後検証メインフロー
- * runApply()完了後にUIから呼ばれる
+ * 適用後検証: CSV出力を非同期で開始（即座に返る）
  * @param {string} month - 対象月（YYYY-MM形式）
- * @returns {Object} { success, message, verifyResults }
+ * @returns {Object} { success: boolean, message: string }
+ */
+function startExportForVerification(month) {
+  var targetMonth = month || getCurrentMonth();
+
+  var corrections = getStoredCorrections_();
+  if (!corrections || corrections.length === 0) {
+    return { success: false, message: 'エラー: 修正データが見つかりません。差分確認を再実行してください。' };
+  }
+
+  var url = API_BASE_URL + "/api/export";
+  var payload = { "month": targetMonth, "async": true };
+  var options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(payload),
+    "muteHttpExceptions": true
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    var statusCode = response.getResponseCode();
+    var result = JSON.parse(response.getContentText());
+
+    if (statusCode === 409) {
+      return { success: false, message: '別のタスクが実行中です。完了後に再試行してください。' };
+    }
+    if (statusCode !== 200 || !result.success) {
+      return { success: false, message: 'CSV出力開始エラー: ' + (result.error || result.message || '不明なエラー') };
+    }
+
+    return { success: true, message: 'CSV出力を開始しました' };
+  } catch (e) {
+    return { success: false, message: 'サーバー接続エラー: ' + e.message };
+  }
+}
+
+/**
+ * 適用後検証: CSV出力結果を1回ポーリング（即座に返る）
+ * @returns {Object} { status: "running"|"completed"|"error", result: {...} }
+ */
+function pollExportResult() {
+  var pollUrl = API_BASE_URL + "/api/export/result";
+  var resp = UrlFetchApp.fetch(pollUrl, { "method": "get", "muteHttpExceptions": true });
+  return JSON.parse(resp.getContentText());
+}
+
+/**
+ * 適用後検証: CSV出力完了後の検証処理（即座に返る）
+ * @param {string} exportResultJson - CSV出力結果のJSON文字列
+ * @param {string} month - 対象月（YYYY-MM形式）
+ * @returns {Object} { success: boolean, message: string }
+ */
+function finalizePostApplyVerification(exportResultJson, month) {
+  var targetMonth = month || getCurrentMonth();
+  var exportResult = JSON.parse(exportResultJson);
+
+  var csvContent = exportResult.csv_content;
+  if (!csvContent) {
+    return { success: false, message: 'CSV再出力エラー: csv_contentが空です' };
+  }
+
+  var corrections = getStoredCorrections_();
+  if (!corrections || corrections.length === 0) {
+    return { success: false, message: 'エラー: 修正データが見つかりません。' };
+  }
+
+  try {
+    var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    var monthStr = targetMonth.replace("-", "");
+    var fileName = "kaipoke_current_" + monthStr + "_post_apply.csv";
+    var existingFiles = folder.getFilesByName(fileName);
+    while (existingFiles.hasNext()) {
+      existingFiles.next().setTrashed(true);
+    }
+    var bom = "\uFEFF";
+    var blob = Utilities.newBlob(bom + csvContent, "text/csv", fileName);
+    folder.createFile(blob);
+  } catch (e) {
+    console.error('[postApplyVerify] Drive save error:', e);
+  }
+
+  var applyResult = getStoredApplyResult_();
+  var verifyResults = verifyApplyResult(corrections, csvContent, applyResult);
+
+  try {
+    writeVerificationResultToSheet(verifyResults);
+  } catch (e) {
+    console.error('[postApplyVerify] writeVerificationResultToSheet error:', e);
+  }
+
+  var okCount = 0, failCount = 0, skipCount = 0;
+  for (var i = 0; i < verifyResults.length; i++) {
+    var v = verifyResults[i].verification;
+    if (v === 'OK') okCount++;
+    else if (v === 'FAIL') failCount++;
+    else skipCount++;
+  }
+
+  var msg = '【適用後検証完了】\n\n' +
+            '合計: ' + verifyResults.length + '件\n' +
+            'OK: ' + okCount + '件\n' +
+            'FAIL: ' + failCount + '件\n' +
+            'スキップ: ' + skipCount + '件';
+
+  if (failCount > 0) {
+    msg += '\n\n--- 不一致 ---';
+    for (var j = 0; j < verifyResults.length; j++) {
+      if (verifyResults[j].verification === 'FAIL') {
+        var c = verifyResults[j].correction;
+        msg += '\n  ' + (c.user_name || '') + ' ' + (c.date_to || c.date_from || '') + '日 ' + (c.action || '') + ' [' + (verifyResults[j].reason || '') + ']';
+      }
+    }
+    msg += '\n\n詳細は「検証結果」シートを確認してください。';
+  }
+
+  return {
+    success: true,
+    message: msg,
+    verifyResults: { total: verifyResults.length, ok: okCount, fail: failCount, skipped: skipCount }
+  };
+}
+
+/**
+ * [後方互換] 適用後検証メインフロー（ブロッキング版）
+ * 新しいコードでは startExportForVerification → pollExportResult → finalizePostApplyVerification を使用
+ * @deprecated クライアントサイドポーリング版を使用してください
  */
 function runPostApplyVerification(month) {
   var targetMonth = month || getCurrentMonth();

@@ -673,53 +673,241 @@
     }
 
     // ==========================================
-    // 差分適用（5番目）
+    // 差分適用（5番目）— クライアントサイドポーリング
     // ==========================================
+    var sidebarApplyPollTimer = null;
+    var sidebarApplyPollStart = 0;
+    var sidebarApplyLastActivity = 0;
+    var sidebarApplyLastUpdatedAt = '';
+    var sidebarApplyLastProcessed = -1;
+    var sidebarApplyWeekStart = '';
+    var sidebarApplyPollErrorCount = 0;
+
     function onApplyClick() {
       var weekStart = getWeekStart();
       if (!weekStart) { alert("対象週を選択してください"); return; }
       var check = checkApplyAllowed(weekStart);
-      if (!check.allowed) { alert('🔒 ' + check.reason); return; }
+      if (!check.allowed) { alert(check.reason); return; }
       if (!confirm("差分をカイポケに適用しますか？\n\n※ この操作は取り消せません")) return;
 
-      showLoading("差分適用中...");
-      showResult("処理開始...");
+      showLoading("差分適用を開始しています...");
+      showResult("差分適用を開始しています...");
 
       google.script.run
         .withSuccessHandler(function(result) {
-          hideLoading();
-          showResult(result.message, !result.success);
-          refreshStatus();
           if (result.success) {
-            google.script.run.withSuccessHandler(function() {
-              interlock.applyCompleted.push(weekStart);
-              updateButtonStates();
-              renderCompletedTags();
-            }).markApplyCompleted(weekStart);
-
-            // 適用後検証の提案
-            if (confirm('差分適用が完了しました。\n\nカイポケからCSVを再出力して、適用結果を検証しますか？\n（検証にはCSV再エクスポートのため数分かかります）')) {
-              showLoading('適用後検証中（CSV再出力 + 照合）...');
-              showResult('カイポケからCSVを再出力しています...');
-              google.script.run
-                .withSuccessHandler(function(vResult) {
-                  hideLoading();
-                  showResult(vResult.message, !vResult.success);
-                })
-                .withFailureHandler(function(vError) {
-                  hideLoading();
-                  showResult('検証エラー: ' + vError.message, true);
-                })
-                .runPostApplyVerification(getSelectedMonth());
-            }
+            sidebarApplyStartPolling_(weekStart);
+          } else {
+            hideLoading();
+            showResult(result.message, true);
           }
         })
         .withFailureHandler(function(error) {
           hideLoading();
-          showResult("エラー: " + error.message, true);
-          refreshStatus();
+          showResult("適用開始エラー: " + error.message, true);
         })
-        .runApply(getSelectedMonth(), weekStart);
+        .startApply(getSelectedMonth(), weekStart);
+    }
+
+    function sidebarApplyStartPolling_(weekStart) {
+      sidebarApplyWeekStart = weekStart;
+      sidebarApplyPollStart = Date.now();
+      sidebarApplyLastActivity = Date.now();
+      sidebarApplyLastUpdatedAt = '';
+      sidebarApplyLastProcessed = -1;
+      sidebarApplyPollErrorCount = 0;
+
+      sidebarApplyPollTimer = setInterval(function() {
+        google.script.run
+          .withSuccessHandler(sidebarApplyOnPollResult_)
+          .withFailureHandler(sidebarApplyOnPollError_)
+          .pollApplyResult();
+      }, 15000);
+    }
+
+    function sidebarApplyOnPollResult_(data) {
+      sidebarApplyPollErrorCount = 0;
+      var now = Date.now();
+      var elapsed = now - sidebarApplyPollStart;
+
+      if (data.status === 'completed') {
+        sidebarApplyStopPolling_();
+        showLoading('適用結果を処理しています...');
+
+        google.script.run
+          .withSuccessHandler(function(finalResult) {
+            hideLoading();
+            showResult(finalResult.message, !finalResult.success);
+            refreshStatus();
+            if (finalResult.success) {
+              google.script.run.withSuccessHandler(function() {
+                interlock.applyCompleted.push(sidebarApplyWeekStart);
+                updateButtonStates();
+                renderCompletedTags();
+              }).markApplyCompleted(sidebarApplyWeekStart);
+
+              if (confirm('差分適用が完了しました。\n\n適用結果を検証しますか？')) {
+                sidebarRunPostApplyVerification_();
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showResult('結果処理エラー: ' + error.message, true);
+          })
+          .finalizeApply(JSON.stringify(data.result), sidebarApplyWeekStart);
+        return;
+      }
+
+      if (data.status === 'error') {
+        sidebarApplyStopPolling_();
+        hideLoading();
+        showResult('適用エラー: ' + (data.error || data.message || '不明なエラー'), true);
+        refreshStatus();
+        return;
+      }
+
+      if (data.status === 'running' && data.progress) {
+        var p = data.progress;
+        var text = '差分適用中... (' + (p.processed || 0) + '/' + (p.total || 0) + '件)';
+        if (p.current_name) text += '\n' + p.current_name + ' を処理中';
+        var min = Math.floor(elapsed / 60000);
+        var sec = Math.floor((elapsed % 60000) / 1000);
+        text += '\n経過: ' + min + '分' + sec + '秒';
+        showLoading(text);
+        showResult(text);
+
+        var currentUpdatedAt = p.updated_at || '';
+        var currentProcessed = p.processed || 0;
+        if ((currentUpdatedAt && currentUpdatedAt !== sidebarApplyLastUpdatedAt) || currentProcessed > sidebarApplyLastProcessed) {
+          sidebarApplyLastActivity = now;
+        }
+        sidebarApplyLastUpdatedAt = currentUpdatedAt;
+        if (currentProcessed > sidebarApplyLastProcessed) sidebarApplyLastProcessed = currentProcessed;
+
+        var staleDuration = now - sidebarApplyLastActivity;
+        if (staleDuration > 10 * 60 * 1000) {
+          sidebarApplyStopPolling_();
+          hideLoading();
+          showResult('タイムアウト: サーバーの応答が' + Math.round(staleDuration / 60000) + '分間変化しません。', true);
+          return;
+        }
+      }
+
+      if (elapsed > 60 * 60 * 1000) {
+        sidebarApplyStopPolling_();
+        hideLoading();
+        showResult('タイムアウト: 60分以内に完了しませんでした。', true);
+        return;
+      }
+    }
+
+    function sidebarApplyOnPollError_(error) {
+      sidebarApplyPollErrorCount++;
+      if (sidebarApplyPollErrorCount >= 3) {
+        sidebarApplyStopPolling_();
+        hideLoading();
+        showResult('ポーリングエラー: ' + error.message, true);
+      }
+    }
+
+    function sidebarApplyStopPolling_() {
+      if (sidebarApplyPollTimer !== null) {
+        clearInterval(sidebarApplyPollTimer);
+        sidebarApplyPollTimer = null;
+      }
+    }
+
+    // 適用後検証 — クライアントサイドポーリング
+    var sidebarVerifyPollTimer = null;
+    var sidebarVerifyPollStart = 0;
+    var sidebarVerifyPollErrorCount = 0;
+
+    function sidebarRunPostApplyVerification_() {
+      showLoading('適用後検証を開始しています...');
+      showResult('カイポケからCSVを再出力しています...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            sidebarVerifyStartPolling_();
+          } else {
+            hideLoading();
+            showResult(result.message, true);
+          }
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showResult('検証開始エラー: ' + error.message, true);
+        })
+        .startExportForVerification(getSelectedMonth());
+    }
+
+    function sidebarVerifyStartPolling_() {
+      sidebarVerifyPollStart = Date.now();
+      sidebarVerifyPollErrorCount = 0;
+      sidebarVerifyPollTimer = setInterval(function() {
+        google.script.run
+          .withSuccessHandler(sidebarVerifyOnPollResult_)
+          .withFailureHandler(sidebarVerifyOnPollError_)
+          .pollExportResult();
+      }, 10000);
+    }
+
+    function sidebarVerifyOnPollResult_(data) {
+      sidebarVerifyPollErrorCount = 0;
+      var elapsed = Date.now() - sidebarVerifyPollStart;
+
+      if (data.status === 'completed') {
+        sidebarVerifyStopPolling_();
+        showLoading('検証処理中...');
+        google.script.run
+          .withSuccessHandler(function(result) {
+            hideLoading();
+            showResult(result.message, !result.success);
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showResult('検証処理エラー: ' + error.message, true);
+          })
+          .finalizePostApplyVerification(JSON.stringify(data.result), getSelectedMonth());
+        return;
+      }
+
+      if (data.status === 'error') {
+        sidebarVerifyStopPolling_();
+        hideLoading();
+        showResult('CSV出力エラー: ' + (data.error || '不明なエラー'), true);
+        return;
+      }
+
+      if (data.status === 'running') {
+        var sec = Math.round(elapsed / 1000);
+        showLoading('CSV出力中... (経過: ' + Math.floor(sec / 60) + '分' + (sec % 60) + '秒)');
+      }
+
+      if (elapsed > 10 * 60 * 1000) {
+        sidebarVerifyStopPolling_();
+        hideLoading();
+        showResult('タイムアウト: CSV出力が10分以内に完了しませんでした。', true);
+        return;
+      }
+    }
+
+    function sidebarVerifyOnPollError_(error) {
+      sidebarVerifyPollErrorCount++;
+      if (sidebarVerifyPollErrorCount >= 3) {
+        sidebarVerifyStopPolling_();
+        hideLoading();
+        showResult('検証ポーリングエラー: ' + error.message, true);
+      }
+    }
+
+    function sidebarVerifyStopPolling_() {
+      if (sidebarVerifyPollTimer !== null) {
+        clearInterval(sidebarVerifyPollTimer);
+        sidebarVerifyPollTimer = null;
+      }
     }
   </script>
 </body>
