@@ -804,10 +804,11 @@
 
     function sidebarApplyOnPollError_(error) {
       sidebarApplyPollErrorCount++;
-      if (sidebarApplyPollErrorCount >= 3) {
+      showLoading('差分適用中... (通信エラー、リトライ #' + sidebarApplyPollErrorCount + ')');
+      if (sidebarApplyPollErrorCount >= 30) {
         sidebarApplyStopPolling_();
         hideLoading();
-        showResult('ポーリングエラー: ' + error.message, true);
+        showResult('ポーリングエラー: 30回連続失敗（約7分）\n' + error.message, true);
       }
     }
 
@@ -896,10 +897,11 @@
 
     function sidebarVerifyOnPollError_(error) {
       sidebarVerifyPollErrorCount++;
-      if (sidebarVerifyPollErrorCount >= 3) {
+      showLoading('検証中... (通信エラー、リトライ #' + sidebarVerifyPollErrorCount + ')');
+      if (sidebarVerifyPollErrorCount >= 30) {
         sidebarVerifyStopPolling_();
         hideLoading();
-        showResult('検証ポーリングエラー: ' + error.message, true);
+        showResult('検証ポーリングエラー: 30回連続失敗\n' + error.message, true);
       }
     }
 

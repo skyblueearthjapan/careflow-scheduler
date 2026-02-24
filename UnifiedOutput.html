@@ -3847,10 +3847,10 @@
           console.warn('[applyPolling] サーバー一時エラー #' + applyPollErrorCount + ': ' + errMsg);
           var loadingEl = document.getElementById('kaipokeLoadingText');
           if (loadingEl) loadingEl.innerText = '差分適用中... (サーバー応答待ち、リトライ #' + applyPollErrorCount + ')';
-          if (applyPollErrorCount >= 10) {
+          if (applyPollErrorCount >= 120) {
             applyStopPolling_();
             kaipokeHideLoading();
-            kaipokeShowResult('サーバー接続エラー: ' + errMsg + '\n\n10回連続でサーバーに接続できませんでした。\nサーバー側で処理は継続中の可能性があります。', true);
+            kaipokeShowResult('サーバー接続エラー: ' + errMsg + '\n\n120回連続でサーバーに接続できませんでした（約30分）。\nサーバー側で処理は継続中の可能性があります。', true);
           }
           return;
         }
@@ -3911,16 +3911,18 @@
       }
     }
 
-    // ポーリングGASエラー
+    // ポーリングGASエラー（google.script.run自体の失敗）
     function applyOnPollError_(error) {
       applyPollErrorCount++;
-      console.error('[applyPolling] poll error #' + applyPollErrorCount + ':', error.message);
+      console.error('[applyPolling] GAS poll error #' + applyPollErrorCount + ':', error.message);
+      var loadingEl = document.getElementById('kaipokeLoadingText');
+      if (loadingEl) loadingEl.innerText = '差分適用中... (通信エラー、リトライ #' + applyPollErrorCount + ')';
 
-      if (applyPollErrorCount >= 3) {
+      if (applyPollErrorCount >= 30) {
         applyStopPolling_();
         kaipokeHideLoading();
         kaipokeShowResult(
-          'ポーリングエラー: サーバーとの通信に3回連続で失敗しました。\n' +
+          'ポーリングエラー: サーバーとの通信に30回連続で失敗しました（約7分）。\n' +
           'エラー: ' + error.message + '\n\n' +
           'サーバー側で処理は継続中の可能性があります。VPSサーバーの状態を確認してください。', true);
       }
@@ -4068,10 +4070,11 @@
 
     function verifyOnPollError_(error) {
       verifyPollErrorCount++;
-      if (verifyPollErrorCount >= 3) {
+      kaipokeShowLoading('検証中... (通信エラー、リトライ #' + verifyPollErrorCount + ')');
+      if (verifyPollErrorCount >= 30) {
         verifyStopPolling_();
         kaipokeHideLoading();
-        kaipokeShowResult('検証ポーリングエラー: ' + error.message, true);
+        kaipokeShowResult('検証ポーリングエラー: 30回連続失敗\n' + error.message, true);
       }
     }
 
