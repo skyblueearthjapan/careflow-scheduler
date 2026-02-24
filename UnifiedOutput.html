@@ -3840,10 +3840,25 @@
 
       // --- error ---
       if (data.status === 'error') {
-        console.log('[applyPolling] エラー検知: ' + (data.error || ''));
+        var errMsg = data.error || data.message || '不明なエラー';
+        // サーバー応答エラー（Cloudflare等）は一時的なエラーとして扱い、ポーリング継続
+        if (errMsg.indexOf('サーバー応答エラー') >= 0) {
+          applyPollErrorCount++;
+          console.warn('[applyPolling] サーバー一時エラー #' + applyPollErrorCount + ': ' + errMsg);
+          var loadingEl = document.getElementById('kaipokeLoadingText');
+          if (loadingEl) loadingEl.innerText = '差分適用中... (サーバー応答待ち、リトライ #' + applyPollErrorCount + ')';
+          if (applyPollErrorCount >= 10) {
+            applyStopPolling_();
+            kaipokeHideLoading();
+            kaipokeShowResult('サーバー接続エラー: ' + errMsg + '\n\n10回連続でサーバーに接続できませんでした。\nサーバー側で処理は継続中の可能性があります。', true);
+          }
+          return;
+        }
+        // 実際のapplyエラー → 停止
+        console.log('[applyPolling] エラー検知: ' + errMsg);
         applyStopPolling_();
         kaipokeHideLoading();
-        kaipokeShowResult('適用エラー: ' + (data.error || data.message || '不明なエラー'), true);
+        kaipokeShowResult('適用エラー: ' + errMsg, true);
         kaipokeRefreshStatus();
         return;
       }

@@ -588,7 +588,14 @@ function startApply(month, weekStart) {
 function pollApplyResult() {
   var pollUrl = API_BASE_URL + "/api/apply/result";
   var resp = UrlFetchApp.fetch(pollUrl, { "method": "get", "muteHttpExceptions": true });
-  return JSON.parse(resp.getContentText());
+  var text = resp.getContentText();
+  var code = resp.getResponseCode();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // Cloudflareエラーページ等、非JSONレスポンスの場合
+    return { status: 'error', error: 'サーバー応答エラー (HTTP ' + code + '): JSONではないレスポンスを受信しました' };
+  }
 }
 
 /**
@@ -1833,7 +1840,13 @@ function startExportForVerification(month) {
 function pollExportResult() {
   var pollUrl = API_BASE_URL + "/api/export/result";
   var resp = UrlFetchApp.fetch(pollUrl, { "method": "get", "muteHttpExceptions": true });
-  return JSON.parse(resp.getContentText());
+  var text = resp.getContentText();
+  var code = resp.getResponseCode();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return { status: 'error', error: 'サーバー応答エラー (HTTP ' + code + '): JSONではないレスポンスを受信しました' };
+  }
 }
 
 /**
