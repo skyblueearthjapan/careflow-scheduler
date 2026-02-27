@@ -3129,7 +3129,9 @@ function 割当結果を作成_(ss) {
   }
 
   // ★追加：指定時間帯内でスタッフが利用可能な合計分数を計算
-  // 既存の割当済み予定を除外して、空きスロットの合計を返す
+  // 非固定訪問は同じ時間(例: 09:00-09:35)で複数登録されるため、
+  // 区間マージではなく「各訪問のサービス時間+バッファ」を個別積算する
+  var ASSIGN_BUFFER_MIN = 5; // 訪問間バッファ（分）
   function calcAvailableMinutes_(staffId, dateObj, windowStart, windowEnd) {
     if (!staffId || !(dateObj instanceof Date) || windowStart == null || windowEnd == null) return windowEnd - windowStart;
 
@@ -3137,41 +3139,43 @@ function 割当結果を作成_(ss) {
     var key = staffId + '|' + dateStr;
     var idxList = staffDateMap[key] || [];
 
-    // 既存予定を収集してソート
-    var occupied = [];
+    // 時間帯内の既存訪問のサービス時間を個別に積算
+    var totalNeeded = 0;
+    var visitCount = 0;
     for (var i = 0; i < idxList.length; i++) {
       var r = resultRows[idxList[i]];
       if (!r) continue;
       if (!r[3] || r[4] === '未割当') continue;
+
+      // この訪問が指定ウィンドウ内にあるかチェック
       var s = toMinutes(r[8]);
       var e = toMinutes(r[9]);
-      if (s == null || e == null) continue;
-      // ウィンドウと重なる部分のみ
-      var os = Math.max(s, windowStart);
-      var oe = Math.min(e, windowEnd);
-      if (os < oe) occupied.push({ s: os, e: oe });
+      // 時間が不明な場合はtimeTypeで判定
+      var rtt = String(r[11] || '').trim();
+      var rEarliest = toMinutes(r[12]);
+      var rLatest = toMinutes(r[13]);
+      if (rEarliest == null && rtt === '午前') rEarliest = 9 * 60;
+      if (rEarliest == null && rtt === '午後') rEarliest = 13 * 60;
+      if (rLatest == null && rtt === '午前') rLatest = 12 * 60;
+      if (rLatest == null && rtt === '午後') rLatest = 17 * 60;
+
+      // ウィンドウが重なるか判定（訪問の希望帯 or 実時間がウィンドウと重なる）
+      var visitStart = rEarliest != null ? rEarliest : s;
+      var visitEnd = rLatest != null ? rLatest : e;
+      if (visitStart == null || visitEnd == null) continue;
+      if (visitStart >= windowEnd || visitEnd <= windowStart) continue;
+
+      // この訪問はウィンドウ内 → サービス時間を積算
+      var svc = Number(r[10]) || 30;
+      totalNeeded += svc;
+      visitCount++;
     }
 
-    if (occupied.length === 0) return windowEnd - windowStart;
+    // バッファ込みの必要時間（訪問間にバッファが必要）
+    if (visitCount > 0) totalNeeded += visitCount * ASSIGN_BUFFER_MIN;
 
-    // ソートしてマージ
-    occupied.sort(function(a, b) { return a.s - b.s; });
-    var merged = [occupied[0]];
-    for (var j = 1; j < occupied.length; j++) {
-      var last = merged[merged.length - 1];
-      if (occupied[j].s <= last.e) {
-        last.e = Math.max(last.e, occupied[j].e);
-      } else {
-        merged.push(occupied[j]);
-      }
-    }
-
-    // 占有時間の合計を計算
-    var totalOccupied = 0;
-    for (var k = 0; k < merged.length; k++) {
-      totalOccupied += (merged[k].e - merged[k].s);
-    }
-    return (windowEnd - windowStart) - totalOccupied;
+    var windowSize = windowEnd - windowStart;
+    return windowSize - totalNeeded;
   }
 
   // ★ローテーション優先用：患者ごとに「処理中に最後に割り当てられたスタッフID」を動的に追跡
