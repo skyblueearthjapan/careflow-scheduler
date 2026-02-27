@@ -4737,6 +4737,15 @@ function 割当結果を作成_(ss) {
     var BUFFER_MIN = 5; // 訪問間の最小バッファ（分）
     var overlapFixCount = 0;
 
+    // ★ペア訪問（2名体制）のインデックスセットを構築
+    var coupledIdxSet = {};
+    Object.keys(coupledVisitMap).forEach(function(baseId) {
+      var idxArr = coupledVisitMap[baseId];
+      if (idxArr && idxArr.length >= 2) {
+        idxArr.forEach(function(idx) { coupledIdxSet[idx] = true; });
+      }
+    });
+
     // スタッフ+日付でグループ化
     var staffDayGroups = {};
     for (var i = 0; i < resultRows.length; i++) {
@@ -4760,7 +4769,8 @@ function 割当結果を作成_(ss) {
       // 開始時刻でソート
       var visits = indices.map(function(idx) {
         return { idx: idx, s: toMinutes(resultRows[idx][8]), e: toMinutes(resultRows[idx][9]),
-                 svcMin: Number(resultRows[idx][10]) || 30, tt: String(resultRows[idx][11] || '').trim() };
+                 svcMin: Number(resultRows[idx][10]) || 30, tt: String(resultRows[idx][11] || '').trim(),
+                 isCoupled: !!coupledIdxSet[idx] };
       }).filter(function(v) { return v.s != null && v.e != null; });
       visits.sort(function(a, b) { return a.s - b.s; });
 
@@ -4771,6 +4781,12 @@ function 割当結果を作成_(ss) {
 
         // 重複チェック: 前の訪問の終了 + バッファ > 現在の訪問の開始
         if (prev.e + BUFFER_MIN > cur.s) {
+          // ★ペア訪問（2名体制）はずらし対象外（後段のsyncCoupledVisitTimes_で同期）
+          if (cur.isCoupled) {
+            console.log('[OverlapFix] ペア訪問スキップ: ' + sdKey + ' vid=' + resultRows[cur.idx][0] + ' (syncで同期予定)');
+            continue;
+          }
+
           var row = resultRows[cur.idx];
           var oldStart = cur.s;
           var newStart = prev.e + BUFFER_MIN;
@@ -4816,6 +4832,10 @@ function 割当結果を作成_(ss) {
 
     if (overlapFixCount > 0) console.log('[OverlapFix] スタッフ時間重複を ' + overlapFixCount + ' 件修正しました');
   })();
+
+  // ★Phase 14後のペア訪問時刻同期（fixCrossPatientTimeOverlapで他訪問がずれた影響を修復）
+  syncCoupledVisitTimes_(resultRows, coupledVisitMap, staffDateMap, tz);
+  console.log('[CoupledSync] fixCrossPatientTimeOverlap後のペア同期完了');
 
   // 割当結果シートに書き込み
   resultSheet.clear();
