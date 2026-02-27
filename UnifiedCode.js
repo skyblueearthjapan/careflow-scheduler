@@ -3128,6 +3128,52 @@ function 割当結果を作成_(ss) {
     return false;
   }
 
+  // ★追加：指定時間帯内でスタッフが利用可能な合計分数を計算
+  // 既存の割当済み予定を除外して、空きスロットの合計を返す
+  function calcAvailableMinutes_(staffId, dateObj, windowStart, windowEnd) {
+    if (!staffId || !(dateObj instanceof Date) || windowStart == null || windowEnd == null) return windowEnd - windowStart;
+
+    var dateStr = Utilities.formatDate(dateObj, tz, 'yyyy/MM/dd');
+    var key = staffId + '|' + dateStr;
+    var idxList = staffDateMap[key] || [];
+
+    // 既存予定を収集してソート
+    var occupied = [];
+    for (var i = 0; i < idxList.length; i++) {
+      var r = resultRows[idxList[i]];
+      if (!r) continue;
+      if (!r[3] || r[4] === '未割当') continue;
+      var s = toMinutes(r[8]);
+      var e = toMinutes(r[9]);
+      if (s == null || e == null) continue;
+      // ウィンドウと重なる部分のみ
+      var os = Math.max(s, windowStart);
+      var oe = Math.min(e, windowEnd);
+      if (os < oe) occupied.push({ s: os, e: oe });
+    }
+
+    if (occupied.length === 0) return windowEnd - windowStart;
+
+    // ソートしてマージ
+    occupied.sort(function(a, b) { return a.s - b.s; });
+    var merged = [occupied[0]];
+    for (var j = 1; j < occupied.length; j++) {
+      var last = merged[merged.length - 1];
+      if (occupied[j].s <= last.e) {
+        last.e = Math.max(last.e, occupied[j].e);
+      } else {
+        merged.push(occupied[j]);
+      }
+    }
+
+    // 占有時間の合計を計算
+    var totalOccupied = 0;
+    for (var k = 0; k < merged.length; k++) {
+      totalOccupied += (merged[k].e - merged[k].s);
+    }
+    return (windowEnd - windowStart) - totalOccupied;
+  }
+
   // ★ローテーション優先用：患者ごとに「処理中に最後に割り当てられたスタッフID」を動的に追跡
   var lastAssignedStaffByPatient = {};
 
@@ -3196,6 +3242,11 @@ function 割当結果を作成_(ss) {
           var latestStart = Math.max(reqStart, st.shiftStartMin);
           var earliestEnd = Math.min(reqEnd, st.shiftEndMin);
           if (latestStart >= earliestEnd) return false;
+          // ★追加：非固定でも、希望時間帯にサービス時間分の空きがあるかチェック
+          if (svcMin > 0) {
+            var availMin = calcAvailableMinutes_(st.id, dateObj, latestStart, earliestEnd);
+            if (availMin < svcMin) return false;
+          }
         }
       }
       var count = getAssignCount(st.id, dateStr);
@@ -3269,6 +3320,11 @@ function 割当結果を作成_(ss) {
               var latestStart = Math.max(reqStart, st.shiftStartMin);
               var earliestEnd = Math.min(reqEnd, st.shiftEndMin);
               if (latestStart >= earliestEnd) { debugExcludeReasons[st.id] = 'timeWindow'; return; }
+              // ★追加：非固定でも、希望時間帯にサービス時間分の空きがあるかチェック
+              if (svcMin > 0) {
+                var availMin = calcAvailableMinutes_(st.id, dateObj, latestStart, earliestEnd);
+                if (availMin < svcMin) { debugExcludeReasons[st.id] = 'noAvailableSlot'; return; }
+              }
             }
           }
           var dayCount = getAssignCount(st.id, dateStr);
@@ -3383,6 +3439,22 @@ function 割当結果を作成_(ss) {
 
           // スタッフ個別変更リクエストによる制限チェック（fallback時も適用）
           if (!isStaffAvailableForVisit_(st.id, dateStr, timeType, startMin, endMin, earliestMin, latestMin, svcMin)) return;
+
+          // ★追加：fallbackでも時間重複チェック
+          if (timeType === '固定' && startMin != null && endMin != null) {
+            if (isOverlappedWithExisting_(st.id, dateObj, startMin, endMin)) return;
+          } else if (svcMin > 0) {
+            var fbReqStart = earliestMin != null ? earliestMin : startMin;
+            var fbReqEnd = latestMin != null ? latestMin : endMin;
+            if (fbReqStart == null && st.shiftStartMin != null) fbReqStart = st.shiftStartMin;
+            if (fbReqEnd == null && st.shiftEndMin != null) fbReqEnd = st.shiftEndMin;
+            if (fbReqStart != null && fbReqEnd != null) {
+              var fbLatestStart = Math.max(fbReqStart, st.shiftStartMin || 0);
+              var fbEarliestEnd = Math.min(fbReqEnd, st.shiftEndMin || 1440);
+              var fbAvail = calcAvailableMinutes_(st.id, dateObj, fbLatestStart, fbEarliestEnd);
+              if (fbAvail < svcMin) return;
+            }
+          }
 
           // ★追加：動的に追跡した直前割当スタッフかどうかのフラグ
           var isDynamicPrevFb = (contPref === 'ローテーション優先' && dynamicPrevSid && st.id === dynamicPrevSid);
@@ -3992,14 +4064,20 @@ function 割当結果を作成_(ss) {
     // ★暫定ガード：訪問看護は基本 09:00 以降とする（8時台吸着の防止）
     dayStart = Math.max(dayStart, 9 * 60);
 
-    // 可動訪問を「隙間」に詰める
+    // 可動訪問を「隙間」に詰める（希望最早時刻→開始時刻→サービス時間短い順）
     flexes.sort(function(aIdx,bIdx){
-      var aS = rowStartMin_(resultRows[aIdx]);
-      var bS = rowStartMin_(resultRows[bIdx]);
+      var aRow = resultRows[aIdx], bRow = resultRows[bIdx];
+      // 希望最早時刻を優先（午前/午後などの制約を尊重）
+      var aEarliest = toMinutes(aRow[12]), bEarliest = toMinutes(bRow[12]);
+      var aS = aEarliest != null ? aEarliest : rowStartMin_(aRow);
+      var bS = bEarliest != null ? bEarliest : rowStartMin_(bRow);
       if (aS == null && bS == null) return 0;
       if (aS == null) return 1;
       if (bS == null) return -1;
-      return aS - bS;
+      if (aS !== bS) return aS - bS;
+      // 同じ開始時刻ならサービス時間が短い方を先に配置（隙間に多く入れるため）
+      var aSvc = Number(aRow[10]) || 30, bSvc = Number(bRow[10]) || 30;
+      return aSvc - bSvc;
     });
 
     // gapを作る（アンカー前後にバッファを確保）
@@ -4648,6 +4726,91 @@ function 割当結果を作成_(ss) {
       }
     }
     if (fixCount > 0) console.log('[DupFix] 同一スタッフ重複を ' + fixCount + ' 件修正しました');
+  })();
+
+  // ★最終セーフガード2：同スタッフ・別患者の時間重複を検出→ずらし or 未割当
+  (function fixCrossPatientTimeOverlap() {
+    var BUFFER_MIN = 5; // 訪問間の最小バッファ（分）
+    var overlapFixCount = 0;
+
+    // スタッフ+日付でグループ化
+    var staffDayGroups = {};
+    for (var i = 0; i < resultRows.length; i++) {
+      var r = resultRows[i];
+      var vid = String(r[0] || '');
+      if (vid.indexOf('_T_') >= 0) continue; // 同行行はスキップ
+      if (!r[3] || r[4] === '未割当') continue;
+      var d = r[1];
+      if (!(d instanceof Date)) continue;
+      var sId = r[3];
+      var ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+      var sdKey = sId + '|' + ds;
+      if (!staffDayGroups[sdKey]) staffDayGroups[sdKey] = [];
+      staffDayGroups[sdKey].push(i);
+    }
+
+    Object.keys(staffDayGroups).forEach(function(sdKey) {
+      var indices = staffDayGroups[sdKey];
+      if (indices.length < 2) return;
+
+      // 開始時刻でソート
+      var visits = indices.map(function(idx) {
+        return { idx: idx, s: toMinutes(resultRows[idx][8]), e: toMinutes(resultRows[idx][9]),
+                 svcMin: Number(resultRows[idx][10]) || 30, tt: String(resultRows[idx][11] || '').trim() };
+      }).filter(function(v) { return v.s != null && v.e != null; });
+      visits.sort(function(a, b) { return a.s - b.s; });
+
+      // 重複検出＆ずらし
+      for (var vi = 1; vi < visits.length; vi++) {
+        var prev = visits[vi - 1];
+        var cur = visits[vi];
+
+        // 重複チェック: 前の訪問の終了 + バッファ > 現在の訪問の開始
+        if (prev.e + BUFFER_MIN > cur.s) {
+          var row = resultRows[cur.idx];
+          var oldStart = cur.s;
+          var newStart = prev.e + BUFFER_MIN;
+          var newEnd = newStart + cur.svcMin;
+
+          // 希望時間帯の制約チェック
+          var latestEnd = toMinutes(row[13]); // 希望最遅
+          var tt = cur.tt;
+          if (latestEnd == null) {
+            if (tt === '午前') latestEnd = 12 * 60;
+            else if (tt === '午後') latestEnd = 17 * 60;
+            else if (tt === '終日') latestEnd = 18 * 60;
+          }
+
+          // スタッフのシフト終了もチェック
+          var staffId = sdKey.split('|')[0];
+          var shift = getStaffShift_(staffId);
+          var shiftEnd = shift.shiftEndMin || 1080;
+
+          if ((latestEnd == null || newEnd <= latestEnd) && newEnd <= shiftEnd) {
+            // ずらし配置OK
+            setRowTimeByMinutes_(row, newStart, newEnd);
+            cur.s = newStart;
+            cur.e = newEnd;
+            row[14] = (row[14] || '') + ' / 時間重複自動修正(' + oldStart + '→' + newStart + ')';
+            console.log('[OverlapFix] スタッフ時間重複修正: ' + sdKey + ' vid=' + row[0] + ' ' + oldStart + '→' + newStart);
+            overlapFixCount++;
+          } else {
+            // ずらせない → 未割当
+            row[3] = '';
+            row[4] = '未割当';
+            row[14] = (row[14] || '') + ' / スタッフ時間重複(ずらし不可)で未割当';
+            unassignedList.push({ date: row[1], youbi: row[2], pid: row[5], pname: row[6], needStaff: 1, slot: 1, reason: 'スタッフ時間重複' });
+            console.log('[OverlapFix] スタッフ時間重複→未割当: ' + sdKey + ' vid=' + row[0]);
+            overlapFixCount++;
+            // 未割当にしたのでvisitsから除外して後続の判定に影響させない
+            visits.splice(vi, 1);
+            vi--;
+          }
+        }
+      }
+    });
+
+    if (overlapFixCount > 0) console.log('[OverlapFix] スタッフ時間重複を ' + overlapFixCount + ' 件修正しました');
   })();
 
   // 割当結果シートに書き込み
