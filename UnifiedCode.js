@@ -3901,6 +3901,7 @@ function 割当結果を作成_(ss) {
     });
   }
 
+  console.log('[GapPack] staffDateMap エントリ数: ' + Object.keys(staffDateMap).length);
   Object.keys(staffDateMap).forEach(function(key){
     var idxList = staffDateMap[key];
     if (!idxList || idxList.length === 0) return;
@@ -3947,6 +3948,16 @@ function 割当結果を作成_(ss) {
       // それ以外は可動として扱う
       flexes.push(rIdx);
     });
+
+    // ★デバッグ: 2件以上の訪問があるスタッフ日のアンカー/可動分類をログ出力
+    if (idxList.length >= 2) {
+      console.log('[GapPack] ' + key + ' 合計=' + idxList.length + ' アンカー=' + anchors.length + ' 可動=' + flexes.length);
+      anchors.forEach(function(a) { console.log('[GapPack]   アンカー: idx=' + a.idx + ' ' + a.s + '-' + a.e + ' kind=' + a.kind); });
+      flexes.forEach(function(fIdx) {
+        var fRow = resultRows[fIdx];
+        console.log('[GapPack]   可動: idx=' + fIdx + ' s=' + rowStartMin_(fRow) + ' e=' + rowEndMin_(fRow) + ' tt=' + fRow[11] + ' vid=' + fRow[0] + ' patient=' + fRow[6]);
+      });
+    }
 
     anchors.sort(function(a,b){ return a.s - b.s; });
 
@@ -4166,7 +4177,18 @@ function 割当結果を作成_(ss) {
         });
       }
     }
+
+    // ★デバッグ: gap-packing後の時刻確認
+    if (idxList.length >= 2) {
+      console.log('[GapPack後] ' + key + ':');
+      idxList.forEach(function(rIdx) {
+        var r = resultRows[rIdx];
+        console.log('[GapPack後]   idx=' + rIdx + ' vid=' + r[0] + ' patient=' + r[6] + ' s=' + rowStartMin_(r) + ' e=' + rowEndMin_(r) + ' staff=' + r[4]);
+      });
+    }
   });
+
+  console.log('[GapPack] 完了');
 
   // --- 時刻調整後の2名体制ペア同期 ---
   syncCoupledVisitTimes_(resultRows, coupledVisitMap, staffDateMap, tz);
@@ -4772,6 +4794,12 @@ function 割当結果を作成_(ss) {
                  svcMin: Number(resultRows[idx][10]) || 30, tt: String(resultRows[idx][11] || '').trim(),
                  isCoupled: !!coupledIdxSet[idx] };
       }).filter(function(v) { return v.s != null && v.e != null; });
+
+      // ★デバッグ: fixCrossPatientTimeOverlap入力確認
+      console.log('[OverlapFix入力] ' + sdKey + ' visits=' + allVisits.length + ':');
+      allVisits.forEach(function(v) {
+        console.log('[OverlapFix入力]   idx=' + v.idx + ' s=' + v.s + ' e=' + v.e + ' svc=' + v.svcMin + ' coupled=' + v.isCoupled + ' vid=' + resultRows[v.idx][0] + ' patient=' + resultRows[v.idx][6]);
+      });
 
       // ★アンカー（不動）= ペア訪問 + イベント
       // ★可動 = 1人体制の通常訪問
