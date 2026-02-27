@@ -1893,14 +1893,6 @@ function finalizePostApplyVerification(exportResultJson, month) {
     console.error('[postApplyVerify] writeVerificationResultToSheet error:', e);
   }
 
-  // Google ドキュメントとして Drive に保存
-  var docInfo = { success: false, docUrl: '', message: '' };
-  try {
-    docInfo = exportVerificationToDoc(verifyResults, targetMonth);
-  } catch (e) {
-    console.error('[postApplyVerify] exportVerificationToDoc error:', e);
-  }
-
   var okCount = 0, failCount = 0, skipCount = 0;
   for (var i = 0; i < verifyResults.length; i++) {
     var v = verifyResults[i].verification;
@@ -1926,15 +1918,10 @@ function finalizePostApplyVerification(exportResultJson, month) {
     msg += '\n\n詳細は「検証結果」シートを確認してください。';
   }
 
-  if (docInfo.success) {
-    msg += '\n\n📄 検証結果ドキュメント:\n' + docInfo.docUrl;
-  }
-
   return {
     success: true,
     message: msg,
-    verifyResults: { total: verifyResults.length, ok: okCount, fail: failCount, skipped: skipCount },
-    docUrl: docInfo.docUrl || ''
+    verifyResults: { total: verifyResults.length, ok: okCount, fail: failCount, skipped: skipCount }
   };
 }
 
@@ -2120,10 +2107,26 @@ function verifyApplyResult(corrections, postApplyCsvContent, applyResult) {
 function verifySingleCorrection(correction, postData) {
   var action = correction.action || '';
   var userName = (correction.user_name || '').trim();
+  var dateTo = String(correction.date_to || '').trim();
+  var dateFrom = String(correction.date_from || '').trim();
+  var startTo = (correction.start_time_to || '').trim();
+  var endTo = (correction.end_time_to || '').trim();
+  var startFrom = (correction.start_time_from || '').trim();
+  var staff1To = (correction.staff1_to || '').trim();
+  var staff1From = (correction.staff1_from || '').trim();
+
+  // user_name が「なし」または空欄の場合 → イベント/個別業務でCSV照合不可
+  if ((action === 'add' || action === 'edit') && (userName === 'なし' || userName === '')) {
+    return {
+      correction: correction,
+      verification: 'FAIL',
+      reason: '利用者名「' + (userName || '空欄') + '」はカイポケ上に存在しないユーザーです。' +
+              'イベント・個別業務は利用者なしの登録のため、CSV利用者欄での照合ができません。',
+      failCategory: 'user_not_found'
+    };
+  }
 
   if (action === 'delete') {
-    var dateFrom = String(correction.date_from || '').trim();
-    var startFrom = (correction.start_time_from || '').trim();
     // 削除対象がCSVに存在しないことを確認
     var found = false;
     for (var i = 0; i < postData.length; i++) {
@@ -2136,17 +2139,23 @@ function verifySingleCorrection(correction, postData) {
         break;
       }
     }
-    return {
-      correction: correction,
-      verification: found ? 'FAIL' : 'OK',
-      reason: found ? '削除対象がまだCSVに存在' : '削除確認OK'
-    };
+    if (!found) {
+      return {
+        correction: correction,
+        verification: 'OK',
+        reason: '削除確認OK'
+      };
+    } else {
+      return {
+        correction: correction,
+        verification: 'FAIL',
+        reason: '削除対象がまだCSVに存在しています。' + userName + 'の' + dateFrom + '日 ' + startFrom + ' のエントリが残っています。',
+        failCategory: 'entry_mismatch'
+      };
+    }
   }
 
   if (action === 'add' || action === 'edit') {
-    var dateTo = String(correction.date_to || '').trim();
-    var startTo = (correction.start_time_to || '').trim();
-    var endTo = (correction.end_time_to || '').trim();
     var matched = false;
     for (var j = 0; j < postData.length; j++) {
       var row2 = postData[j];
@@ -2159,19 +2168,51 @@ function verifySingleCorrection(correction, postData) {
         break;
       }
     }
+    if (matched) {
+      return {
+        correction: correction,
+        verification: 'OK',
+        reason: (action === 'add' ? '追加確認OK' : '編集確認OK')
+      };
+    }
+
+    // 未割当の検出
+    if (staff1To === '未割当') {
+      return {
+        correction: correction,
+        verification: 'FAIL',
+        reason: '【未割当】最適化の結果、' + userName + 'さんの' + dateTo + '日 ' + startTo + '〜' + endTo +
+                ' に割当可能なスタッフが存在しませんでした。' +
+                '職員欄は変更前の「' + (staff1From || '不明') + '」のままです。',
+        failCategory: 'unassigned_staff'
+      };
+    }
+
+    // 同日・同ユーザーで別時間のエントリがあるか検索
+    var actualEntries = [];
+    for (var a = 0; a < postData.length; a++) {
+      var rowA = postData[a];
+      if ((rowA[11] || '').trim() === userName && (rowA[9] || '').trim() === dateTo) {
+        actualEntries.push((rowA[14] || '').trim() + '-' + (rowA[15] || '').trim() +
+                           '（' + (rowA[0] || '').trim() + '）');
+      }
+    }
+    var actualInfo = actualEntries.length > 0
+      ? ' 同日のCSV実績: ' + actualEntries.join(', ')
+      : ' 同日のCSVにこの利用者のエントリはありません。';
+
     return {
       correction: correction,
-      verification: matched ? 'OK' : 'FAIL',
-      reason: matched ? (action === 'add' ? '追加確認OK' : '編集確認OK') : (action === 'add' ? '追加エントリがCSVに未反映' : '編集後エントリがCSVに未反映')
+      verification: 'FAIL',
+      reason: (action === 'add' ? '追加' : '編集後') + 'エントリがCSVに未反映。' +
+              '期待: ' + dateTo + '日 ' + startTo + '-' + endTo + '。' + actualInfo,
+      failCategory: 'entry_mismatch'
     };
   }
 
   if (action === 'date_change') {
-    var dcDateFrom = String(correction.date_from || '').trim();
-    var dcStartFrom = (correction.start_time_from || '').trim();
-    var dcDateTo = String(correction.date_to || '').trim();
-    var dcStartTo = (correction.start_time_to || '').trim();
-    var dcEndTo = (correction.end_time_to || '').trim();
+    var dcStartFrom = startFrom || startTo;
+    var dcStartTo = startTo;
     var oldExists = false;
     var newExists = false;
     for (var k = 0; k < postData.length; k++) {
@@ -2181,26 +2222,45 @@ function verifySingleCorrection(correction, postData) {
       var csvStart3 = (row3[14] || '').trim();
       var csvEnd3 = (row3[15] || '').trim();
       if (csvUser3 === userName) {
-        if (csvDate3 === dcDateFrom && csvStart3 === dcStartFrom) oldExists = true;
-        if (csvDate3 === dcDateTo && csvStart3 === dcStartTo && csvEnd3 === dcEndTo) newExists = true;
+        if (csvDate3 === dateFrom && csvStart3 === dcStartFrom) oldExists = true;
+        if (csvDate3 === dateTo && csvStart3 === dcStartTo && csvEnd3 === endTo) newExists = true;
       }
     }
-    var ok = newExists && !oldExists;
-    var reason = '';
-    if (ok) {
-      reason = '日付変更確認OK';
-    } else if (!newExists && oldExists) {
-      reason = '新日付にエントリなし、旧日付にまだ存在';
+    if (newExists && !oldExists) {
+      return {
+        correction: correction,
+        verification: 'OK',
+        reason: '日付変更確認OK: 旧日付(' + dateFrom + '日)から消え、新日付(' + dateTo + '日)に存在'
+      };
     } else if (newExists && oldExists) {
-      reason = '旧日付のエントリがまだ存在';
+      return {
+        correction: correction,
+        verification: 'FAIL',
+        reason: '日付移動不完全: 新日付に存在するが旧日付(' + dateFrom + '日)のエントリが残っている',
+        failCategory: 'entry_mismatch'
+      };
     } else {
-      reason = '新日付にエントリなし';
+      // 新日付のCSVエントリを検索して表示
+      var dcActualEntries = [];
+      for (var m = 0; m < postData.length; m++) {
+        var rowM = postData[m];
+        if ((rowM[11] || '').trim() === userName && (rowM[9] || '').trim() === dateTo) {
+          dcActualEntries.push((rowM[14] || '').trim() + '-' + (rowM[15] || '').trim() +
+                               '（' + (rowM[0] || '').trim() + '）');
+        }
+      }
+      var dcActualInfo = dcActualEntries.length > 0
+        ? ' 同日のCSV実績: ' + dcActualEntries.join(', ')
+        : ' 同日のCSVにこの利用者のエントリはありません。';
+
+      return {
+        correction: correction,
+        verification: 'FAIL',
+        reason: '日付移動失敗: 新日付(' + dateTo + '日)にエントリが見つからない。' +
+                '期待: ' + dateTo + '日 ' + startTo + '-' + endTo + '。' + dcActualInfo,
+        failCategory: 'entry_mismatch'
+      };
     }
-    return {
-      correction: correction,
-      verification: ok ? 'OK' : 'FAIL',
-      reason: reason
-    };
   }
 
   // 未知のアクション
@@ -2223,9 +2283,17 @@ function writeVerificationResultToSheet(verifyResults) {
   }
   sheet.clear();
 
-  // ヘッダー（10列）
+  // failCategory → 日本語変換マップ
+  var categoryLabels = {
+    'user_not_found': 'ユーザー不在',
+    'unassigned_staff': '未割当',
+    'entry_mismatch': '時間不一致/未反映'
+  };
+
+  // ヘッダー（12列）
   var headers = ['利用者', '日付(前)', '日付(後)', 'アクション', '業務種別',
-                  'サービス内容', '検証結果', '理由', '適用ステータス', 'タイムスタンプ'];
+                  '期待時間', '期待スタッフ', 'サービス内容',
+                  '検証結果', 'FAIL原因', '理由', 'タイムスタンプ'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4a86c8').setFontColor('#ffffff');
 
@@ -2241,7 +2309,7 @@ function writeVerificationResultToSheet(verifyResults) {
   var summaryRow = [
     '検証合計: ' + verifyResults.length + '件', '',
     'OK: ' + okCount, '', 'FAIL: ' + failCount,
-    'スキップ: ' + skipCount, '', '', '', timestamp
+    '', '', 'スキップ: ' + skipCount, '', '', '', timestamp
   ];
   sheet.getRange(2, 1, 1, headers.length).setValues([summaryRow]);
   sheet.getRange(2, 1, 1, headers.length).setFontWeight('bold').setBackground('#e2e3e5');
@@ -2252,27 +2320,41 @@ function writeVerificationResultToSheet(verifyResults) {
     for (var i = 0; i < verifyResults.length; i++) {
       var vr = verifyResults[i];
       var c = vr.correction || {};
+      var expectedTime = '';
+      if (c.start_time_to || c.end_time_to) {
+        expectedTime = (c.start_time_to || '') + ' - ' + (c.end_time_to || '');
+      }
+      var expectedStaff = c.staff1_to || '';
+      var failCategoryLabel = vr.failCategory ? (categoryLabels[vr.failCategory] || vr.failCategory) : '';
+
       rows.push([
         c.user_name || '',
         c.date_from || '',
         c.date_to || '',
         c.action || '',
         c.business_type || '',
+        expectedTime,
+        expectedStaff,
         c.service_content || '',
         vr.verification || '',
+        failCategoryLabel,
         vr.reason || '',
-        '',
         timestamp
       ]);
     }
     sheet.getRange(3, 1, rows.length, headers.length).setValues(rows);
 
-    // 色分け
+    // 色分け + 未割当スタッフ強調
     var colorMap = { 'OK': '#d4edda', 'FAIL': '#f8d7da', 'skipped': '#fff3cd' };
     for (var j = 0; j < rows.length; j++) {
-      var verResult = rows[j][6];
+      var verResult = rows[j][8];  // 検証結果は9列目（インデックス8）
       var color = colorMap[verResult] || '#ffffff';
       sheet.getRange(3 + j, 1, 1, headers.length).setBackground(color);
+
+      // 未割当スタッフは赤色太字で強調
+      if (rows[j][6] === '未割当') {
+        sheet.getRange(3 + j, 7).setFontColor('#cc0000').setFontWeight('bold');
+      }
     }
   }
 
@@ -2281,132 +2363,6 @@ function writeVerificationResultToSheet(verifyResults) {
     sheet.autoResizeColumn(col);
   }
 }
-
-/**
- * 検証結果を HTML ファイルとして Drive フォルダに保存
- * DocumentApp不要 — DriveAppのみで動作（追加OAuth認証不要）
- *
- * @param {Array} verifyResults - 検証結果配列
- * @param {string} month - 対象月（YYYY-MM形式）
- * @returns {Object} { success: boolean, docUrl: string, message: string }
- */
-function exportVerificationToDoc(verifyResults, month) {
-  try {
-    var targetMonth = month || getCurrentMonth();
-    var monthStr = targetMonth.replace("-", "");
-    var timestamp = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm');
-    var fileName = '適用後検証結果_' + monthStr + '_' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMdd_HHmm') + '.html';
-
-    // サマリー集計
-    var okCount = 0, failCount = 0, skipCount = 0;
-    for (var i = 0; i < verifyResults.length; i++) {
-      var v = verifyResults[i].verification;
-      if (v === 'OK') okCount++;
-      else if (v === 'FAIL') failCount++;
-      else skipCount++;
-    }
-
-    // HTML生成
-    var html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
-      + '<title>適用後検証結果</title>'
-      + '<style>'
-      + 'body{font-family:"Hiragino Sans","Yu Gothic",sans-serif;margin:20px;color:#333}'
-      + 'h1{text-align:center;color:#2c3e50;border-bottom:3px solid #4a86c8;padding-bottom:10px}'
-      + 'h2{color:#4a86c8;margin-top:30px}'
-      + '.meta{text-align:center;color:#666;margin-bottom:20px}'
-      + 'table{border-collapse:collapse;width:100%;margin:10px 0}'
-      + 'th,td{border:1px solid #ddd;padding:8px 12px;text-align:left;font-size:13px}'
-      + 'th{background:#4a86c8;color:#fff;font-weight:bold}'
-      + '.ok{background:#d4edda}.fail{background:#f8d7da}.skip{background:#fff3cd}'
-      + '.summary-table td{font-size:18px;font-weight:bold;text-align:center;padding:12px}'
-      + '.fail-header th{background:#c0392b}'
-      + '.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold}'
-      + '.badge-ok{background:#28a745;color:#fff}.badge-fail{background:#dc3545;color:#fff}.badge-skip{background:#ffc107;color:#333}'
-      + '</style></head><body>';
-
-    // タイトル
-    html += '<h1>適用後検証結果レポート</h1>';
-    html += '<p class="meta">対象月: ' + targetMonth + '　｜　作成日時: ' + timestamp + '</p>';
-
-    // サマリーテーブル
-    html += '<h2>サマリー</h2>';
-    html += '<table class="summary-table"><tr><th>合計</th><th>OK</th><th>FAIL</th><th>スキップ</th></tr>';
-    html += '<tr><td>' + verifyResults.length + '件</td>'
-      + '<td class="ok">' + okCount + '件</td>'
-      + '<td class="fail">' + failCount + '件</td>'
-      + '<td class="skip">' + skipCount + '件</td></tr></table>';
-
-    // FAIL一覧
-    if (failCount > 0) {
-      html += '<h2>不一致一覧（FAIL: ' + failCount + '件）</h2>';
-      html += '<table><tr class="fail-header"><th>#</th><th>利用者</th><th>日付</th><th>アクション</th><th>業務種別</th><th>理由</th></tr>';
-      var fIdx = 1;
-      for (var f = 0; f < verifyResults.length; f++) {
-        if (verifyResults[f].verification === 'FAIL') {
-          var fc = verifyResults[f].correction || {};
-          html += '<tr class="fail"><td>' + fIdx + '</td>'
-            + '<td>' + esc_(fc.user_name || '(なし)') + '</td>'
-            + '<td>' + esc_(fc.date_to || fc.date_from || '') + '日</td>'
-            + '<td>' + esc_(fc.action || '') + '</td>'
-            + '<td>' + esc_(fc.business_type || '') + '</td>'
-            + '<td>' + esc_(verifyResults[f].reason || '') + '</td></tr>';
-          fIdx++;
-        }
-      }
-      html += '</table>';
-    }
-
-    // 全件詳細
-    html += '<h2>全件詳細（' + verifyResults.length + '件）</h2>';
-    html += '<table><tr><th>#</th><th>利用者</th><th>日付(前)</th><th>日付(後)</th><th>アクション</th><th>業務種別</th><th>結果</th><th>理由</th></tr>';
-    for (var d = 0; d < verifyResults.length; d++) {
-      var vr = verifyResults[d];
-      var cr = vr.correction || {};
-      var cls = vr.verification === 'OK' ? 'ok' : (vr.verification === 'FAIL' ? 'fail' : 'skip');
-      var badge = vr.verification === 'OK' ? 'badge-ok' : (vr.verification === 'FAIL' ? 'badge-fail' : 'badge-skip');
-      html += '<tr class="' + cls + '">'
-        + '<td>' + (d + 1) + '</td>'
-        + '<td>' + esc_(cr.user_name || '') + '</td>'
-        + '<td>' + esc_(cr.date_from || '') + '</td>'
-        + '<td>' + esc_(cr.date_to || '') + '</td>'
-        + '<td>' + esc_(cr.action || '') + '</td>'
-        + '<td>' + esc_(cr.business_type || '') + '</td>'
-        + '<td><span class="badge ' + badge + '">' + esc_(vr.verification || '') + '</span></td>'
-        + '<td>' + esc_(vr.reason || '') + '</td></tr>';
-    }
-    html += '</table>';
-    html += '<p style="text-align:center;color:#999;margin-top:30px;font-size:11px">自動生成: カイポケ自動化システム</p>';
-    html += '</body></html>';
-
-    // Driveに保存
-    var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    var blob = Utilities.newBlob(html, 'text/html', fileName);
-    var file = folder.createFile(blob);
-    var fileUrl = file.getUrl();
-
-    console.log('[exportVerificationToDoc] 保存完了: ' + fileName + ' → ' + fileUrl);
-
-    return {
-      success: true,
-      docUrl: fileUrl,
-      message: '検証結果を保存しました: ' + fileName
-    };
-  } catch (e) {
-    console.error('[exportVerificationToDoc] エラー:', e);
-    return {
-      success: false,
-      docUrl: '',
-      message: 'ドキュメント出力エラー: ' + e.message
-    };
-  }
-}
-
-/** HTML エスケープヘルパー */
-function esc_(str) {
-  if (!str) return '';
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 
 /**
  * 適用結果を隠しシートに保存（検証時に参照するため）
@@ -2433,4 +2389,195 @@ function getStoredApplyResult_() {
   if (!sheet) return {};
   var json = sheet.getRange(1, 1).getValue();
   return json ? JSON.parse(json) : {};
+}
+
+/**
+ * 検証結果をHTMLレポートとしてGoogle Driveに出力する。
+ * - サマリー
+ * - FAIL原因分析セクション（カテゴリ別集計）
+ * - FAIL一覧テーブル（期待内容・FAIL原因・詳細列付き）
+ * - 全件一覧
+ *
+ * @param {Array} verifyResults - verifyApplyResult() の結果
+ * @param {string} month - 対象月 "YYYY-MM"
+ * @returns {Object} { success: boolean, fileUrl: string, message: string }
+ */
+function exportVerificationToDoc(verifyResults, month) {
+  var targetMonth = month || getCurrentMonth();
+
+  // failCategory → 日本語変換マップ
+  var categoryLabels = {
+    'user_not_found': 'ユーザー不在',
+    'unassigned_staff': '未割当',
+    'entry_mismatch': '時間不一致/未反映'
+  };
+  var categoryDescriptions = {
+    'user_not_found': 'イベント・個別業務は利用者なしの登録のため検証不可',
+    'unassigned_staff': '最適化の結果、割当可能なスタッフが不在のため反映不可',
+    'entry_mismatch': '同日の複数修正で適用順序が影響し期待と異なる、または未反映'
+  };
+
+  // 集計
+  var okCount = 0, failCount = 0, skipCount = 0;
+  var failItems = [];
+  var categoryCounts = {};
+
+  for (var i = 0; i < verifyResults.length; i++) {
+    var r = verifyResults[i];
+    if (r.verification === 'OK') {
+      okCount++;
+    } else if (r.verification === 'FAIL') {
+      failCount++;
+      failItems.push(r);
+      var cat = r.failCategory || 'unknown';
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+    } else {
+      skipCount++;
+    }
+  }
+
+  // HTML構築
+  var html = '';
+  html += '<html><head><style>';
+  html += 'body { font-family: "Meiryo", sans-serif; margin: 20px; }';
+  html += 'h1 { color: #333; border-bottom: 2px solid #4a86c8; padding-bottom: 8px; }';
+  html += 'h2 { color: #4a86c8; margin-top: 30px; }';
+  html += 'table { border-collapse: collapse; width: 100%; margin: 10px 0; }';
+  html += 'th { background: #4a86c8; color: white; padding: 8px 12px; text-align: left; font-size: 13px; }';
+  html += 'td { border: 1px solid #ddd; padding: 6px 10px; font-size: 12px; }';
+  html += 'tr:nth-child(even) { background: #f9f9f9; }';
+  html += '.ok { background: #d4edda; }';
+  html += '.fail { background: #f8d7da; }';
+  html += '.skip { background: #fff3cd; }';
+  html += '.summary-box { background: #f0f4f8; border: 1px solid #4a86c8; border-radius: 8px; padding: 15px; margin: 15px 0; }';
+  html += '.summary-box .num { font-size: 24px; font-weight: bold; }';
+  html += '.cat-unassigned { color: #cc0000; font-weight: bold; }';
+  html += '.cat-user-not-found { color: #e67e00; font-weight: bold; }';
+  html += '.cat-entry-mismatch { color: #0066cc; font-weight: bold; }';
+  html += '</style></head><body>';
+
+  // タイトル
+  html += '<h1>適用後検証レポート（' + targetMonth + '）</h1>';
+  html += '<p>生成日時: ' + Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm:ss') + '</p>';
+
+  // サマリー
+  html += '<div class="summary-box">';
+  html += '<p>検証対象: <span class="num">' + verifyResults.length + '</span>件</p>';
+  html += '<p>OK: <span class="num" style="color:green">' + okCount + '</span>件 | ';
+  html += 'FAIL: <span class="num" style="color:red">' + failCount + '</span>件 | ';
+  html += 'スキップ: <span class="num" style="color:orange">' + skipCount + '</span>件</p>';
+  html += '</div>';
+
+  // FAIL原因分析セクション
+  if (failCount > 0) {
+    html += '<h2>FAIL原因分析</h2>';
+    html += '<table>';
+    html += '<tr><th>原因カテゴリ</th><th>件数</th><th>説明</th></tr>';
+    var catKeys = Object.keys(categoryCounts);
+    for (var k = 0; k < catKeys.length; k++) {
+      var catKey = catKeys[k];
+      var catLabel = categoryLabels[catKey] || catKey;
+      var catDesc = categoryDescriptions[catKey] || '';
+      var cssClass = '';
+      if (catKey === 'unassigned_staff') cssClass = 'cat-unassigned';
+      else if (catKey === 'user_not_found') cssClass = 'cat-user-not-found';
+      else if (catKey === 'entry_mismatch') cssClass = 'cat-entry-mismatch';
+
+      html += '<tr>';
+      html += '<td class="' + cssClass + '">' + catLabel + '</td>';
+      html += '<td>' + categoryCounts[catKey] + '件</td>';
+      html += '<td>' + catDesc + '</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+
+    // FAIL一覧テーブル
+    html += '<h2>FAIL一覧（' + failCount + '件）</h2>';
+    html += '<table>';
+    html += '<tr><th>#</th><th>利用者</th><th>日付</th><th>アクション</th><th>期待内容</th><th>FAIL原因</th><th>詳細</th></tr>';
+
+    for (var f = 0; f < failItems.length; f++) {
+      var fi = failItems[f];
+      var fc = fi.correction || {};
+      var expectedContent = '';
+      if (fc.start_time_to || fc.end_time_to) {
+        expectedContent = (fc.start_time_to || '') + ' - ' + (fc.end_time_to || '');
+      }
+      if (fc.staff1_to) {
+        expectedContent += (expectedContent ? ' ' : '') + '(' + fc.staff1_to + ')';
+      }
+      var fCatLabel = fi.failCategory ? (categoryLabels[fi.failCategory] || fi.failCategory) : '';
+      var fCssClass = '';
+      if (fi.failCategory === 'unassigned_staff') fCssClass = 'cat-unassigned';
+      else if (fi.failCategory === 'user_not_found') fCssClass = 'cat-user-not-found';
+      else if (fi.failCategory === 'entry_mismatch') fCssClass = 'cat-entry-mismatch';
+
+      html += '<tr class="fail">';
+      html += '<td>' + (f + 1) + '</td>';
+      html += '<td>' + (fc.user_name || '') + '</td>';
+      html += '<td>' + (fc.date_to || fc.date_from || '') + '日</td>';
+      html += '<td>' + (fc.action || '') + '</td>';
+      html += '<td>' + expectedContent + '</td>';
+      html += '<td class="' + fCssClass + '">' + fCatLabel + '</td>';
+      html += '<td>' + (fi.reason || '') + '</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+  }
+
+  // 全件一覧
+  html += '<h2>全件一覧（' + verifyResults.length + '件）</h2>';
+  html += '<table>';
+  html += '<tr><th>#</th><th>利用者</th><th>日付</th><th>アクション</th><th>業務種別</th><th>検証結果</th><th>理由</th></tr>';
+
+  for (var j = 0; j < verifyResults.length; j++) {
+    var vr = verifyResults[j];
+    var vc = vr.correction || {};
+    var rowClass = '';
+    if (vr.verification === 'OK') rowClass = 'ok';
+    else if (vr.verification === 'FAIL') rowClass = 'fail';
+    else rowClass = 'skip';
+
+    html += '<tr class="' + rowClass + '">';
+    html += '<td>' + (j + 1) + '</td>';
+    html += '<td>' + (vc.user_name || '') + '</td>';
+    html += '<td>' + (vc.date_to || vc.date_from || '') + '日</td>';
+    html += '<td>' + (vc.action || '') + '</td>';
+    html += '<td>' + (vc.business_type || '') + '</td>';
+    html += '<td>' + (vr.verification || '') + '</td>';
+    html += '<td>' + (vr.reason || '') + '</td>';
+    html += '</tr>';
+  }
+  html += '</table>';
+  html += '</body></html>';
+
+  // Google Driveに保存
+  try {
+    var htmlFilename = '検証レポート_' + targetMonth + '.html';
+    var blob = Utilities.newBlob(html, 'text/html', htmlFilename);
+    var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+
+    // 既存ファイルがあれば削除して再作成
+    var existing = folder.getFilesByName(htmlFilename);
+    while (existing.hasNext()) {
+      existing.next().setTrashed(true);
+    }
+    var file = folder.createFile(blob);
+    var fileUrl = file.getUrl();
+
+    console.log('[exportVerificationToDoc] HTMLレポート保存完了: ' + htmlFilename);
+
+    return {
+      success: true,
+      fileUrl: fileUrl,
+      message: '検証レポートを生成しました: ' + htmlFilename
+    };
+  } catch (e) {
+    console.error('[exportVerificationToDoc] エラー:', e);
+    return {
+      success: false,
+      fileUrl: '',
+      message: 'レポート生成エラー: ' + e.message
+    };
+  }
 }
