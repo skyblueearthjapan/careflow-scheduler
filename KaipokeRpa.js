@@ -2283,7 +2283,9 @@ function writeVerificationResultToSheet(verifyResults) {
 }
 
 /**
- * 検証結果を Google ドキュメントとして Drive フォルダに保存
+ * 検証結果を HTML ファイルとして Drive フォルダに保存
+ * DocumentApp不要 — DriveAppのみで動作（追加OAuth認証不要）
+ *
  * @param {Array} verifyResults - 検証結果配列
  * @param {string} month - 対象月（YYYY-MM形式）
  * @returns {Object} { success: boolean, docUrl: string, message: string }
@@ -2293,7 +2295,7 @@ function exportVerificationToDoc(verifyResults, month) {
     var targetMonth = month || getCurrentMonth();
     var monthStr = targetMonth.replace("-", "");
     var timestamp = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm');
-    var docTitle = '適用後検証結果_' + monthStr + '_' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMdd_HHmm');
+    var fileName = '適用後検証結果_' + monthStr + '_' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMdd_HHmm') + '.html';
 
     // サマリー集計
     var okCount = 0, failCount = 0, skipCount = 0;
@@ -2304,113 +2306,90 @@ function exportVerificationToDoc(verifyResults, month) {
       else skipCount++;
     }
 
-    // ドキュメント作成
-    var doc = DocumentApp.create(docTitle);
-    var body = doc.getBody();
+    // HTML生成
+    var html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+      + '<title>適用後検証結果</title>'
+      + '<style>'
+      + 'body{font-family:"Hiragino Sans","Yu Gothic",sans-serif;margin:20px;color:#333}'
+      + 'h1{text-align:center;color:#2c3e50;border-bottom:3px solid #4a86c8;padding-bottom:10px}'
+      + 'h2{color:#4a86c8;margin-top:30px}'
+      + '.meta{text-align:center;color:#666;margin-bottom:20px}'
+      + 'table{border-collapse:collapse;width:100%;margin:10px 0}'
+      + 'th,td{border:1px solid #ddd;padding:8px 12px;text-align:left;font-size:13px}'
+      + 'th{background:#4a86c8;color:#fff;font-weight:bold}'
+      + '.ok{background:#d4edda}.fail{background:#f8d7da}.skip{background:#fff3cd}'
+      + '.summary-table td{font-size:18px;font-weight:bold;text-align:center;padding:12px}'
+      + '.fail-header th{background:#c0392b}'
+      + '.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold}'
+      + '.badge-ok{background:#28a745;color:#fff}.badge-fail{background:#dc3545;color:#fff}.badge-skip{background:#ffc107;color:#333}'
+      + '</style></head><body>';
 
     // タイトル
-    var title = body.appendParagraph('適用後検証結果レポート');
-    title.setHeading(DocumentApp.ParagraphHeading.HEADING1);
-    title.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    html += '<h1>適用後検証結果レポート</h1>';
+    html += '<p class="meta">対象月: ' + targetMonth + '　｜　作成日時: ' + timestamp + '</p>';
 
-    // 基本情報
-    body.appendParagraph('対象月: ' + targetMonth + '　　作成日時: ' + timestamp)
-        .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    body.appendParagraph('');
+    // サマリーテーブル
+    html += '<h2>サマリー</h2>';
+    html += '<table class="summary-table"><tr><th>合計</th><th>OK</th><th>FAIL</th><th>スキップ</th></tr>';
+    html += '<tr><td>' + verifyResults.length + '件</td>'
+      + '<td class="ok">' + okCount + '件</td>'
+      + '<td class="fail">' + failCount + '件</td>'
+      + '<td class="skip">' + skipCount + '件</td></tr></table>';
 
-    // サマリー
-    var summaryHead = body.appendParagraph('サマリー');
-    summaryHead.setHeading(DocumentApp.ParagraphHeading.HEADING2);
-
-    var summaryTable = body.appendTable();
-    var headerRow = summaryTable.appendTableRow();
-    var headers = ['合計', 'OK', 'FAIL', 'スキップ'];
-    var values = [String(verifyResults.length), String(okCount), String(failCount), String(skipCount)];
-    for (var h = 0; h < headers.length; h++) {
-      headerRow.appendTableCell(headers[h]).setBackgroundColor('#4a86c8')
-        .editAsText().setForegroundColor('#ffffff').setBold(true);
-    }
-    var valRow = summaryTable.appendTableRow();
-    for (var v2 = 0; v2 < values.length; v2++) {
-      valRow.appendTableCell(values[v2]).editAsText().setBold(true);
-    }
-    body.appendParagraph('');
-
-    // FAIL 一覧（あれば）
+    // FAIL一覧
     if (failCount > 0) {
-      var failHead = body.appendParagraph('不一致一覧（FAIL）');
-      failHead.setHeading(DocumentApp.ParagraphHeading.HEADING2);
-
-      var failTable = body.appendTable();
-      var fhRow = failTable.appendTableRow();
-      var failHeaders = ['利用者', '日付', 'アクション', '業務種別', '理由'];
-      for (var fh = 0; fh < failHeaders.length; fh++) {
-        fhRow.appendTableCell(failHeaders[fh]).setBackgroundColor('#f8d7da')
-          .editAsText().setBold(true);
-      }
+      html += '<h2>不一致一覧（FAIL: ' + failCount + '件）</h2>';
+      html += '<table><tr class="fail-header"><th>#</th><th>利用者</th><th>日付</th><th>アクション</th><th>業務種別</th><th>理由</th></tr>';
+      var fIdx = 1;
       for (var f = 0; f < verifyResults.length; f++) {
         if (verifyResults[f].verification === 'FAIL') {
-          var c = verifyResults[f].correction || {};
-          var fRow = failTable.appendTableRow();
-          fRow.appendTableCell(c.user_name || '(なし)');
-          fRow.appendTableCell((c.date_to || c.date_from || '') + '日');
-          fRow.appendTableCell(c.action || '');
-          fRow.appendTableCell(c.business_type || '');
-          fRow.appendTableCell(verifyResults[f].reason || '');
+          var fc = verifyResults[f].correction || {};
+          html += '<tr class="fail"><td>' + fIdx + '</td>'
+            + '<td>' + esc_(fc.user_name || '(なし)') + '</td>'
+            + '<td>' + esc_(fc.date_to || fc.date_from || '') + '日</td>'
+            + '<td>' + esc_(fc.action || '') + '</td>'
+            + '<td>' + esc_(fc.business_type || '') + '</td>'
+            + '<td>' + esc_(verifyResults[f].reason || '') + '</td></tr>';
+          fIdx++;
         }
       }
-      body.appendParagraph('');
+      html += '</table>';
     }
 
     // 全件詳細
-    var detailHead = body.appendParagraph('全件詳細');
-    detailHead.setHeading(DocumentApp.ParagraphHeading.HEADING2);
-
-    var detailTable = body.appendTable();
-    var dhRow = detailTable.appendTableRow();
-    var detailHeaders = ['#', '利用者', '日付(前)', '日付(後)', 'アクション', '業務種別', '結果', '理由'];
-    for (var dh = 0; dh < detailHeaders.length; dh++) {
-      dhRow.appendTableCell(detailHeaders[dh]).setBackgroundColor('#4a86c8')
-        .editAsText().setForegroundColor('#ffffff').setBold(true);
-    }
+    html += '<h2>全件詳細（' + verifyResults.length + '件）</h2>';
+    html += '<table><tr><th>#</th><th>利用者</th><th>日付(前)</th><th>日付(後)</th><th>アクション</th><th>業務種別</th><th>結果</th><th>理由</th></tr>';
     for (var d = 0; d < verifyResults.length; d++) {
       var vr = verifyResults[d];
       var cr = vr.correction || {};
-      var dRow = detailTable.appendTableRow();
-      dRow.appendTableCell(String(d + 1));
-      dRow.appendTableCell(cr.user_name || '');
-      dRow.appendTableCell(cr.date_from || '');
-      dRow.appendTableCell(cr.date_to || '');
-      dRow.appendTableCell(cr.action || '');
-      dRow.appendTableCell(cr.business_type || '');
-      dRow.appendTableCell(vr.verification || '');
-      dRow.appendTableCell(vr.reason || '');
-
-      // 色分け
-      var bgColor = '#ffffff';
-      if (vr.verification === 'OK') bgColor = '#d4edda';
-      else if (vr.verification === 'FAIL') bgColor = '#f8d7da';
-      else bgColor = '#fff3cd';
-      for (var cell = 0; cell < dRow.getNumCells(); cell++) {
-        dRow.getCell(cell).setBackgroundColor(bgColor);
-      }
+      var cls = vr.verification === 'OK' ? 'ok' : (vr.verification === 'FAIL' ? 'fail' : 'skip');
+      var badge = vr.verification === 'OK' ? 'badge-ok' : (vr.verification === 'FAIL' ? 'badge-fail' : 'badge-skip');
+      html += '<tr class="' + cls + '">'
+        + '<td>' + (d + 1) + '</td>'
+        + '<td>' + esc_(cr.user_name || '') + '</td>'
+        + '<td>' + esc_(cr.date_from || '') + '</td>'
+        + '<td>' + esc_(cr.date_to || '') + '</td>'
+        + '<td>' + esc_(cr.action || '') + '</td>'
+        + '<td>' + esc_(cr.business_type || '') + '</td>'
+        + '<td><span class="badge ' + badge + '">' + esc_(vr.verification || '') + '</span></td>'
+        + '<td>' + esc_(vr.reason || '') + '</td></tr>';
     }
+    html += '</table>';
+    html += '<p style="text-align:center;color:#999;margin-top:30px;font-size:11px">自動生成: カイポケ自動化システム</p>';
+    html += '</body></html>';
 
-    doc.saveAndClose();
-
-    // Drive フォルダに移動
-    var docFile = DriveApp.getFileById(doc.getId());
+    // Driveに保存
     var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    folder.addFile(docFile);
-    DriveApp.getRootFolder().removeFile(docFile);
+    var blob = Utilities.newBlob(html, 'text/html', fileName);
+    var file = folder.createFile(blob);
+    var fileUrl = file.getUrl();
 
-    var docUrl = doc.getUrl();
-    console.log('[exportVerificationToDoc] 保存完了: ' + docTitle + ' → ' + docUrl);
+    console.log('[exportVerificationToDoc] 保存完了: ' + fileName + ' → ' + fileUrl);
 
     return {
       success: true,
-      docUrl: docUrl,
-      message: '検証結果ドキュメントを保存しました: ' + docTitle
+      docUrl: fileUrl,
+      message: '検証結果を保存しました: ' + fileName
     };
   } catch (e) {
     console.error('[exportVerificationToDoc] エラー:', e);
@@ -2420,6 +2399,12 @@ function exportVerificationToDoc(verifyResults, month) {
       message: 'ドキュメント出力エラー: ' + e.message
     };
   }
+}
+
+/** HTML エスケープヘルパー */
+function esc_(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 
