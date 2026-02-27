@@ -3251,6 +3251,10 @@ function 割当結果を作成_(ss) {
             var availMin = calcAvailableMinutes_(st.id, dateObj, latestStart, earliestEnd);
             if (availMin < svcMin) return false;
           }
+          // ★追加：非固定でも、具体的な開始・終了時間がある場合は既存予定との重複チェック
+          if (startMin != null && endMin != null) {
+            if (isOverlappedWithExisting_(st.id, dateObj, startMin, endMin)) return false;
+          }
         }
       }
       var count = getAssignCount(st.id, dateStr);
@@ -3328,6 +3332,10 @@ function 割当結果を作成_(ss) {
               if (svcMin > 0) {
                 var availMin = calcAvailableMinutes_(st.id, dateObj, latestStart, earliestEnd);
                 if (availMin < svcMin) { debugExcludeReasons[st.id] = 'noAvailableSlot'; return; }
+              }
+              // ★追加：非固定でも、具体的な開始・終了時間がある場合は既存予定との重複チェック
+              if (startMin != null && endMin != null) {
+                if (isOverlappedWithExisting_(st.id, dateObj, startMin, endMin)) { debugExcludeReasons[st.id] = 'overlapNonFixed'; return; }
               }
             }
           }
@@ -3457,6 +3465,10 @@ function 割当結果を作成_(ss) {
               var fbEarliestEnd = Math.min(fbReqEnd, st.shiftEndMin || 1440);
               var fbAvail = calcAvailableMinutes_(st.id, dateObj, fbLatestStart, fbEarliestEnd);
               if (fbAvail < svcMin) return;
+            }
+            // ★追加：非固定でも、具体的な開始・終了時間がある場合は既存予定との重複チェック
+            if (startMin != null && endMin != null) {
+              if (isOverlappedWithExisting_(st.id, dateObj, startMin, endMin)) return;
             }
           }
 
@@ -4047,9 +4059,23 @@ function 割当結果を作成_(ss) {
             continue;
           }
 
-          // COUPLED同士: 両方残す（同じ患者のペアは別スタッフなので正常）
+          // COUPLED同士: 同じ患者のペアは正常（別スタッフなので残す）
+          // ★修正：異なる患者のCOUPLED同士が同スタッフ・同時刻に重なる場合は後者を未割当
           if (prev.kind === 'COUPLED' && cur.kind === 'COUPLED') {
-            cleaned.push(cur);
+            var prevPid = resultRows[prev.idx][5];
+            var curPid = resultRows[cur.idx][5];
+            if (prevPid === curPid) {
+              // 同じ患者のペア訪問 → 正常（slot-1とslot-2が同スタッフに来ることはないはずだが念のため残す）
+              cleaned.push(cur);
+            } else {
+              // 別患者のCOUPLEDが同スタッフ・同時刻に衝突 → 後者(cur)を未割当に
+              var rowCpCp = resultRows[cur.idx];
+              rowCpCp[3] = '';
+              rowCpCp[4] = '未割当';
+              rowCpCp[14] = (rowCpCp[14] || '') + ' / 2名体制同士の時間衝突(' + resultRows[prev.idx][6] + 'と重複)で未割当';
+              unassignedList.push({ date: rowCpCp[1], youbi: rowCpCp[2], pid: rowCpCp[5], pname: rowCpCp[6], needStaff: 1, slot: 1, reason: '同一スタッフ重複(' + key.split('|')[0] + ')' });
+              console.log('[AnchorConflict] COUPLED同士衝突: ' + key + ' prev=' + resultRows[prev.idx][0] + '(' + resultRows[prev.idx][6] + ') cur=' + resultRows[cur.idx][0] + '(' + resultRows[cur.idx][6] + ') → cur未割当');
+            }
             continue;
           }
 
@@ -4806,7 +4832,39 @@ function 割当結果を作成_(ss) {
       var anchors = allVisits.filter(function(v) { return v.isCoupled; });
       var movable = allVisits.filter(function(v) { return !v.isCoupled; });
 
-      if (movable.length === 0) return;
+      if (movable.length === 0) {
+        // ★修正：アンカーのみでも、別患者のCOUPLED同士の重複を検出して後者を未割当にする
+        if (anchors.length >= 2) {
+          anchors.sort(function(a, b) { return a.s - b.s; });
+          var anchorPlaced = [anchors[0]];
+          for (var ai = 1; ai < anchors.length; ai++) {
+            var ac = anchors[ai];
+            var hasAnchorOverlap = anchorPlaced.some(function(ap) {
+              return ac.s < ap.e && ap.s < ac.e;
+            });
+            if (hasAnchorOverlap) {
+              // 別患者かチェック
+              var acRow = resultRows[ac.idx];
+              var overlappingAnchor = anchorPlaced.filter(function(ap) { return ac.s < ap.e && ap.s < ac.e; })[0];
+              var apRow = resultRows[overlappingAnchor.idx];
+              if (acRow[5] !== apRow[5]) {
+                // 別患者のCOUPLED同士が重複 → 後者を未割当
+                acRow[3] = '';
+                acRow[4] = '未割当';
+                acRow[14] = (acRow[14] || '') + ' / COUPLED同士時間重複(OverlapFix)で未割当';
+                unassignedList.push({ date: acRow[1], youbi: acRow[2], pid: acRow[5], pname: acRow[6], needStaff: 1, slot: 1, reason: '同一スタッフ重複(' + sdKey.split('|')[0] + ')' });
+                console.log('[OverlapFix] COUPLED重複未割当: ' + sdKey + ' vid=' + acRow[0] + '(' + acRow[6] + ')');
+                overlapFixCount++;
+              } else {
+                anchorPlaced.push(ac);
+              }
+            } else {
+              anchorPlaced.push(ac);
+            }
+          }
+        }
+        return;
+      }
 
       // アンカーを開始時刻順にソート（不動の占有区間リスト）
       anchors.sort(function(a, b) { return a.s - b.s; });
