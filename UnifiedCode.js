@@ -4751,7 +4751,7 @@ function 割当結果を作成_(ss) {
     for (var i = 0; i < resultRows.length; i++) {
       var r = resultRows[i];
       var vid = String(r[0] || '');
-      if (vid.indexOf('_T_') >= 0) continue; // 同行行はスキップ
+      if (vid.indexOf('_T_') >= 0) continue;
       if (!r[3] || r[4] === '未割当') continue;
       var d = r[1];
       if (!(d instanceof Date)) continue;
@@ -4766,68 +4766,88 @@ function 割当結果を作成_(ss) {
       var indices = staffDayGroups[sdKey];
       if (indices.length < 2) return;
 
-      // 開始時刻でソート
-      var visits = indices.map(function(idx) {
+      // 全訪問を取得
+      var allVisits = indices.map(function(idx) {
         return { idx: idx, s: toMinutes(resultRows[idx][8]), e: toMinutes(resultRows[idx][9]),
                  svcMin: Number(resultRows[idx][10]) || 30, tt: String(resultRows[idx][11] || '').trim(),
                  isCoupled: !!coupledIdxSet[idx] };
       }).filter(function(v) { return v.s != null && v.e != null; });
-      visits.sort(function(a, b) { return a.s - b.s; });
 
-      // 重複検出＆ずらし
-      for (var vi = 1; vi < visits.length; vi++) {
-        var prev = visits[vi - 1];
-        var cur = visits[vi];
+      // ★アンカー（不動）= ペア訪問 + イベント
+      // ★可動 = 1人体制の通常訪問
+      var anchors = allVisits.filter(function(v) { return v.isCoupled; });
+      var movable = allVisits.filter(function(v) { return !v.isCoupled; });
 
-        // 重複チェック: 前の訪問の終了 + バッファ > 現在の訪問の開始
-        if (prev.e + BUFFER_MIN > cur.s) {
-          // ★ペア訪問（2名体制）はずらし対象外（後段のsyncCoupledVisitTimes_で同期）
-          if (cur.isCoupled) {
-            console.log('[OverlapFix] ペア訪問スキップ: ' + sdKey + ' vid=' + resultRows[cur.idx][0] + ' (syncで同期予定)');
-            continue;
-          }
+      if (movable.length === 0) return;
 
-          var row = resultRows[cur.idx];
-          var oldStart = cur.s;
-          var newStart = prev.e + BUFFER_MIN;
-          var newEnd = newStart + cur.svcMin;
+      // アンカーを開始時刻順にソート（不動の占有区間リスト）
+      anchors.sort(function(a, b) { return a.s - b.s; });
+      // 可動を開始時刻順にソート
+      movable.sort(function(a, b) { return a.s - b.s; });
 
-          // 希望時間帯の制約チェック
-          var latestEnd = toMinutes(row[13]); // 希望最遅
-          var tt = cur.tt;
-          if (latestEnd == null) {
-            if (tt === '午前') latestEnd = 12 * 60;
-            else if (tt === '午後') latestEnd = 17 * 60;
-            else if (tt === '終日') latestEnd = 18 * 60;
-          }
+      // 配置済みリスト（アンカーから開始）
+      var placed = anchors.map(function(a) { return { s: a.s, e: a.e }; });
 
-          // スタッフのシフト終了もチェック
-          var staffId = sdKey.split('|')[0];
-          var shift = getStaffShift_(staffId);
-          var shiftEnd = shift.shiftEndMin || 1080;
+      // 各可動訪問を、配置済み全てと重複しない位置に配置
+      movable.forEach(function(mv) {
+        var row = resultRows[mv.idx];
 
-          if ((latestEnd == null || newEnd <= latestEnd) && newEnd <= shiftEnd) {
-            // ずらし配置OK
-            setRowTimeByMinutes_(row, newStart, newEnd);
-            cur.s = newStart;
-            cur.e = newEnd;
-            row[14] = (row[14] || '') + ' / 時間重複自動修正(' + oldStart + '→' + newStart + ')';
-            console.log('[OverlapFix] スタッフ時間重複修正: ' + sdKey + ' vid=' + row[0] + ' ' + oldStart + '→' + newStart);
-            overlapFixCount++;
-          } else {
-            // ずらせない → 未割当
-            row[3] = '';
-            row[4] = '未割当';
-            row[14] = (row[14] || '') + ' / スタッフ時間重複(ずらし不可)で未割当';
-            unassignedList.push({ date: row[1], youbi: row[2], pid: row[5], pname: row[6], needStaff: 1, slot: 1, reason: 'スタッフ時間重複' });
-            console.log('[OverlapFix] スタッフ時間重複→未割当: ' + sdKey + ' vid=' + row[0]);
-            overlapFixCount++;
-            // 未割当にしたのでvisitsから除外して後続の判定に影響させない
-            visits.splice(vi, 1);
-            vi--;
+        // 現在位置で重複チェック
+        var hasOverlap = placed.some(function(p) {
+          return mv.s < p.e + BUFFER_MIN && p.s < mv.e + BUFFER_MIN;
+        });
+
+        if (!hasOverlap) {
+          // 重複なし → そのまま配置
+          placed.push({ s: mv.s, e: mv.e });
+          return;
+        }
+
+        // ★重複あり → 空きスロットを探してずらし配置
+        // 全占有区間を時刻順にソート
+        placed.sort(function(a, b) { return a.s - b.s; });
+
+        var newStart = mv.s;
+        // 各占有区間をチェックし、重なるなら後ろにずらす
+        for (var pi = 0; pi < placed.length; pi++) {
+          var p = placed[pi];
+          if (newStart < p.e + BUFFER_MIN && p.s < newStart + mv.svcMin + BUFFER_MIN) {
+            newStart = p.e + BUFFER_MIN;
           }
         }
-      }
+        var newEnd = newStart + mv.svcMin;
+
+        // 希望時間帯の制約チェック
+        var latestEnd = toMinutes(row[13]);
+        if (latestEnd == null) {
+          if (mv.tt === '午前') latestEnd = 12 * 60;
+          else if (mv.tt === '午後') latestEnd = 17 * 60;
+          else if (mv.tt === '終日') latestEnd = 18 * 60;
+        }
+        var staffId = sdKey.split('|')[0];
+        var shift = getStaffShift_(staffId);
+        var shiftEnd = shift.shiftEndMin || 1080;
+
+        if ((latestEnd == null || newEnd <= latestEnd) && newEnd <= shiftEnd) {
+          // ずらし配置OK
+          var oldStart = mv.s;
+          setRowTimeByMinutes_(row, newStart, newEnd);
+          mv.s = newStart;
+          mv.e = newEnd;
+          placed.push({ s: newStart, e: newEnd });
+          row[14] = (row[14] || '') + ' / 時間重複自動修正(' + oldStart + '→' + newStart + ')';
+          console.log('[OverlapFix] 修正: ' + sdKey + ' vid=' + row[0] + ' ' + oldStart + '→' + newStart);
+          overlapFixCount++;
+        } else {
+          // ずらせない → 未割当
+          row[3] = '';
+          row[4] = '未割当';
+          row[14] = (row[14] || '') + ' / スタッフ時間重複(ずらし不可)で未割当';
+          unassignedList.push({ date: row[1], youbi: row[2], pid: row[5], pname: row[6], needStaff: 1, slot: 1, reason: 'スタッフ時間重複' });
+          console.log('[OverlapFix] 未割当: ' + sdKey + ' vid=' + row[0]);
+          overlapFixCount++;
+        }
+      });
     });
 
     if (overlapFixCount > 0) console.log('[OverlapFix] スタッフ時間重複を ' + overlapFixCount + ' 件修正しました');
