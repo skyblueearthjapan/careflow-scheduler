@@ -1071,6 +1071,8 @@
     .kaipoke-btn.danger:hover:not(:disabled) { background: #c0392b; }
     .kaipoke-btn.info { background: #5f6368; color: var(--color-white); }
     .kaipoke-btn.info:hover:not(:disabled) { background: #4a4d51; }
+    .kaipoke-btn.verify { background: #B8A9D4; color: var(--color-white); }
+    .kaipoke-btn.verify:hover:not(:disabled) { background: #9B87C2; }
     .kaipoke-btn.emergency {
       background: linear-gradient(135deg, #dc0000 0%, #ff0000 50%, #dc0000 100%);
       color: #ffffff; font-size: 18px; font-weight: 900; padding: 16px 12px;
@@ -1458,7 +1460,7 @@
             <button class="kaipoke-btn warning" onclick="kaipokeDiff()">4. 差分確認（プレビュー）</button>
             <button class="kaipoke-btn danger" id="kaipokeApplyBtn" onclick="kaipokeApply()" disabled style="opacity:0.5" title="先に差分確認（プレビュー）を実行してください">5. 差分適用（カイポケに反映）</button>
             <div class="kaipoke-lock-msg" id="kaipokeApplyLock" style="display:none;"></div>
-            <button class="kaipoke-btn info" onclick="kaipokeRunPostApplyVerification()">6. 適用後検証</button>
+            <button class="kaipoke-btn verify" onclick="kaipokeRunPostApplyVerification()">6. 適用後検証</button>
           </div>
 
           <!-- インターロック設定 -->

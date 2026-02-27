@@ -1893,6 +1893,20 @@ function finalizePostApplyVerification(exportResultJson, month) {
     console.error('[postApplyVerify] writeVerificationResultToSheet error:', e);
   }
 
+  // HTMLレポートを生成してDriveに保存
+  var reportUrl = '';
+  try {
+    var reportResult = exportVerificationToDoc(verifyResults, targetMonth);
+    if (reportResult.success) {
+      reportUrl = reportResult.fileUrl || '';
+      console.log('[postApplyVerify] HTMLレポート生成完了: ' + reportUrl);
+    } else {
+      console.error('[postApplyVerify] HTMLレポート生成失敗: ' + reportResult.message);
+    }
+  } catch (e) {
+    console.error('[postApplyVerify] exportVerificationToDoc error:', e);
+  }
+
   var okCount = 0, failCount = 0, skipCount = 0;
   for (var i = 0; i < verifyResults.length; i++) {
     var v = verifyResults[i].verification;
@@ -1915,12 +1929,17 @@ function finalizePostApplyVerification(exportResultJson, month) {
         msg += '\n  ' + (c.user_name || '') + ' ' + (c.date_to || c.date_from || '') + '日 ' + (c.action || '') + ' [' + (verifyResults[j].reason || '') + ']';
       }
     }
-    msg += '\n\n詳細は「検証結果」シートを確認してください。';
   }
+
+  if (reportUrl) {
+    msg += '\n\n📊 詳細レポート（HTML）:\n' + reportUrl;
+  }
+  msg += '\n\n詳細は「検証結果」シートも確認してください。';
 
   return {
     success: true,
     message: msg,
+    reportUrl: reportUrl,
     verifyResults: { total: verifyResults.length, ok: okCount, fail: failCount, skipped: skipCount }
   };
 }
@@ -2407,20 +2426,26 @@ function exportVerificationToDoc(verifyResults, month) {
 
   // failCategory → 日本語変換マップ
   var categoryLabels = {
-    'user_not_found': 'ユーザー不在',
-    'unassigned_staff': '未割当',
-    'entry_mismatch': '時間不一致/未反映'
+    'user_not_found': 'ユーザー不在（イベント・個別業務）',
+    'unassigned_staff': '未割当（スタッフ不足）',
+    'entry_mismatch': '時間不一致・未反映'
   };
   var categoryDescriptions = {
-    'user_not_found': 'イベント・個別業務は利用者なしの登録のため検証不可',
-    'unassigned_staff': '最適化の結果、割当可能なスタッフが不在のため反映不可',
-    'entry_mismatch': '同日の複数修正で適用順序が影響し期待と異なる、または未反映'
+    'user_not_found': 'イベント・個別業務は「利用者なし」で登録されるため、CSVの利用者欄で照合できません。適用自体は正常に完了しています。',
+    'unassigned_staff': 'スケジュール最適化の結果、該当時間帯に割当可能なスタッフが存在しないため、職員の変更が反映されていません。元の担当者のまま運用されます。',
+    'entry_mismatch': '同日に複数の修正が行われた場合、適用順序の影響で期待と異なる時間が設定される場合があります。手動確認を推奨します。'
+  };
+  var categoryIcons = {
+    'user_not_found': '📋',
+    'unassigned_staff': '⚠️',
+    'entry_mismatch': '🔍'
   };
 
   // 集計
   var okCount = 0, failCount = 0, skipCount = 0;
   var failItems = [];
   var categoryCounts = {};
+  var categoryDetails = {};  // カテゴリごとの対象者リスト
 
   for (var i = 0; i < verifyResults.length; i++) {
     var r = verifyResults[i];
@@ -2431,70 +2456,115 @@ function exportVerificationToDoc(verifyResults, month) {
       failItems.push(r);
       var cat = r.failCategory || 'unknown';
       categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+      if (!categoryDetails[cat]) categoryDetails[cat] = [];
+      var rc = r.correction || {};
+      categoryDetails[cat].push((rc.user_name || '不明') + '（' + (rc.date_to || rc.date_from || '') + '日）');
     } else {
       skipCount++;
     }
   }
 
+  var okRate = verifyResults.length > 0 ? Math.round(okCount / verifyResults.length * 100) : 0;
+  var timestamp = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm:ss');
+
   // HTML構築
   var html = '';
-  html += '<html><head><style>';
-  html += 'body { font-family: "Meiryo", sans-serif; margin: 20px; }';
-  html += 'h1 { color: #333; border-bottom: 2px solid #4a86c8; padding-bottom: 8px; }';
-  html += 'h2 { color: #4a86c8; margin-top: 30px; }';
-  html += 'table { border-collapse: collapse; width: 100%; margin: 10px 0; }';
-  html += 'th { background: #4a86c8; color: white; padding: 8px 12px; text-align: left; font-size: 13px; }';
-  html += 'td { border: 1px solid #ddd; padding: 6px 10px; font-size: 12px; }';
-  html += 'tr:nth-child(even) { background: #f9f9f9; }';
-  html += '.ok { background: #d4edda; }';
-  html += '.fail { background: #f8d7da; }';
-  html += '.skip { background: #fff3cd; }';
-  html += '.summary-box { background: #f0f4f8; border: 1px solid #4a86c8; border-radius: 8px; padding: 15px; margin: 15px 0; }';
-  html += '.summary-box .num { font-size: 24px; font-weight: bold; }';
-  html += '.cat-unassigned { color: #cc0000; font-weight: bold; }';
-  html += '.cat-user-not-found { color: #e67e00; font-weight: bold; }';
-  html += '.cat-entry-mismatch { color: #0066cc; font-weight: bold; }';
+  html += '<html><head><meta charset="utf-8"><style>';
+  html += 'body { font-family: "Meiryo", "Hiragino Sans", sans-serif; margin: 0; padding: 30px; background: #fafbfc; color: #333; }';
+  html += 'h1 { color: #2c3e50; border-bottom: 3px solid #7DA7D9; padding-bottom: 10px; margin-bottom: 5px; }';
+  html += '.subtitle { color: #888; font-size: 13px; margin-bottom: 25px; }';
+  html += 'h2 { color: #34495e; margin-top: 35px; padding: 8px 12px; background: #eef3f8; border-left: 4px solid #7DA7D9; border-radius: 0 4px 4px 0; }';
+  html += 'h3 { color: #555; margin-top: 20px; }';
+  html += 'table { border-collapse: collapse; width: 100%; margin: 12px 0 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }';
+  html += 'th { background: #5b7fa5; color: white; padding: 10px 14px; text-align: left; font-size: 13px; }';
+  html += 'td { border: 1px solid #e0e0e0; padding: 8px 12px; font-size: 12px; line-height: 1.5; }';
+  html += 'tr:nth-child(even) { background: #f8f9fa; }';
+  html += '.ok { background: #d4edda !important; }';
+  html += '.fail { background: #f8d7da !important; }';
+  html += '.skip { background: #fff3cd !important; }';
+
+  // サマリーボックス
+  html += '.summary-container { display: flex; gap: 15px; margin: 20px 0; flex-wrap: wrap; }';
+  html += '.summary-card { flex: 1; min-width: 120px; background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }';
+  html += '.summary-card .label { font-size: 12px; color: #888; margin-bottom: 5px; }';
+  html += '.summary-card .value { font-size: 32px; font-weight: bold; }';
+  html += '.summary-card.total .value { color: #2c3e50; }';
+  html += '.summary-card.ok .value { color: #27ae60; }';
+  html += '.summary-card.ok { border-bottom: 3px solid #27ae60; }';
+  html += '.summary-card.fail .value { color: #e74c3c; }';
+  html += '.summary-card.fail { border-bottom: 3px solid #e74c3c; }';
+  html += '.summary-card.rate .value { color: #2980b9; }';
+  html += '.summary-card.rate { border-bottom: 3px solid #2980b9; }';
+
+  // FAIL原因カード
+  html += '.cause-card { background: white; border-radius: 8px; padding: 16px 20px; margin: 10px 0; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border-left: 5px solid #ccc; }';
+  html += '.cause-card.unassigned_staff { border-left-color: #e74c3c; }';
+  html += '.cause-card.user_not_found { border-left-color: #e67e22; }';
+  html += '.cause-card.entry_mismatch { border-left-color: #3498db; }';
+  html += '.cause-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }';
+  html += '.cause-header .icon { font-size: 20px; }';
+  html += '.cause-header .title { font-size: 15px; font-weight: bold; }';
+  html += '.cause-header .count { font-size: 14px; color: #e74c3c; font-weight: bold; margin-left: auto; }';
+  html += '.cause-desc { font-size: 13px; color: #555; margin-bottom: 8px; line-height: 1.6; }';
+  html += '.cause-targets { font-size: 12px; color: #777; }';
+  html += '.cause-targets span { display: inline-block; background: #f0f0f0; padding: 2px 8px; border-radius: 3px; margin: 2px 4px 2px 0; }';
+
+  // FAIL一覧テーブル色
+  html += '.cat-unassigned { color: #c0392b; font-weight: bold; }';
+  html += '.cat-user-not-found { color: #d35400; font-weight: bold; }';
+  html += '.cat-entry-mismatch { color: #2980b9; font-weight: bold; }';
+
+  // 結論ボックス
+  html += '.conclusion { background: white; border: 2px solid #7DA7D9; border-radius: 10px; padding: 20px; margin: 25px 0; }';
+  html += '.conclusion h3 { margin-top: 0; color: #2c3e50; }';
+  html += '.conclusion p { font-size: 13px; line-height: 1.8; color: #444; }';
+
   html += '</style></head><body>';
 
   // タイトル
   html += '<h1>適用後検証レポート（' + targetMonth + '）</h1>';
-  html += '<p>生成日時: ' + Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm:ss') + '</p>';
+  html += '<p class="subtitle">生成日時: ' + timestamp + '</p>';
 
-  // サマリー
-  html += '<div class="summary-box">';
-  html += '<p>検証対象: <span class="num">' + verifyResults.length + '</span>件</p>';
-  html += '<p>OK: <span class="num" style="color:green">' + okCount + '</span>件 | ';
-  html += 'FAIL: <span class="num" style="color:red">' + failCount + '</span>件 | ';
-  html += 'スキップ: <span class="num" style="color:orange">' + skipCount + '</span>件</p>';
+  // サマリーカード
+  html += '<div class="summary-container">';
+  html += '<div class="summary-card total"><div class="label">検証対象</div><div class="value">' + verifyResults.length + '</div></div>';
+  html += '<div class="summary-card ok"><div class="label">OK（正常反映）</div><div class="value">' + okCount + '</div></div>';
+  html += '<div class="summary-card fail"><div class="label">FAIL（要確認）</div><div class="value">' + failCount + '</div></div>';
+  html += '<div class="summary-card rate"><div class="label">適用成功率</div><div class="value">' + okRate + '%</div></div>';
   html += '</div>';
 
   // FAIL原因分析セクション
   if (failCount > 0) {
-    html += '<h2>FAIL原因分析</h2>';
-    html += '<table>';
-    html += '<tr><th>原因カテゴリ</th><th>件数</th><th>説明</th></tr>';
+    html += '<h2>FAIL原因分析（' + failCount + '件）</h2>';
+    html += '<p style="font-size:13px; color:#666;">FAILの原因を分類し、それぞれの理由と対象者を示します。</p>';
+
     var catKeys = Object.keys(categoryCounts);
     for (var k = 0; k < catKeys.length; k++) {
       var catKey = catKeys[k];
       var catLabel = categoryLabels[catKey] || catKey;
       var catDesc = categoryDescriptions[catKey] || '';
-      var cssClass = '';
-      if (catKey === 'unassigned_staff') cssClass = 'cat-unassigned';
-      else if (catKey === 'user_not_found') cssClass = 'cat-user-not-found';
-      else if (catKey === 'entry_mismatch') cssClass = 'cat-entry-mismatch';
+      var catIcon = categoryIcons[catKey] || '❓';
+      var targets = categoryDetails[catKey] || [];
 
-      html += '<tr>';
-      html += '<td class="' + cssClass + '">' + catLabel + '</td>';
-      html += '<td>' + categoryCounts[catKey] + '件</td>';
-      html += '<td>' + catDesc + '</td>';
-      html += '</tr>';
+      html += '<div class="cause-card ' + catKey + '">';
+      html += '<div class="cause-header">';
+      html += '<span class="icon">' + catIcon + '</span>';
+      html += '<span class="title">' + catLabel + '</span>';
+      html += '<span class="count">' + categoryCounts[catKey] + '件</span>';
+      html += '</div>';
+      html += '<div class="cause-desc">' + catDesc + '</div>';
+      html += '<div class="cause-targets">対象: ';
+      for (var t = 0; t < targets.length; t++) {
+        html += '<span>' + targets[t] + '</span>';
+      }
+      html += '</div>';
+      html += '</div>';
     }
-    html += '</table>';
 
     // FAIL一覧テーブル
-    html += '<h2>FAIL一覧（' + failCount + '件）</h2>';
+    html += '<h2>FAIL詳細一覧</h2>';
     html += '<table>';
-    html += '<tr><th>#</th><th>利用者</th><th>日付</th><th>アクション</th><th>期待内容</th><th>FAIL原因</th><th>詳細</th></tr>';
+    html += '<tr><th>#</th><th>利用者</th><th>日付</th><th>操作</th><th>期待内容</th><th>FAIL原因</th><th>詳細説明</th></tr>';
 
     for (var f = 0; f < failItems.length; f++) {
       var fi = failItems[f];
@@ -2504,31 +2574,57 @@ function exportVerificationToDoc(verifyResults, month) {
         expectedContent = (fc.start_time_to || '') + ' - ' + (fc.end_time_to || '');
       }
       if (fc.staff1_to) {
-        expectedContent += (expectedContent ? ' ' : '') + '(' + fc.staff1_to + ')';
+        expectedContent += (expectedContent ? '<br>' : '') + '担当: ' + fc.staff1_to;
       }
+      if (fc.staff1_from && fc.staff1_from !== fc.staff1_to) {
+        expectedContent += '<br><span style="color:#888; font-size:11px;">変更前: ' + fc.staff1_from + '</span>';
+      }
+
       var fCatLabel = fi.failCategory ? (categoryLabels[fi.failCategory] || fi.failCategory) : '';
       var fCssClass = '';
       if (fi.failCategory === 'unassigned_staff') fCssClass = 'cat-unassigned';
       else if (fi.failCategory === 'user_not_found') fCssClass = 'cat-user-not-found';
       else if (fi.failCategory === 'entry_mismatch') fCssClass = 'cat-entry-mismatch';
 
+      var actionLabel = fc.action || '';
+      if (actionLabel === 'edit') actionLabel = '編集';
+      else if (actionLabel === 'add') actionLabel = '追加';
+      else if (actionLabel === 'delete') actionLabel = '削除';
+      else if (actionLabel === 'date_change') actionLabel = '日付移動';
+
       html += '<tr class="fail">';
-      html += '<td>' + (f + 1) + '</td>';
-      html += '<td>' + (fc.user_name || '') + '</td>';
-      html += '<td>' + (fc.date_to || fc.date_from || '') + '日</td>';
-      html += '<td>' + (fc.action || '') + '</td>';
+      html += '<td style="text-align:center">' + (f + 1) + '</td>';
+      html += '<td><strong>' + (fc.user_name || '') + '</strong></td>';
+      html += '<td style="text-align:center">' + (fc.date_to || fc.date_from || '') + '日</td>';
+      html += '<td style="text-align:center">' + actionLabel + '</td>';
       html += '<td>' + expectedContent + '</td>';
       html += '<td class="' + fCssClass + '">' + fCatLabel + '</td>';
-      html += '<td>' + (fi.reason || '') + '</td>';
+      html += '<td style="font-size:11px">' + (fi.reason || '') + '</td>';
       html += '</tr>';
     }
     html += '</table>';
   }
 
-  // 全件一覧
+  // 結論ボックス
+  html += '<div class="conclusion">';
+  html += '<h3>検証結果まとめ</h3>';
+  if (failCount === 0) {
+    html += '<p>全 ' + verifyResults.length + ' 件の修正がカイポケに正常に反映されました。</p>';
+  } else {
+    html += '<p>' + verifyResults.length + ' 件中 <strong>' + okCount + ' 件</strong>（' + okRate + '%）が正常に反映されました。</p>';
+    html += '<p>FAIL ' + failCount + ' 件の内訳:</p><ul style="font-size:13px; line-height:2;">';
+    for (var m = 0; m < catKeys.length; m++) {
+      html += '<li><strong>' + (categoryLabels[catKeys[m]] || catKeys[m]) + '</strong>: ' + categoryCounts[catKeys[m]] + '件 — ' + (categoryDescriptions[catKeys[m]] || '') + '</li>';
+    }
+    html += '</ul>';
+    html += '<p style="color:#888; font-size:12px; margin-top:10px;">※ 「未割当」「ユーザー不在」はシステムの仕様上の制約であり、プログラムの不具合ではありません。</p>';
+  }
+  html += '</div>';
+
+  // 全件一覧（折りたたみ風）
   html += '<h2>全件一覧（' + verifyResults.length + '件）</h2>';
   html += '<table>';
-  html += '<tr><th>#</th><th>利用者</th><th>日付</th><th>アクション</th><th>業務種別</th><th>検証結果</th><th>理由</th></tr>';
+  html += '<tr><th>#</th><th>利用者</th><th>日付</th><th>操作</th><th>業務種別</th><th>結果</th></tr>';
 
   for (var j = 0; j < verifyResults.length; j++) {
     var vr = verifyResults[j];
@@ -2538,17 +2634,25 @@ function exportVerificationToDoc(verifyResults, month) {
     else if (vr.verification === 'FAIL') rowClass = 'fail';
     else rowClass = 'skip';
 
+    var actLabel = vc.action || '';
+    if (actLabel === 'edit') actLabel = '編集';
+    else if (actLabel === 'add') actLabel = '追加';
+    else if (actLabel === 'delete') actLabel = '削除';
+    else if (actLabel === 'date_change') actLabel = '日付移動';
+    else if (actLabel === 'event_add') actLabel = 'イベント追加';
+
     html += '<tr class="' + rowClass + '">';
-    html += '<td>' + (j + 1) + '</td>';
+    html += '<td style="text-align:center">' + (j + 1) + '</td>';
     html += '<td>' + (vc.user_name || '') + '</td>';
-    html += '<td>' + (vc.date_to || vc.date_from || '') + '日</td>';
-    html += '<td>' + (vc.action || '') + '</td>';
+    html += '<td style="text-align:center">' + (vc.date_to || vc.date_from || '') + '日</td>';
+    html += '<td style="text-align:center">' + actLabel + '</td>';
     html += '<td>' + (vc.business_type || '') + '</td>';
-    html += '<td>' + (vr.verification || '') + '</td>';
-    html += '<td>' + (vr.reason || '') + '</td>';
+    html += '<td style="text-align:center; font-weight:bold">' + (vr.verification || '') + '</td>';
     html += '</tr>';
   }
   html += '</table>';
+
+  html += '<p style="text-align:center; color:#aaa; font-size:11px; margin-top:30px;">このレポートはカイポケRPA自動スケジューリングシステムにより自動生成されました</p>';
   html += '</body></html>';
 
   // Google Driveに保存
