@@ -1893,6 +1893,14 @@ function finalizePostApplyVerification(exportResultJson, month) {
     console.error('[postApplyVerify] writeVerificationResultToSheet error:', e);
   }
 
+  // Google ドキュメントとして Drive に保存
+  var docInfo = { success: false, docUrl: '', message: '' };
+  try {
+    docInfo = exportVerificationToDoc(verifyResults, targetMonth);
+  } catch (e) {
+    console.error('[postApplyVerify] exportVerificationToDoc error:', e);
+  }
+
   var okCount = 0, failCount = 0, skipCount = 0;
   for (var i = 0; i < verifyResults.length; i++) {
     var v = verifyResults[i].verification;
@@ -1918,10 +1926,15 @@ function finalizePostApplyVerification(exportResultJson, month) {
     msg += '\n\n詳細は「検証結果」シートを確認してください。';
   }
 
+  if (docInfo.success) {
+    msg += '\n\n📄 検証結果ドキュメント:\n' + docInfo.docUrl;
+  }
+
   return {
     success: true,
     message: msg,
-    verifyResults: { total: verifyResults.length, ok: okCount, fail: failCount, skipped: skipCount }
+    verifyResults: { total: verifyResults.length, ok: okCount, fail: failCount, skipped: skipCount },
+    docUrl: docInfo.docUrl || ''
   };
 }
 
@@ -2268,6 +2281,147 @@ function writeVerificationResultToSheet(verifyResults) {
     sheet.autoResizeColumn(col);
   }
 }
+
+/**
+ * 検証結果を Google ドキュメントとして Drive フォルダに保存
+ * @param {Array} verifyResults - 検証結果配列
+ * @param {string} month - 対象月（YYYY-MM形式）
+ * @returns {Object} { success: boolean, docUrl: string, message: string }
+ */
+function exportVerificationToDoc(verifyResults, month) {
+  try {
+    var targetMonth = month || getCurrentMonth();
+    var monthStr = targetMonth.replace("-", "");
+    var timestamp = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd HH:mm');
+    var docTitle = '適用後検証結果_' + monthStr + '_' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMdd_HHmm');
+
+    // サマリー集計
+    var okCount = 0, failCount = 0, skipCount = 0;
+    for (var i = 0; i < verifyResults.length; i++) {
+      var v = verifyResults[i].verification;
+      if (v === 'OK') okCount++;
+      else if (v === 'FAIL') failCount++;
+      else skipCount++;
+    }
+
+    // ドキュメント作成
+    var doc = DocumentApp.create(docTitle);
+    var body = doc.getBody();
+
+    // タイトル
+    var title = body.appendParagraph('適用後検証結果レポート');
+    title.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+    title.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+    // 基本情報
+    body.appendParagraph('対象月: ' + targetMonth + '　　作成日時: ' + timestamp)
+        .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    body.appendParagraph('');
+
+    // サマリー
+    var summaryHead = body.appendParagraph('サマリー');
+    summaryHead.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+
+    var summaryTable = body.appendTable();
+    var headerRow = summaryTable.appendTableRow();
+    var headers = ['合計', 'OK', 'FAIL', 'スキップ'];
+    var values = [String(verifyResults.length), String(okCount), String(failCount), String(skipCount)];
+    for (var h = 0; h < headers.length; h++) {
+      headerRow.appendTableCell(headers[h]).setBackgroundColor('#4a86c8')
+        .editAsText().setForegroundColor('#ffffff').setBold(true);
+    }
+    var valRow = summaryTable.appendTableRow();
+    for (var v2 = 0; v2 < values.length; v2++) {
+      valRow.appendTableCell(values[v2]).editAsText().setBold(true);
+    }
+    body.appendParagraph('');
+
+    // FAIL 一覧（あれば）
+    if (failCount > 0) {
+      var failHead = body.appendParagraph('不一致一覧（FAIL）');
+      failHead.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+
+      var failTable = body.appendTable();
+      var fhRow = failTable.appendTableRow();
+      var failHeaders = ['利用者', '日付', 'アクション', '業務種別', '理由'];
+      for (var fh = 0; fh < failHeaders.length; fh++) {
+        fhRow.appendTableCell(failHeaders[fh]).setBackgroundColor('#f8d7da')
+          .editAsText().setBold(true);
+      }
+      for (var f = 0; f < verifyResults.length; f++) {
+        if (verifyResults[f].verification === 'FAIL') {
+          var c = verifyResults[f].correction || {};
+          var fRow = failTable.appendTableRow();
+          fRow.appendTableCell(c.user_name || '(なし)');
+          fRow.appendTableCell((c.date_to || c.date_from || '') + '日');
+          fRow.appendTableCell(c.action || '');
+          fRow.appendTableCell(c.business_type || '');
+          fRow.appendTableCell(verifyResults[f].reason || '');
+        }
+      }
+      body.appendParagraph('');
+    }
+
+    // 全件詳細
+    var detailHead = body.appendParagraph('全件詳細');
+    detailHead.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+
+    var detailTable = body.appendTable();
+    var dhRow = detailTable.appendTableRow();
+    var detailHeaders = ['#', '利用者', '日付(前)', '日付(後)', 'アクション', '業務種別', '結果', '理由'];
+    for (var dh = 0; dh < detailHeaders.length; dh++) {
+      dhRow.appendTableCell(detailHeaders[dh]).setBackgroundColor('#4a86c8')
+        .editAsText().setForegroundColor('#ffffff').setBold(true);
+    }
+    for (var d = 0; d < verifyResults.length; d++) {
+      var vr = verifyResults[d];
+      var cr = vr.correction || {};
+      var dRow = detailTable.appendTableRow();
+      dRow.appendTableCell(String(d + 1));
+      dRow.appendTableCell(cr.user_name || '');
+      dRow.appendTableCell(cr.date_from || '');
+      dRow.appendTableCell(cr.date_to || '');
+      dRow.appendTableCell(cr.action || '');
+      dRow.appendTableCell(cr.business_type || '');
+      dRow.appendTableCell(vr.verification || '');
+      dRow.appendTableCell(vr.reason || '');
+
+      // 色分け
+      var bgColor = '#ffffff';
+      if (vr.verification === 'OK') bgColor = '#d4edda';
+      else if (vr.verification === 'FAIL') bgColor = '#f8d7da';
+      else bgColor = '#fff3cd';
+      for (var cell = 0; cell < dRow.getNumCells(); cell++) {
+        dRow.getCell(cell).setBackgroundColor(bgColor);
+      }
+    }
+
+    doc.saveAndClose();
+
+    // Drive フォルダに移動
+    var docFile = DriveApp.getFileById(doc.getId());
+    var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    folder.addFile(docFile);
+    DriveApp.getRootFolder().removeFile(docFile);
+
+    var docUrl = doc.getUrl();
+    console.log('[exportVerificationToDoc] 保存完了: ' + docTitle + ' → ' + docUrl);
+
+    return {
+      success: true,
+      docUrl: docUrl,
+      message: '検証結果ドキュメントを保存しました: ' + docTitle
+    };
+  } catch (e) {
+    console.error('[exportVerificationToDoc] エラー:', e);
+    return {
+      success: false,
+      docUrl: '',
+      message: 'ドキュメント出力エラー: ' + e.message
+    };
+  }
+}
+
 
 /**
  * 適用結果を隠しシートに保存（検証時に参照するため）
