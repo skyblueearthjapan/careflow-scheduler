@@ -458,10 +458,10 @@
 
     .week-table td.audit-cell { cursor: pointer; }
     .week-table td.audit-cell:hover .audit-overlay-badge { transform: scale(1.1); }
-    .week-table td.audit-cell.audit-ng { border-left: 3px solid #c62828 !important; }
-    .week-table td.audit-cell.audit-warn { border-left: 3px solid #f57f17 !important; }
-    .week-table td.audit-cell:first-child.audit-ng,
-    .week-table td.audit-cell:first-child.audit-warn { border-left: 3px solid var(--color-green) !important; }
+    /* ★個別患者行ハイライト（該当者のみオレンジ/赤） */
+    .visit-line { padding: 1px 3px; border-radius: 3px; margin: 1px 0; }
+    .visit-line.visit-audit-ng { background: rgba(198, 40, 40, 0.18); border-left: 3px solid #c62828; color: #b71c1c; font-weight: 600; }
+    .visit-line.visit-audit-warn { background: rgba(245, 127, 23, 0.15); border-left: 3px solid #f57f17; color: #e65100; font-weight: 600; }
 
     /* 週ビュー 監査ポップアップ */
     .audit-week-popup-overlay {
@@ -1667,8 +1667,22 @@
       data.bodyRows.forEach(function(row) {
         html += '<tr>';
         row.forEach(function(cell, idx) {
-          var content = cell ? '<div class="cell-content">' + escapeHtml(cell) + '</div>' : '-';
-          html += '<td style="position:relative;">' + content + '</td>';
+          if (!cell) {
+            html += '<td style="position:relative;">-</td>';
+            return;
+          }
+          // 各訪問行を個別divに分割し、患者ID(P000)をdata-pidとして埋め込む
+          var lines = String(cell).split('\n');
+          var cellHtml = '<div class="cell-content">';
+          lines.forEach(function(line) {
+            var trimmed = line.trim();
+            if (!trimmed) return;
+            var pidMatch = trimmed.match(/P(\d{2,4})/);
+            var pid = pidMatch ? 'P' + pidMatch[1] : '';
+            cellHtml += '<div class="visit-line" data-pid="' + pid + '">' + escapeHtml(trimmed) + '</div>';
+          });
+          cellHtml += '</div>';
+          html += '<td style="position:relative;">' + cellHtml + '</td>';
         });
         html += '</tr>';
       });
@@ -1827,16 +1841,27 @@
           if (items.length === 0) continue;
 
           var okCount = 0, warnCount = 0, ngCount = 0;
+          // 患者IDごとのステータスマップを作成
+          var pidStatusMap = {};
           items.forEach(function(item) {
             if (item.status === 'OK') okCount++;
             else if (item.status === 'WARN') warnCount++;
             else if (item.status === 'NG') ngCount++;
+            if (item.pid) pidStatusMap[item.pid] = item.status;
           });
 
-          // セルにクラス追加
+          // セルにクラス追加（クリック可能にするため）
           cell.classList.add('audit-cell');
-          if (ngCount > 0) cell.classList.add('audit-ng');
-          else if (warnCount > 0) cell.classList.add('audit-warn');
+
+          // ★個別患者行をハイライト（セル全体ではなく該当行のみ）
+          var visitLines = cell.querySelectorAll('.visit-line[data-pid]');
+          visitLines.forEach(function(line) {
+            var linePid = line.getAttribute('data-pid');
+            if (!linePid) return;
+            var st = pidStatusMap[linePid];
+            if (st === 'NG') line.classList.add('visit-audit-ng');
+            else if (st === 'WARN') line.classList.add('visit-audit-warn');
+          });
 
           // バッジ追加
           var badge = document.createElement('div');
