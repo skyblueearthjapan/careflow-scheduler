@@ -388,6 +388,36 @@
     }
 
     /* ============================================================
+       Visit Card: Audit Overlay
+       ============================================================ */
+    .visit-card.audit-ng {
+      border-left-color: #c62828 !important; border-left-width: 4px;
+      background: rgba(198,40,40,0.08);
+    }
+    .visit-card.audit-warn {
+      border-left-color: #f57f17 !important; border-left-width: 4px;
+      background: rgba(245,127,23,0.06);
+    }
+    .visit-audit-badge {
+      position: absolute; top: 1px; right: 1px;
+      font-size: 8px; font-weight: 700; padding: 0 3px; border-radius: 3px;
+      line-height: 1.4;
+    }
+    .visit-audit-badge.ok   { background: #C8E6C9; color: #2E7D32; }
+    .visit-audit-badge.warn { background: #FFF3E0; color: #E65100; }
+    .visit-audit-badge.ng   { background: #FFCDD2; color: #C62828; }
+
+    .cell-audit-badge {
+      display: inline-flex; gap: 2px; font-size: 9px; font-weight: 600;
+      position: absolute; top: 1px; right: 1px;
+      background: rgba(255,255,255,0.9); border-radius: 3px; padding: 1px 3px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1); pointer-events: none;
+    }
+    .cell-audit-badge .a-ok   { color: #2e7d32; }
+    .cell-audit-badge .a-warn { color: #f57f17; }
+    .cell-audit-badge .a-ng   { color: #c62828; }
+
+    /* ============================================================
        Event Card (non-draggable)
        ============================================================ */
     .event-card {
@@ -1123,11 +1153,114 @@
         renderSidePanel();
         updateStatusBar();
         hideLoading();
+
+        // Load audit overlay
+        loadAuditOverlay();
       } catch (e) {
         hideLoading();
         showError('\u30c7\u30fc\u30bf\u89e3\u6790\u30a8\u30e9\u30fc: ' + e.message);
         console.error('onDataLoaded error:', e);
       }
+    }
+
+    // ================================================================
+    // Audit Overlay
+    // ================================================================
+    var _auditCellSummary = null;
+
+    function loadAuditOverlay() {
+      if (!WEEK_START_STR) return;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.cellSummary) {
+            _auditCellSummary = result.cellSummary;
+            applyAuditOverlay();
+          }
+        })
+        .withFailureHandler(function(e) {
+          console.warn('audit overlay load error:', e);
+        })
+        .audit_getWeekSummary(WEEK_START_STR);
+    }
+
+    function applyAuditOverlay() {
+      if (!_auditCellSummary) return;
+
+      // Apply to each day cell
+      var cells = document.querySelectorAll('.day-cell');
+      for (var ci = 0; ci < cells.length; ci++) {
+        var cell = cells[ci];
+        var staffId = cell.getAttribute('data-staff-id') || '';
+        var dateStr = cell.getAttribute('data-date') || '';
+
+        // Remove old badges
+        var oldBadge = cell.querySelector('.cell-audit-badge');
+        if (oldBadge) oldBadge.remove();
+
+        var sdKey = staffId + '|' + dateStr;
+        // Also try _UNASSIGNED_ key for unassigned row
+        var items = _auditCellSummary[sdKey];
+        if (!items && staffId === '__UNASSIGNED__') {
+          items = _auditCellSummary['_UNASSIGNED_|' + dateStr];
+        }
+        if (!items || items.length === 0) continue;
+
+        // Build pid→status map
+        var pidStatus = {};
+        var okN = 0, warnN = 0, ngN = 0;
+        for (var ii = 0; ii < items.length; ii++) {
+          var item = items[ii];
+          pidStatus[item.pid] = item.status;
+          if (item.status === 'NG') ngN++;
+          else if (item.status === 'WARN') warnN++;
+          else okN++;
+        }
+
+        // Cell-level summary badge
+        if (okN + warnN + ngN > 0) {
+          var badge = document.createElement('div');
+          badge.className = 'cell-audit-badge';
+          var bHtml = '';
+          if (okN > 0) bHtml += '<span class="a-ok">\u25CB' + okN + '</span>';
+          if (warnN > 0) bHtml += '<span class="a-warn">\u25B3' + warnN + '</span>';
+          if (ngN > 0) bHtml += '<span class="a-ng">\u00D7' + ngN + '</span>';
+          badge.innerHTML = bHtml;
+          cell.style.position = 'relative';
+          cell.appendChild(badge);
+        }
+
+        // Per-visit card audit badge
+        var cards = cell.querySelectorAll('.visit-card');
+        for (var vi = 0; vi < cards.length; vi++) {
+          var card = cards[vi];
+          var pid = card.getAttribute('data-pid');
+          // Remove old audit classes/badges
+          card.classList.remove('audit-ng', 'audit-warn');
+          var oldVBadge = card.querySelector('.visit-audit-badge');
+          if (oldVBadge) oldVBadge.remove();
+
+          if (pid && pidStatus[pid]) {
+            var st = pidStatus[pid];
+            if (st === 'NG') {
+              card.classList.add('audit-ng');
+              addVisitAuditBadge(card, 'NG', 'ng');
+            } else if (st === 'WARN') {
+              card.classList.add('audit-warn');
+              addVisitAuditBadge(card, 'WARN', 'warn');
+            } else {
+              addVisitAuditBadge(card, 'OK', 'ok');
+            }
+          }
+        }
+      }
+    }
+
+    function addVisitAuditBadge(card, text, cls) {
+      card.style.position = 'relative';
+      var b = document.createElement('span');
+      b.className = 'visit-audit-badge ' + cls;
+      b.textContent = text;
+      card.appendChild(b);
     }
 
     // ================================================================
@@ -1149,6 +1282,7 @@
       if (!_state) return;
       renderGridHeader();
       renderGridBody();
+      applyAuditOverlay();
     }
 
     function renderGridHeader() {
@@ -2526,6 +2660,7 @@
             _state.originalAssignments = JSON.parse(JSON.stringify(_state.assignments));
             _state.originalUnassigned = JSON.parse(JSON.stringify(_state.unassigned || []));
             renderGrid(); renderSidePanel(); updateStatusBar();
+            loadAuditOverlay(); // Refresh audit after commit
           } else {
             showToast('\u78ba\u5b9a\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + ((r && r.message) || ''), 'error');
           }
