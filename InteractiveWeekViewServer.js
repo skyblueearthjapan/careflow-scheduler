@@ -42,13 +42,41 @@ function getInteractiveWeekData(weekStartStr) {
     weekDates.push(iwv_formatDate_(dt));
   }
 
+  // 割当結果から全行を読み込み、割当済み / 未割当を分離
+  var allRows = iwv_loadAssignments_(ss, weekDates);
+  var assigned = [];
+  var unassigned = [];
+  for (var ai = 0; ai < allRows.length; ai++) {
+    var row = allRows[ai];
+    if (!row.staffId || row.staffName === '未割当') {
+      row.staffId = '__UNASSIGNED__';
+      unassigned.push(row);
+    } else {
+      assigned.push(row);
+    }
+  }
+  // 割当不可シートのみにいる患者を補完（割当結果に無いケース）
+  var ngList = iwv_loadUnassigned_(ss, weekDates);
+  var unassignedPidDate = {};
+  for (var ui = 0; ui < unassigned.length; ui++) {
+    unassignedPidDate[unassigned[ui].pid + '|' + unassigned[ui].dateStr] = true;
+  }
+  for (var ni = 0; ni < ngList.length; ni++) {
+    var ng = ngList[ni];
+    if (!unassignedPidDate[ng.pid + '|' + ng.dateStr]) {
+      ng.staffId = '__UNASSIGNED__';
+      ng.visitId = ng.visitId || ('UA_' + ng.pid + '_' + ng.dateStr);
+      unassigned.push(ng);
+    }
+  }
+
   return {
     weekStartStr: weekStartStr,
     weekDates: weekDates,
     staffList: iwv_loadStaffMaster_(ss),
     patientMap: iwv_loadPatientMaster_(ss),
-    assignments: iwv_loadAssignments_(ss, weekDates),
-    unassigned: iwv_loadUnassigned_(ss, weekDates),
+    assignments: assigned,
+    unassigned: unassigned,
     eventMap: iwv_loadEvents_(ss, weekDates),
     staffChangeMap: iwv_loadStaffChanges_(ss, weekDates),
     changeRequests: iwv_loadChangeRequests_(ss, weekDates),

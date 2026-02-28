@@ -1691,6 +1691,50 @@
     }
 
     // ================================================================
+    // Drag and Drop: Auto-Scroll during drag
+    // ================================================================
+    var _autoScrollRAF = null;
+    var _autoScrollSpeed = 0;
+    var AUTOSCROLL_EDGE = 60; // px from edge to trigger
+    var AUTOSCROLL_MAX_SPEED = 18; // px per frame
+
+    function startAutoScroll() {
+      var scrollEl = document.getElementById('gridScroll');
+      if (!scrollEl) return;
+      function tick() {
+        if (_autoScrollSpeed !== 0) {
+          scrollEl.scrollTop += _autoScrollSpeed;
+        }
+        _autoScrollRAF = requestAnimationFrame(tick);
+      }
+      _autoScrollRAF = requestAnimationFrame(tick);
+    }
+
+    function stopAutoScroll() {
+      _autoScrollSpeed = 0;
+      if (_autoScrollRAF) {
+        cancelAnimationFrame(_autoScrollRAF);
+        _autoScrollRAF = null;
+      }
+    }
+
+    function updateAutoScroll(clientY) {
+      var scrollEl = document.getElementById('gridScroll');
+      if (!scrollEl) return;
+      var rect = scrollEl.getBoundingClientRect();
+      var distTop = clientY - rect.top;
+      var distBottom = rect.bottom - clientY;
+
+      if (distTop < AUTOSCROLL_EDGE && distTop >= 0) {
+        _autoScrollSpeed = -Math.round(AUTOSCROLL_MAX_SPEED * (1 - distTop / AUTOSCROLL_EDGE));
+      } else if (distBottom < AUTOSCROLL_EDGE && distBottom >= 0) {
+        _autoScrollSpeed = Math.round(AUTOSCROLL_MAX_SPEED * (1 - distBottom / AUTOSCROLL_EDGE));
+      } else {
+        _autoScrollSpeed = 0;
+      }
+    }
+
+    // ================================================================
     // Drag and Drop: Card Listeners
     // ================================================================
     function setupCardDragListeners(el) {
@@ -1719,12 +1763,14 @@
         e.dataTransfer.effectAllowed = 'move';
         this.classList.add('dragging');
         highlightDropTargets(_dragData);
+        startAutoScroll();
       });
 
       el.addEventListener('dragend', function() {
         this.classList.remove('dragging');
         _dragData = null;
         clearDropHighlights();
+        stopAutoScroll();
       });
     }
 
@@ -1734,6 +1780,10 @@
     function setupCellDragListeners(cell) {
       cell.addEventListener('dragover', function(e) {
         if (!_dragData) return;
+
+        // Auto-scroll when near grid edges
+        updateAutoScroll(e.clientY);
+
         var cellDate = this.getAttribute('data-date');
         var cellStaff = this.getAttribute('data-staff-id');
 
@@ -1772,6 +1822,7 @@
         this.classList.remove('drag-over-valid');
         this.classList.remove('drag-over-invalid');
         clearDropHighlights();
+        stopAutoScroll();
         if (!_dragData) return;
 
         var cellDate  = this.getAttribute('data-date');
@@ -1944,8 +1995,6 @@
         impact = ConstraintEngine.computeImpact(vd, targetStaffId, _state);
       }
 
-      _state.pendingChanges.push(change);
-
       // Apply to local state
       applyMoveToState(vd.visitId, vd.staffId, targetStaffId, dateStr);
 
@@ -1953,6 +2002,15 @@
       if (impact.newSchedule && impact.newSchedule.length > 0) {
         applyNewSchedule(targetStaffId, dateStr, impact.newSchedule);
       }
+
+      // Update change record with new times from the repacked schedule
+      var movedVisit = findVisitById(vd.visitId);
+      if (movedVisit) {
+        change.newStartMin = movedVisit.startMin;
+        change.newEndMin   = movedVisit.endMin;
+      }
+
+      _state.pendingChanges.push(change);
 
       closeConfirmDialog();
       renderGrid();
