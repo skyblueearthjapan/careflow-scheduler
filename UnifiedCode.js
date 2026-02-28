@@ -87,6 +87,15 @@ function doGet(e) {
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
 
+    // インタラクティブ週ビュー
+    if (page === 'interactive') {
+      var template = HtmlService.createTemplateFromFile('InteractiveWeekView');
+      template.weekStartStr = (e && e.parameter && e.parameter.week) || '';
+      return template.evaluate()
+        .setTitle('週ビュー インタラクティブ編集')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+
     // 出力ページ（デフォルト）
     return HtmlService.createHtmlOutputFromFile('UnifiedOutput')
       .setTitle('訪問看護 自動スケジューリング')

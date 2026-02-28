@@ -14,16 +14,14 @@
 // ============================================================
 
 /**
- * インタラクティブ週ビューダイアログを開く
+ * インタラクティブ週ビューのURLを返す（Web App経由で開く）
  * @param {string} weekStartStr - "yyyy/MM/dd" 形式の週開始日
+ * @return {string} インタラクティブ編集ページのURL
  */
 function openInteractiveWeekView(weekStartStr) {
-  var template = HtmlService.createTemplateFromFile('InteractiveWeekView');
-  template.weekStartStr = weekStartStr || '';
-  var html = template.evaluate()
-    .setWidth(1200)
-    .setHeight(800);
-  SpreadsheetApp.getUi().showModalDialog(html, '週ビュー インタラクティブ編集');
+  var url = ScriptApp.getService().getUrl();
+  url += '?page=interactive&week=' + encodeURIComponent(weekStartStr || '');
+  return url;
 }
 
 /**
