@@ -30,7 +30,7 @@ function openInteractiveWeekView(weekStartStr) {
  * @returns {Object} 全データを含むオブジェクト
  */
 function getInteractiveWeekData(weekStartStr) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = iwv_getSpreadsheet_();
 
   var weekStart = iwv_parseDate_(weekStartStr);
   if (!weekStart) throw new Error('無効な週開始日: ' + weekStartStr);
@@ -68,7 +68,7 @@ function commitChanges(weekStartStr, changesJson) {
     return { success: true, changesApplied: 0 };
   }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = iwv_getSpreadsheet_();
   var sheet = ss.getSheetByName('割当結果');
   if (!sheet) throw new Error('割当結果シートが見つかりません');
 
@@ -140,7 +140,7 @@ function commitChanges(weekStartStr, changesJson) {
  * @returns {Object} 結果 {success, resultSheetName, weekSheetName, label}
  */
 function saveSnapshot(weekStartStr) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = iwv_getSpreadsheet_();
   var weekStart = iwv_parseDate_(weekStartStr);
   if (!weekStart) throw new Error('無効な週開始日: ' + weekStartStr);
 
@@ -183,6 +183,18 @@ function saveSnapshot(weekStartStr) {
 // ============================================================
 // Private Helper Functions (iwv_ prefix)
 // ============================================================
+
+/**
+ * スプレッドシートを取得（Web Appコンテキスト対応）
+ */
+function iwv_getSpreadsheet_() {
+  var ss = iwv_getSpreadsheet_();
+  if (!ss && typeof SPREADSHEET_ID !== 'undefined' && SPREADSHEET_ID) {
+    ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+  if (!ss) throw new Error('スプレッドシートが見つかりません');
+  return ss;
+}
 
 /**
  * 日付文字列をDateオブジェクトに変換

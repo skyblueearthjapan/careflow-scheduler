@@ -988,6 +988,32 @@
     .kaipoke-modal-body {
       flex: 1; overflow: hidden; display: flex; flex-direction: row;
     }
+
+    /* ============================================================
+       インタラクティブ週ビュー モーダル
+       ============================================================ */
+    .interactive-modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .interactive-modal.show { display: flex; }
+    .interactive-modal-content {
+      background: var(--color-white); border-radius: 12px;
+      width: 95vw; height: 92vh;
+      display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .interactive-modal-header {
+      background: var(--color-orange); color: var(--color-white); padding: 14px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-weight: 600; font-size: 15px; border-radius: 12px 12px 0 0;
+    }
+    .interactive-modal-body {
+      flex: 1; overflow: hidden;
+    }
+    .interactive-modal-body iframe {
+      width: 100%; height: 100%; border: none;
+    }
+
     /* 左パネル: VNCビューア (70%) */
     .kaipoke-viewer-panel {
       flex: 7; display: flex; flex-direction: column; background: #1a1a1a;
@@ -1392,6 +1418,19 @@
 
   <!-- トースト -->
   <div class="toast" id="toast"></div>
+
+  <!-- インタラクティブ週ビュー モーダル -->
+  <div class="interactive-modal" id="interactiveModal">
+    <div class="interactive-modal-content">
+      <div class="interactive-modal-header">
+        <span>週ビュー インタラクティブ編集</span>
+        <button class="audit-close-btn" onclick="closeInteractiveModal()">×</button>
+      </div>
+      <div class="interactive-modal-body">
+        <iframe id="interactiveIframe"></iframe>
+      </div>
+    </div>
+  </div>
 
   <!-- カイポケ自動化モーダル -->
   <div class="kaipoke-modal" id="kaipokeModal">
@@ -4715,7 +4754,9 @@
             btn.disabled = false;
             btn.textContent = 'インタラクティブ編集';
           }
-          window.open(url, '_blank');
+          var iframe = document.getElementById('interactiveIframe');
+          iframe.src = url;
+          document.getElementById('interactiveModal').classList.add('show');
         })
         .withFailureHandler(function(e) {
           showToast('エラー: ' + e.message, 'error');
@@ -4725,6 +4766,12 @@
           }
         })
         .openInteractiveWeekView(weekStartStr);
+    }
+
+    function closeInteractiveModal() {
+      document.getElementById('interactiveModal').classList.remove('show');
+      var iframe = document.getElementById('interactiveIframe');
+      iframe.src = '';
     }
 
     function saveWeekSnapshot() {
