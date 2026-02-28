@@ -2663,6 +2663,11 @@
           out.newStartMin = c.newStartMin;
           out.newEndMin   = c.newEndMin;
         }
+        // ログ用フィールド
+        out.pid     = c.pid || '';
+        var patient = getPatient(c.pid);
+        out.pname   = (patient && patient.name) ? patient.name : (c.pid || '');
+        out.dateStr = c.dateStr || '';
         return out;
       });
 

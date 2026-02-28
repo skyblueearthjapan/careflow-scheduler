@@ -112,12 +112,27 @@ function commitChanges(weekStartStr, changesJson) {
     note:      iwv_findHeaderIndex_(headers, '備考')
   };
 
+  // patient_id / 日付カラム（ログ用）
+  var colPid  = iwv_findHeaderIndex_(headers, 'patient_id');
+  var colDate = iwv_findHeaderIndex_(headers, '日付');
+  var colPname = iwv_findHeaderIndex_(headers, '患者名');
+
   var applied = 0;
+  var logEntries = [];
+  var now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+
   changes.forEach(function(change) {
     var found = false;
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][col.visitId]) === String(change.visitId)) {
         found = true;
+
+        // --- 変更前の値をキャプチャ ---
+        var beforeStaffId   = String(data[r][col.staffId] || '');
+        var beforeStaffName = String(data[r][col.staffName] || '');
+        var beforeStartMin  = iwv_serialToMinutes_(data[r][col.startTime]);
+        var beforeEndMin    = iwv_serialToMinutes_(data[r][col.endTime]);
+
         // スタッフ変更
         if (change.newStaffId !== undefined && change.newStaffId !== null) {
           data[r][col.staffId] = change.newStaffId;
@@ -135,6 +150,46 @@ function commitChanges(weekStartStr, changesJson) {
           note += '[手動変更]';
           data[r][col.note] = note;
         }
+
+        // --- 変更種別を判定 ---
+        var staffChanged = (change.newStaffId !== undefined && change.newStaffId !== null
+                            && String(change.newStaffId) !== beforeStaffId);
+        var timeChanged  = (change.newStartMin != null && change.newEndMin != null
+                            && (change.newStartMin !== beforeStartMin || change.newEndMin !== beforeEndMin));
+        var changeType = '';
+        if (staffChanged && timeChanged)  changeType = 'スタッフ+時間変更';
+        else if (staffChanged)            changeType = 'スタッフ変更';
+        else if (timeChanged)             changeType = '時間変更';
+        else                              changeType = '更新（差分なし）';
+
+        // --- ログ用の患者情報 ---
+        var pid   = change.pid   || (colPid >= 0 ? String(data[r][colPid] || '') : '');
+        var pname = change.pname || (colPname >= 0 ? String(data[r][colPname] || '') : '');
+        var dateStr = change.dateStr || '';
+        if (!dateStr && colDate >= 0) {
+          var dv = data[r][colDate];
+          if (dv instanceof Date) dateStr = iwv_formatDate_(dv);
+          else if (dv) { var pd = iwv_parseDate_(dv); dateStr = pd ? iwv_formatDate_(pd) : String(dv); }
+        }
+
+        logEntries.push([
+          now,                                                 // 確定日時
+          String(change.visitId),                              // visit_id
+          pid,                                                 // patient_id
+          pname,                                               // 患者名
+          dateStr,                                             // 日付
+          changeType,                                          // 変更種別
+          beforeStaffId,                                       // 変更前staff_id
+          beforeStaffName,                                     // 変更前スタッフ名
+          String(change.newStaffId != null ? change.newStaffId : beforeStaffId),   // 変更後staff_id
+          change.newStaffName || (change.newStaffId != null ? '' : beforeStaffName), // 変更後スタッフ名
+          beforeStartMin != null ? iwv_minutesToHHMM_(beforeStartMin) : '',        // 変更前開始
+          beforeEndMin   != null ? iwv_minutesToHHMM_(beforeEndMin)   : '',        // 変更前終了
+          change.newStartMin != null ? iwv_minutesToHHMM_(change.newStartMin) : (beforeStartMin != null ? iwv_minutesToHHMM_(beforeStartMin) : ''), // 変更後開始
+          change.newEndMin   != null ? iwv_minutesToHHMM_(change.newEndMin)   : (beforeEndMin   != null ? iwv_minutesToHHMM_(beforeEndMin)   : ''), // 変更後終了
+          weekStartStr                                         // 週開始日
+        ]);
+
         applied++;
         break;
       }
@@ -146,6 +201,11 @@ function commitChanges(weekStartStr, changesJson) {
 
   // シートに書き戻し
   sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+
+  // --- 手動変更ログシートに追記 ---
+  if (logEntries.length > 0) {
+    iwv_appendChangeLog_(ss, logEntries);
+  }
 
   // 依存シートを再構築
   try {
@@ -815,4 +875,40 @@ function iwv_loadSpecialWeek_(ss, weekDates) {
     });
   }
   return result;
+}
+
+/**
+ * 分を "HH:mm" 文字列に変換
+ */
+function iwv_minutesToHHMM_(min) {
+  if (min == null || isNaN(min)) return '';
+  var h = Math.floor(min / 60);
+  var m = min % 60;
+  return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
+}
+
+/**
+ * 手動変更ログシートにエントリを追記（シート自動作成）
+ * @param {Spreadsheet} ss
+ * @param {Array[]} logEntries - 2D配列（各行15列）
+ */
+function iwv_appendChangeLog_(ss, logEntries) {
+  var LOG_SHEET_NAME = '手動変更ログ';
+  var LOG_HEADERS = [
+    '確定日時', 'visit_id', 'patient_id', '患者名', '日付',
+    '変更種別', '変更前staff_id', '変更前スタッフ名',
+    '変更後staff_id', '変更後スタッフ名',
+    '変更前開始', '変更前終了', '変更後開始', '変更後終了', '週開始日'
+  ];
+
+  var logSheet = ss.getSheetByName(LOG_SHEET_NAME);
+  if (!logSheet) {
+    logSheet = ss.insertSheet(LOG_SHEET_NAME);
+    logSheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
+    logSheet.getRange(1, 1, 1, LOG_HEADERS.length).setFontWeight('bold');
+  }
+
+  var lastRow = logSheet.getLastRow();
+  logSheet.getRange(lastRow + 1, 1, logEntries.length, logEntries[0].length)
+          .setValues(logEntries);
 }
