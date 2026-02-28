@@ -2657,7 +2657,7 @@
         var out = { visitId: c.visitId };
         if (c.type === 'move') {
           out.newStaffId   = c.toStaffId === '__UNASSIGNED__' ? '' : c.toStaffId;
-          out.newStaffName = c.toStaffId === '__UNASSIGNED__' ? '' : getStaffName(c.toStaffId);
+          out.newStaffName = c.toStaffId === '__UNASSIGNED__' ? '未割当' : getStaffName(c.toStaffId);
         }
         if (c.type === 'timeSet') {
           out.newStartMin = c.newStartMin;
