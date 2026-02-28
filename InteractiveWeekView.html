@@ -656,12 +656,13 @@
       font-size: 12px; color: var(--color-text-light);
       font-weight: 500; flex: 1;
     }
-    .time-inputs input[type="time"] {
+    .time-inputs select {
       padding: 8px 10px; border: 1px solid var(--color-border);
       border-radius: 6px; font-size: 14px; font-family: inherit;
-      color: var(--color-text);
+      color: var(--color-text); background: var(--color-white);
+      cursor: pointer; width: 100%;
     }
-    .time-inputs input[type="time"]:focus {
+    .time-inputs select:focus {
       outline: none; border-color: var(--color-blue);
       box-shadow: 0 0 0 2px rgba(125,167,217,0.2);
     }
@@ -921,8 +922,8 @@
       <div class="time-dialog-header"><h3 id="timeDialogTitle">固定時間設定</h3></div>
       <div class="time-dialog-body">
         <div class="time-inputs">
-          <label>開始<input type="time" id="fixedStart" value="09:00"></label>
-          <label>終了<input type="time" id="fixedEnd" value="09:35"></label>
+          <label>開始<select id="fixedStart"></select></label>
+          <label>終了<select id="fixedEnd"></select></label>
         </div>
         <div class="time-validation hidden" id="timeValidation"></div>
         <p class="time-hint">この時間で固定し、他の訪問を再配置します</p>
@@ -981,6 +982,31 @@
     // GAS Template Variable
     // ================================================================
     var WEEK_START_STR = <?!= JSON.stringify(weekStartStr || '') ?>;
+
+    // ================================================================
+    // Time Options (same as input page: 07:00~19:00, 5min step)
+    // ================================================================
+    var TIME_OPTIONS = (function() {
+      var opts = [];
+      for (var h = 7; h <= 19; h++) {
+        for (var m = 0; m < 60; m += 5) {
+          if (h === 19 && m > 0) break;
+          opts.push(('0' + h).slice(-2) + ':' + ('0' + m).slice(-2));
+        }
+      }
+      return opts;
+    })();
+
+    function populateTimeSelect(selectEl, selectedVal) {
+      selectEl.innerHTML = '';
+      for (var i = 0; i < TIME_OPTIONS.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = TIME_OPTIONS[i];
+        opt.textContent = TIME_OPTIONS[i];
+        if (TIME_OPTIONS[i] === selectedVal) opt.selected = true;
+        selectEl.appendChild(opt);
+      }
+    }
 
     // ================================================================
     // Global State
@@ -2155,15 +2181,15 @@
 
       document.getElementById('timeDialogTitle').textContent =
         '\u56fa\u5b9a\u6642\u9593\u8a2d\u5b9a: ' + visit.pid + ' ' + pName;
-      document.getElementById('fixedStart').value = fmtMinInput(visit.startMin);
-      document.getElementById('fixedEnd').value   = fmtMinInput(visit.endMin);
+      populateTimeSelect(document.getElementById('fixedStart'), fmtMinInput(visit.startMin));
+      populateTimeSelect(document.getElementById('fixedEnd'), fmtMinInput(visit.endMin));
 
       document.getElementById('timeValidation').className = 'time-validation hidden';
       document.getElementById('timeOverlay').classList.add('show');
 
-      // Live validation on input change
-      document.getElementById('fixedStart').oninput = liveTimeValidation;
-      document.getElementById('fixedEnd').oninput   = liveTimeValidation;
+      // Live validation on change
+      document.getElementById('fixedStart').onchange = liveTimeValidation;
+      document.getElementById('fixedEnd').onchange   = liveTimeValidation;
     }
 
     function liveTimeValidation() {
