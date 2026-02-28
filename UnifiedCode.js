@@ -2239,11 +2239,10 @@ function 週ビューを更新_(ss, weekStartStr) {
   });
 
   const staffMap = new Map();
-  // 訪問からスタッフを収集
+  // 訪問からスタッフを収集（staff_id・スタッフ名が両方空でも「未割当」として扱う）
   weekData.forEach(r => {
-    const sid   = r[idxStaffId];
-    const sname = r[idxStaff] || '';
-    if (!sid && !sname) return;
+    const sid   = r[idxStaffId] || '';
+    const sname = (!sid && !(r[idxStaff] || '')) ? '未割当' : (r[idxStaff] || '');
     const key = sid || sname;
     if (!staffMap.has(key)) {
       let gender = '';
@@ -2331,7 +2330,7 @@ function 週ビューを更新_(ss, weekStartStr) {
         const d2 = row[idxDate];
         const ds2 = Utilities.formatDate(d2, tz, 'yyyy/MM/dd');
         const sid   = row[idxStaffId] || '';
-        const sname = row[idxStaff]   || '';
+        const sname = (!sid && !(row[idxStaff] || '')) ? '未割当' : (row[idxStaff] || '');
         const key   = sid || sname;
         return key === (st.id || st.name) && ds2 === targetDateStr;
       });
