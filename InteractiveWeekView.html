@@ -344,9 +344,12 @@
       opacity: 0.4; transform: scale(0.95); box-shadow: none;
     }
     .visit-card.modified {
-      background: var(--color-yellow-light);
-      border-color: var(--color-yellow);
-      border-left-color: var(--color-orange);
+      box-shadow: 0 0 0 2px #1565C0;
+      background: rgba(21, 101, 192, 0.06);
+    }
+    .visit-card.manual-changed {
+      box-shadow: 0 0 0 2px #1565C0;
+      background: rgba(21, 101, 192, 0.04);
     }
     .visit-card.two-staff {
       border-left-color: var(--color-blue);
@@ -383,8 +386,13 @@
     .visit-card .visit-change-badge {
       position: absolute; top: -4px; right: -4px;
       width: 8px; height: 8px;
-      background: var(--color-orange); border-radius: 50%;
+      background: #1565C0; border-radius: 50%;
       border: 1px solid var(--color-white);
+    }
+    .visit-card .visit-manual-badge {
+      position: absolute; bottom: 1px; left: 1px;
+      font-size: 8px; font-weight: 700; color: #1565C0;
+      line-height: 1;
     }
 
     /* ============================================================
@@ -1510,12 +1518,22 @@
       div.setAttribute('data-end-min', String(endMin));
       div.setAttribute('data-svc-min', String(svcMin));
 
-      // Modified badge
+      // Modified badge (pending changes = blue outline + dot)
       if (isVisitModified(visitId)) {
         div.classList.add('modified');
         var badge = document.createElement('div');
         badge.className = 'visit-change-badge';
         div.appendChild(badge);
+      }
+      // Previously committed manual change (from note field)
+      var noteStr = visit.note || '';
+      if (!isVisitModified(visitId) && noteStr.indexOf('[手動変更]') >= 0) {
+        div.classList.add('manual-changed');
+        var mbadge = document.createElement('span');
+        mbadge.className = 'visit-manual-badge';
+        mbadge.textContent = '\u21C4';
+        mbadge.title = '\u624B\u52D5\u5909\u66F4\u6E08\u307F';
+        div.appendChild(mbadge);
       }
 
       // Coupled / 2-staff

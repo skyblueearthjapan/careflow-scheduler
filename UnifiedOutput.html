@@ -462,6 +462,20 @@
     .visit-line { padding: 1px 3px; border-radius: 3px; margin: 1px 0; }
     .visit-line.visit-audit-ng { background: rgba(198, 40, 40, 0.18); border-left: 3px solid #c62828; color: #b71c1c; font-weight: 600; }
     .visit-line.visit-audit-warn { background: rgba(245, 127, 23, 0.15); border-left: 3px solid #f57f17; color: #e65100; font-weight: 600; }
+    /* インタラクティブ手動変更マーカー（青枠） */
+    .visit-line.visit-manual {
+      outline: 2px solid #1565C0;
+      outline-offset: -1px;
+      border-radius: 3px;
+      position: relative;
+    }
+    .visit-manual-icon {
+      display: inline-block;
+      font-size: 9px;
+      color: #1565C0;
+      font-weight: 700;
+      margin-right: 2px;
+    }
 
     /* 週ビュー 監査ポップアップ */
     .audit-week-popup-overlay {
@@ -1724,9 +1738,14 @@
           lines.forEach(function(line) {
             var trimmed = line.trim();
             if (!trimmed) return;
+            // ⇄マーカー検出（インタラクティブ手動変更）
+            var isManual = trimmed.charAt(0) === '\u21C4';
+            if (isManual) trimmed = trimmed.substring(1);
             var pidMatch = trimmed.match(/P(\d{2,4})/);
             var pid = pidMatch ? 'P' + pidMatch[1] : '';
-            cellHtml += '<div class="visit-line" data-pid="' + pid + '">' + escapeHtml(trimmed) + '</div>';
+            var manualCls = isManual ? ' visit-manual' : '';
+            var manualIcon = isManual ? '<span class="visit-manual-icon">\u21C4</span>' : '';
+            cellHtml += '<div class="visit-line' + manualCls + '" data-pid="' + pid + '">' + manualIcon + escapeHtml(trimmed) + '</div>';
           });
           cellHtml += '</div>';
           html += '<td style="position:relative;">' + cellHtml + '</td>';

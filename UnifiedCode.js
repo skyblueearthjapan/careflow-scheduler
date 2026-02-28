@@ -2369,6 +2369,7 @@ function 週ビューを更新_(ss, weekStartStr) {
         const pGender = pInfo ? (pInfo.gender || '') : '';
         const isTwo   = (vid.indexOf('-') >= 0) || (noteVal.indexOf('同時訪問') >= 0);
         const mark    = isTwo ? '👥 ' : '';
+        const isManual = noteVal.indexOf('[手動変更]') >= 0;
 
         let pidPart = '';
         if (pid) {
@@ -2383,6 +2384,8 @@ function 週ビューを更新_(ss, weekStartStr) {
         } else {
           text = mark + stime + '〜' + etime + ' ' + pidPart + pname;
         }
+        // 手動変更マーカー（週ビュー表示で青枠検出用）
+        if (isManual) text = '⇄' + text;
 
         displayItems.push({
           sortKey: toSortMinutes(startVal),
