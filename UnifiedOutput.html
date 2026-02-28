@@ -1368,6 +1368,14 @@
       <button class="tab-btn" data-tab="routeSummary" onclick="showTab('routeSummary', this)">ルートサマリ</button>
     </div>
     <div class="tabs-right">
+      <button class="action-btn" id="btnInteractiveEdit" onclick="openInteractiveWeekView()"
+        style="background: var(--color-orange); color: white; margin-left: 8px; font-size: 12px; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+        インタラクティブ編集
+      </button>
+      <button class="action-btn secondary" id="btnSaveSnapshot" onclick="saveWeekSnapshot()"
+        style="margin-left: 8px; font-size: 12px; padding: 6px 14px; background: var(--color-blue); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+        記録保存
+      </button>
       <a class="nav-link" id="inputLink" onclick="goToInput()">入力管理画面へ →</a>
     </div>
   </div>
@@ -4686,6 +4694,60 @@
     document.getElementById('routeMapModal').addEventListener('click', function(e) {
       if (e.target === this) closeRouteMapModal();
     });
+
+    // ============================================================
+    // インタラクティブ週ビュー
+    // ============================================================
+    function openInteractiveWeekView() {
+      var weekStartStr = window.weekViewAuditWeekStart || '';
+      if (!weekStartStr) {
+        showToast('週ビューを先にロードしてください', 'error');
+        return;
+      }
+      var btn = document.getElementById('btnInteractiveEdit');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '読み込み中...';
+      }
+      google.script.run
+        .withSuccessHandler(function() {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'インタラクティブ編集';
+          }
+        })
+        .withFailureHandler(function(e) {
+          showToast('エラー: ' + e.message, 'error');
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'インタラクティブ編集';
+          }
+        })
+        .openInteractiveWeekView(weekStartStr);
+    }
+
+    function saveWeekSnapshot() {
+      var weekStartStr = window.weekViewAuditWeekStart || '';
+      if (!weekStartStr) {
+        showToast('週ビューを先にロードしてください', 'error');
+        return;
+      }
+      if (!confirm('現在の割当結果と週ビューのコピーを保存しますか？')) return;
+      var btn = document.getElementById('btnSaveSnapshot');
+      if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '記録保存'; }
+          if (result && result.success) {
+            showToast('保存完了: ' + result.label, 'success');
+          }
+        })
+        .withFailureHandler(function(e) {
+          if (btn) { btn.disabled = false; btn.textContent = '記録保存'; }
+          showToast('保存エラー: ' + e.message, 'error');
+        })
+        .saveSnapshot(weekStartStr);
+    }
   </script>
 
 </body>

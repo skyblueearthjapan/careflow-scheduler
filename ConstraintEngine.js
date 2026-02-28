@@ -1,0 +1,1618 @@
+/**
+ * Constraint Validation Engine for Interactive Week View
+ * Client-side validation of all scheduling constraints.
+ *
+ * Runs entirely in the browser for instant feedback during drag-and-drop.
+ * All functions are pure (no side effects, no server calls).
+ *
+ * Constraint codes:
+ *   C-1  .. C-13  : CRITICAL (NG)  -- must not violate
+ *   W-1  .. W-10  : WARNING  (WARN) -- preferably avoid
+ *
+ * Usage:
+ *   var result  = ConstraintEngine.validateMove(visitData, targetStaffId, state);
+ *   var targets = ConstraintEngine.validateAllDropTargets(visitData, state);
+ *   var impact  = ConstraintEngine.computeImpact(visitData, targetStaffId, state);
+ *   var fixed   = ConstraintEngine.validateFixedTime(visitData, targetStaffId, 540, 575, state);
+ *   var repack  = ConstraintEngine.repackStaffDay(staffId, dateStr, anchors, state);
+ */
+(function (global) {
+  'use strict';
+
+  // ===========================================================
+  // Constants
+  // ===========================================================
+
+  /** Time buffer (minutes) for soft time-window checks (matches AUDIT_CONFIG.TIME_BUFFER_MIN) */
+  var BUFFER_MIN = 15;
+
+  /** Minimum gap between consecutive visits (matches UnifiedCode.js ASSIGN_BUFFER_MIN) */
+  var ASSIGN_BUFFER_MIN = 5;
+
+  /** Youbi lookup (Date.getDay() index -> English abbreviation) */
+  var YOUBI_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  /** Default time-type ranges (minutes), mirroring AUDIT_TIME_DEFAULTS */
+  var TIME_TYPE_DEFAULTS = {
+    '\u5348\u524d': { earliestMin: 540, latestMin: 720 },   // 午前  9:00-12:00
+    '\u5348\u5f8c': { earliestMin: 780, latestMin: 1020 },  // 午後 13:00-17:00
+    '\u7d42\u65e5': { earliestMin: 540, latestMin: 1080 }   // 終日  9:00-18:00
+  };
+
+  // ===========================================================
+  // Helper utilities
+  // ===========================================================
+
+  /**
+   * Check whether two half-open intervals [s1,e1) and [s2,e2) overlap.
+   * @param {number} s1 - Start of first interval
+   * @param {number} e1 - End of first interval
+   * @param {number} s2 - Start of second interval
+   * @param {number} e2 - End of second interval
+   * @return {boolean}
+   */
+  function isOverlap(s1, e1, s2, e2) {
+    return s1 < e2 && s2 < e1;
+  }
+
+  /**
+   * Convert minutes since midnight to "HH:mm" string.
+   * @param {number} min - Minutes since midnight (0-1440)
+   * @return {string} Formatted time string, e.g. "09:30"
+   */
+  function minutesToTimeStr(min) {
+    if (min == null) return '';
+    var h = Math.floor(min / 60);
+    var m = min % 60;
+    return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
+  }
+
+  /**
+   * Parse "HH:mm" string into minutes since midnight.
+   * @param {string} str - Time string, e.g. "09:30"
+   * @return {number|null} Minutes since midnight, or null if unparseable
+   */
+  function timeStrToMinutes(str) {
+    if (!str) return null;
+    var match = String(str).trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return null;
+    return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+  }
+
+  /**
+   * Derive the English weekday abbreviation from a date string "yyyy/MM/dd".
+   * @param {string} dateStr - e.g. "2026/05/04"
+   * @return {string} "Mon"|"Tue"|...|"Sun", or empty string on failure
+   */
+  function getYoubiEn(dateStr) {
+    if (!dateStr) return '';
+    var parts = String(dateStr).split('/');
+    if (parts.length < 3) return '';
+    var d = new Date(
+      parseInt(parts[0], 10),
+      parseInt(parts[1], 10) - 1,
+      parseInt(parts[2], 10)
+    );
+    return YOUBI_EN[d.getDay()] || '';
+  }
+
+  /**
+   * Split a comma-separated ID string into a trimmed array.
+   * Returns an empty array for falsy input.
+   * @param {string|null|undefined} idStr - e.g. "S001, S002"
+   * @return {string[]} e.g. ["S001", "S002"]
+   */
+  function splitIds(idStr) {
+    if (!idStr) return [];
+    return String(idStr).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  // ===========================================================
+  // State accessors (pure -- operate on the passed-in state)
+  // ===========================================================
+
+  /**
+   * Look up a staff record by ID.
+   * @param {string} staffId
+   * @param {object} state
+   * @return {object|null}
+   */
+  function getStaff(staffId, state) {
+    if (!staffId || !state.staffMasterMap) return null;
+    return state.staffMasterMap[staffId] || null;
+  }
+
+  /**
+   * Look up a patient record by ID.
+   * @param {string} pid
+   * @param {object} state
+   * @return {object|null}
+   */
+  function getPatient(pid, state) {
+    if (!pid || !state.patientMasterMap) return null;
+    return state.patientMasterMap[pid] || null;
+  }
+
+  /**
+   * Return all assignments for a given staff on a given date.
+   * Optionally exclude a specific visitId (useful when the visit is being
+   * moved away from its original staff).
+   * @param {string} staffId
+   * @param {string} dateStr - "yyyy/MM/dd"
+   * @param {object} state
+   * @param {string} [excludeVisitId] - visitId to exclude from the result
+   * @return {object[]}
+   */
+  function getStaffAssignments(staffId, dateStr, state, excludeVisitId) {
+    if (!state.assignments) return [];
+    var result = [];
+    for (var i = 0; i < state.assignments.length; i++) {
+      var a = state.assignments[i];
+      if (a.staffId === staffId && a.dateStr === dateStr) {
+        if (excludeVisitId && a.visitId === excludeVisitId) continue;
+        result.push(a);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Count how many assignments a staff member has on a given date.
+   * Optionally excludes a visitId (the visit being moved away).
+   * @param {string} staffId
+   * @param {string} dateStr
+   * @param {object} state
+   * @param {string} [excludeVisitId]
+   * @return {number}
+   */
+  function countStaffDayAssignments(staffId, dateStr, state, excludeVisitId) {
+    return getStaffAssignments(staffId, dateStr, state, excludeVisitId).length;
+  }
+
+  /**
+   * Count how many visits a patient has across the entire week
+   * represented in state.assignments.
+   * @param {string} pid
+   * @param {object} state
+   * @return {number}
+   */
+  function countPatientWeekVisits(pid, state) {
+    if (!state.assignments) return 0;
+    var count = 0;
+    for (var i = 0; i < state.assignments.length; i++) {
+      if (state.assignments[i].pid === pid) count++;
+    }
+    return count;
+  }
+
+  /**
+   * Get events for a staff member on a given date.
+   * @param {string} staffId
+   * @param {string} dateStr
+   * @param {object} state
+   * @return {object[]}
+   */
+  function getStaffEvents(staffId, dateStr, state) {
+    if (!state.eventMap) return [];
+    var key = staffId + '|' + dateStr;
+    return state.eventMap[key] || [];
+  }
+
+  /**
+   * Get staff change records (restrictions) for a staff member on a given date.
+   * @param {string} staffId
+   * @param {string} dateStr
+   * @param {object} state
+   * @return {object[]}
+   */
+  function getStaffChanges(staffId, dateStr, state) {
+    if (!state.staffChangeMap) return [];
+    var key = staffId + '|' + dateStr;
+    return state.staffChangeMap[key] || [];
+  }
+
+  /**
+   * Get patient change request for a patient on a given date.
+   * @param {string} pid
+   * @param {string} dateStr
+   * @param {object} state
+   * @return {object|null}
+   */
+  function getPatientChange(pid, dateStr, state) {
+    if (!state.changeRequests) return null;
+    var key = pid + '|' + dateStr;
+    return state.changeRequests[key] || null;
+  }
+
+  /**
+   * Build blocked intervals for a staff member on a given date.
+   * Mirrors UnifiedCode.js getStaffBlockedIntervals_ logic exactly.
+   *
+   * Restriction types handled:
+   *   休み / 終日不可 / 終日  -> [0, 1440)
+   *   遅刻                    -> [shiftStart, newStart)
+   *   早退                    -> [newEnd, shiftEnd)
+   *   時間指定                -> [start, end)
+   *   午前休                  -> [shiftStart, 720)
+   *   午後休                  -> [720, shiftEnd)
+   *
+   * @param {string} staffId
+   * @param {string} dateStr
+   * @param {object} state
+   * @return {{start:number, end:number}[]} Merged, sorted intervals
+   */
+  function getStaffBlockedIntervals(staffId, dateStr, state) {
+    var staff = getStaff(staffId, state);
+    var shiftStart = staff ? (staff.shiftStartMin != null ? staff.shiftStartMin : 0) : 0;
+    var shiftEnd = staff ? (staff.shiftEndMin != null ? staff.shiftEndMin : 1440) : 1440;
+
+    var intervals = [];
+    var records = getStaffChanges(staffId, dateStr, state);
+
+    for (var i = 0; i < records.length; i++) {
+      var rec = records[i];
+      var rType = rec.restrictionType;
+
+      if (rType === '\u4f11\u307f' || rType === '\u7d42\u65e5\u4e0d\u53ef' || rType === '\u7d42\u65e5') {
+        // 休み / 終日不可 / 終日
+        intervals.push({ start: 0, end: 1440 });
+      } else if (rType === '\u9045\u523b') {
+        // 遅刻: [shiftStart, newStart)
+        if (rec.startTime != null) {
+          intervals.push({ start: shiftStart, end: rec.startTime });
+        }
+      } else if (rType === '\u65e9\u9000') {
+        // 早退: [newEnd, shiftEnd)
+        if (rec.endTime != null) {
+          intervals.push({ start: rec.endTime, end: shiftEnd });
+        }
+      } else if (rType === '\u6642\u9593\u6307\u5b9a') {
+        // 時間指定: [start, end)
+        if (rec.startTime != null && rec.endTime != null) {
+          intervals.push({ start: rec.startTime, end: rec.endTime });
+        }
+      } else if (rType === '\u5348\u524d\u4f11') {
+        // 午前休: [shiftStart, 12:00)
+        intervals.push({ start: shiftStart, end: 720 });
+      } else if (rType === '\u5348\u5f8c\u4f11') {
+        // 午後休: [12:00, shiftEnd)
+        intervals.push({ start: 720, end: shiftEnd });
+      }
+    }
+
+    if (intervals.length <= 1) return intervals;
+
+    // Merge overlapping / adjacent intervals
+    intervals.sort(function (a, b) { return a.start - b.start; });
+    var merged = [intervals[0]];
+    for (var j = 1; j < intervals.length; j++) {
+      var last = merged[merged.length - 1];
+      var curr = intervals[j];
+      if (curr.start <= last.end) {
+        last.end = Math.max(last.end, curr.end);
+      } else {
+        merged.push(curr);
+      }
+    }
+    return merged;
+  }
+
+  /**
+   * Check if a specific interval overlaps with any blocked interval.
+   * @param {number} start
+   * @param {number} end
+   * @param {{start:number, end:number}[]} blocked
+   * @return {boolean}
+   */
+  function isBlockedByIntervals(start, end, blocked) {
+    for (var i = 0; i < blocked.length; i++) {
+      if (start < blocked[i].end && blocked[i].start < end) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Compute the soft cap for a staff member based on allocation preference.
+   *   多め   -> maxPerDay      (allow up to hard limit)
+   *   少なめ -> maxPerDay - 2  (leave extra room)
+   *   均等   -> maxPerDay - 1  (default)
+   * @param {object} staff
+   * @return {number}
+   */
+  function getSoftCap(staff) {
+    if (!staff || !staff.maxPerDay) return 999;
+    if (staff.allocPref === '\u591a\u3081') return staff.maxPerDay;             // 多め
+    if (staff.allocPref === '\u5c11\u306a\u3081') return Math.max(1, staff.maxPerDay - 2); // 少なめ
+    return Math.max(1, staff.maxPerDay - 1); // 均等 (default)
+  }
+
+  // ===========================================================
+  // Violation factory
+  // ===========================================================
+
+  /**
+   * Create a violation descriptor object.
+   * @param {string} severity - "CRITICAL" | "WARNING"
+   * @param {string} category - "STAFF"|"TIME"|"DAY"|"EVENT"|"CHANGE"|"SPECIAL"
+   * @param {string} code     - Constraint code, e.g. "C-2", "W-1"
+   * @param {string} label    - Short Japanese label
+   * @param {string} detail   - Human-readable explanation
+   * @param {string} tag      - Machine-readable tag (matches AUDIT_TAGS)
+   * @return {object}
+   */
+  function violation(severity, category, code, label, detail, tag) {
+    return {
+      severity: severity,
+      category: category,
+      code: code,
+      label: label,
+      detail: detail,
+      tag: tag
+    };
+  }
+
+  /**
+   * Aggregate violations into a ValidationResult with overall status.
+   * @param {object[]} violations
+   * @return {{status:string, violations:object[]}}
+   */
+  function buildResult(violations) {
+    var hasCritical = false;
+    var hasWarning = false;
+    for (var i = 0; i < violations.length; i++) {
+      if (violations[i].severity === 'CRITICAL') hasCritical = true;
+      if (violations[i].severity === 'WARNING') hasWarning = true;
+    }
+    var status = hasCritical ? 'NG' : (hasWarning ? 'WARN' : 'OK');
+    return { status: status, violations: violations };
+  }
+
+  // ===========================================================
+  // Paired-visit helpers (for 2-staff constraint)
+  // ===========================================================
+
+  /**
+   * Determine whether two visitIds form a paired set.
+   * Convention: paired visits share a base ID with -1 / -2 suffixes,
+   * e.g. "V001-1" and "V001-2".
+   * @param {string} id1
+   * @param {string} id2
+   * @return {boolean}
+   */
+  function isPairedVisitId(id1, id2) {
+    if (!id1 || !id2) return false;
+    var base1 = String(id1).replace(/-\d+$/, '');
+    var base2 = String(id2).replace(/-\d+$/, '');
+    return base1 === base2 && id1 !== id2;
+  }
+
+  /**
+   * Find paired visits for a given visit (used by C-1 two-staff check).
+   * A paired visit matches on: same patient, same date, and either
+   * paired visitId suffix or identical startMin.
+   * @param {object} visitData
+   * @param {object} state
+   * @return {object[]}
+   */
+  function findPairedVisits(visitData, state) {
+    if (!state.assignments) return [];
+    var pid = visitData.pid;
+    var dateStr = visitData.dateStr;
+    var visitId = visitData.visitId;
+    var startMin = visitData.startMin;
+    var paired = [];
+
+    for (var i = 0; i < state.assignments.length; i++) {
+      var a = state.assignments[i];
+      if (a.pid === pid && a.dateStr === dateStr && a.visitId !== visitId) {
+        if (isPairedVisitId(visitId, a.visitId) || a.startMin === startMin) {
+          paired.push(a);
+        }
+      }
+    }
+    return paired;
+  }
+
+  // ===========================================================
+  // Sub-check: C-1 two-staff constraint
+  // ===========================================================
+
+  /**
+   * C-1: Check the two-staff constraint.
+   * When a patient requires 2 staff (needStaff >= 2), find the paired visit
+   * and ensure the target staff does not duplicate the other slot.
+   * @param {object} visitData
+   * @param {string} targetStaffId
+   * @param {object} state
+   * @param {object[]} violations - array to push violations into
+   */
+  function checkTwoStaffConstraint(visitData, targetStaffId, state, violations) {
+    var pairedVisits = findPairedVisits(visitData, state);
+    var pid = visitData.pid;
+
+    if (pairedVisits.length === 0) {
+      violations.push(violation(
+        'CRITICAL', 'STAFF', 'C-1',
+        '2\u540d\u4f53\u5236\u4e0d\u8db3',
+        '\u60a3\u8005' + (visitData.pname || pid) +
+        '\u306f2\u540d\u4f53\u5236\u3067\u3059\u304c\u3001\u30da\u30a2\u306e\u8a2a\u554f\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093',
+        'TWO_STAFF_MISSING'
+      ));
+      return;
+    }
+
+    for (var pi = 0; pi < pairedVisits.length; pi++) {
+      if (pairedVisits[pi].staffId === targetStaffId) {
+        var tStaff = getStaff(targetStaffId, state);
+        violations.push(violation(
+          'CRITICAL', 'STAFF', 'C-1',
+          '2\u540d\u4f53\u5236\u30b9\u30bf\u30c3\u30d5\u91cd\u8907',
+          '\u60a3\u8005' + (visitData.pname || pid) +
+          '\u306f2\u540d\u4f53\u5236\u3067\u3059\u304c\u3001\u30da\u30a2\u8a2a\u554f\u3082' +
+          (tStaff ? tStaff.name : targetStaffId) +
+          '\u306b\u5272\u308a\u5f53\u3066\u3089\u308c\u3066\u304a\u308a\u91cd\u8907\u3057\u307e\u3059',
+          'TWO_STAFF_DUPLICATE'
+        ));
+        break;
+      }
+    }
+  }
+
+  /**
+   * Quick boolean check for 2-staff duplicate (used by validateAllDropTargets).
+   * @param {object} visitData
+   * @param {string} targetStaffId
+   * @param {object} state
+   * @return {boolean} true if target staff is already assigned to the paired visit
+   */
+  function checkTwoStaffQuick(visitData, targetStaffId, state) {
+    var pairedVisits = findPairedVisits(visitData, state);
+    for (var i = 0; i < pairedVisits.length; i++) {
+      if (pairedVisits[i].staffId === targetStaffId) return true;
+    }
+    return false;
+  }
+
+  // ===========================================================
+  // Sub-check: W-7 time window deviation
+  // ===========================================================
+
+  /**
+   * W-7: Check if visit time deviates from the expected time window.
+   *
+   * Fixed-time visits: any deviation 0 < d <= BUFFER_MIN triggers a warning.
+   * Range-based visits: outside [earliest, latest] but within
+   *   [earliest - BUFFER, latest + BUFFER] triggers a warning.
+   *
+   * @param {object} visitData
+   * @param {object|null} patient
+   * @param {object[]} violations - array to push violations into
+   */
+  function checkTimeWindowDeviation(visitData, patient, violations) {
+    var startMin = visitData.startMin;
+    var endMin = visitData.endMin;
+    if (startMin == null || endMin == null) return;
+
+    var timeType = visitData.timeType || (patient ? patient.timeType : null);
+    var earliestMin = visitData.earliestMin;
+    var latestMin = visitData.latestMin;
+
+    // Fall back to patient preferences
+    if (earliestMin == null && patient) earliestMin = patient.startPref;
+    if (latestMin == null && patient) latestMin = patient.endPref;
+
+    // Fall back to time-type defaults
+    if (earliestMin == null || latestMin == null) {
+      var defaults = timeType ? TIME_TYPE_DEFAULTS[timeType] : null;
+      if (defaults) {
+        if (earliestMin == null) earliestMin = defaults.earliestMin;
+        if (latestMin == null) latestMin = defaults.latestMin;
+      }
+    }
+
+    if (earliestMin == null && latestMin == null) return;
+
+    // Fixed type: exact start match expected
+    if (timeType === '\u56fa\u5b9a') {
+      if (earliestMin != null) {
+        var deviation = Math.abs(startMin - earliestMin);
+        if (deviation > 0 && deviation <= BUFFER_MIN) {
+          violations.push(violation(
+            'WARNING', 'TIME', 'W-7',
+            '\u6642\u9593\u5e2f\u9038\u8131',
+            '\u56fa\u5b9a\u8a2a\u554f\u306e\u958b\u59cb\u6642\u523b(' +
+            minutesToTimeStr(startMin) + ')\u304c\u671f\u5f85(' +
+            minutesToTimeStr(earliestMin) + ')\u3068' + deviation +
+            '\u5206\u4e56\u96e2\u3057\u3066\u3044\u307e\u3059',
+            'TIME_WINDOW_DEVIATION'
+          ));
+        }
+      }
+      return;
+    }
+
+    // Range-based: check against [earliest, latest] with buffer
+    if (earliestMin != null && latestMin != null) {
+      var insideWindow = (startMin >= earliestMin && endMin <= latestMin);
+      if (!insideWindow) {
+        var insideBuffered = (startMin >= earliestMin - BUFFER_MIN &&
+                              endMin <= latestMin + BUFFER_MIN);
+        if (insideBuffered) {
+          violations.push(violation(
+            'WARNING', 'TIME', 'W-7',
+            '\u6642\u9593\u5e2f\u9038\u8131',
+            '\u8a2a\u554f(' + minutesToTimeStr(startMin) + '-' +
+            minutesToTimeStr(endMin) + ')\u304c\u5e0c\u671b\u7bc4\u56f2(' +
+            minutesToTimeStr(earliestMin) + '-' + minutesToTimeStr(latestMin) +
+            ')\u3092\u8d85\u3048\u3066\u3044\u307e\u3059\u304c\u3001\u30d0\u30c3\u30d5\u30a1(' +
+            BUFFER_MIN + '\u5206)\u5185\u3067\u3059',
+            'TIME_WINDOW_DEVIATION'
+          ));
+        }
+      }
+    }
+  }
+
+  // ===========================================================
+  // 1. validateMove
+  // ===========================================================
+
+  /**
+   * Validate moving a visit to a different staff on the SAME day.
+   * Checks ALL constraints: 13 CRITICAL (C-1..C-13) and 10 WARNING (W-1..W-10).
+   *
+   * @param {object} visitData      - The visit being moved (assignment object).
+   * @param {string} targetStaffId  - The staff ID to move the visit to.
+   * @param {object} state          - The complete local state containing all maps.
+   * @return {{status:string, violations:object[]}}
+   *   status: "OK" | "WARN" | "NG"
+   *   violations: array of { severity, category, code, label, detail, tag }
+   */
+  function validateMove(visitData, targetStaffId, state) {
+    var violations = [];
+
+    // Guard: missing data
+    if (!visitData || !targetStaffId || !state) {
+      violations.push(violation(
+        'CRITICAL', 'STAFF', 'C-0',
+        '\u30c7\u30fc\u30bf\u4e0d\u8db3',
+        '\u8a2a\u554f\u30c7\u30fc\u30bf\u307e\u305f\u306f\u30b9\u30c6\u30fc\u30c8\u304c\u4e0d\u8db3\u3057\u3066\u3044\u307e\u3059',
+        'DATA_MISSING'
+      ));
+      return buildResult(violations);
+    }
+
+    var staff = getStaff(targetStaffId, state);
+    var patient = getPatient(visitData.pid, state);
+    var dateStr = visitData.dateStr;
+    var youbi = visitData.youbi || getYoubiEn(dateStr);
+    var startMin = visitData.startMin;
+    var endMin = visitData.endMin;
+    var pid = visitData.pid;
+    var visitId = visitData.visitId;
+
+    // ==========================================================
+    // CRITICAL checks (C-1 .. C-13)
+    // ==========================================================
+
+    // C-1: 2名体制 (needStaff >= 2)
+    if (patient && patient.needStaff >= 2) {
+      checkTwoStaffConstraint(visitData, targetStaffId, state, violations);
+    }
+
+    // C-2: 性別制限 (sexLimit)
+    if (patient && patient.sexLimit && staff) {
+      if (patient.sexLimit === '\u5973\u6027\u306e\u307f' && staff.gender !== '\u5973\u6027') {
+        violations.push(violation(
+          'CRITICAL', 'STAFF', 'C-2',
+          '\u6027\u5225\u5236\u9650\u9055\u53cd',
+          '\u60a3\u8005\u306f\u300c\u5973\u6027\u306e\u307f\u300d\u6307\u5b9a\u3067\u3059\u304c\u3001' +
+          (staff.name || targetStaffId) + '\u306f' + (staff.gender || '\u4e0d\u660e') + '\u3067\u3059',
+          'GENDER_VIOLATION'
+        ));
+      }
+      if (patient.sexLimit === '\u7537\u6027\u306e\u307f' && staff.gender !== '\u7537\u6027') {
+        violations.push(violation(
+          'CRITICAL', 'STAFF', 'C-2',
+          '\u6027\u5225\u5236\u9650\u9055\u53cd',
+          '\u60a3\u8005\u306f\u300c\u7537\u6027\u306e\u307f\u300d\u6307\u5b9a\u3067\u3059\u304c\u3001' +
+          (staff.name || targetStaffId) + '\u306f' + (staff.gender || '\u4e0d\u660e') + '\u3067\u3059',
+          'GENDER_VIOLATION'
+        ));
+      }
+    }
+
+    // C-3: シフト時間
+    if (staff && startMin != null && endMin != null) {
+      if (startMin < staff.shiftStartMin || endMin > staff.shiftEndMin) {
+        violations.push(violation(
+          'CRITICAL', 'TIME', 'C-3',
+          '\u30b7\u30d5\u30c8\u6642\u9593\u5916',
+          '\u8a2a\u554f(' + minutesToTimeStr(startMin) + '-' + minutesToTimeStr(endMin) +
+          ')\u304c' + (staff.name || targetStaffId) + '\u306e\u30b7\u30d5\u30c8(' +
+          minutesToTimeStr(staff.shiftStartMin) + '-' + minutesToTimeStr(staff.shiftEndMin) +
+          ')\u306e\u7bc4\u56f2\u5916\u3067\u3059',
+          'SHIFT_VIOLATION'
+        ));
+      }
+    }
+
+    // C-4: 勤務曜日
+    if (staff && staff.workDays && youbi) {
+      if (staff.workDays.indexOf(youbi) < 0) {
+        violations.push(violation(
+          'CRITICAL', 'DAY', 'C-4',
+          '\u52e4\u52d9\u66dc\u65e5\u5916',
+          (staff.name || targetStaffId) + '\u306f' + youbi +
+          '\u306f\u52e4\u52d9\u65e5\u3067\u306f\u3042\u308a\u307e\u305b\u3093',
+          'WORKDAY_VIOLATION'
+        ));
+      }
+    }
+
+    // C-5: 指定スタッフ必須 (fixedType === '必須')
+    if (patient && patient.fixedType === '\u5fc5\u9808' && patient.fixedStaff) {
+      var requiredIds = splitIds(patient.fixedStaff);
+      if (requiredIds.length > 0 && requiredIds.indexOf(targetStaffId) < 0) {
+        violations.push(violation(
+          'CRITICAL', 'STAFF', 'C-5',
+          '\u6307\u5b9a\u30b9\u30bf\u30c3\u30d5\u5fc5\u9808',
+          '\u60a3\u8005' + (patient.name || pid) +
+          '\u306f\u30b9\u30bf\u30c3\u30d5\u5fc5\u9808\u6307\u5b9a(' + requiredIds.join(',') +
+          ')\u3067\u3059\u304c\u3001' + targetStaffId + '\u306f\u542b\u307e\u308c\u3066\u3044\u307e\u305b\u3093',
+          'FIXED_STAFF_REQUIRED'
+        ));
+      }
+    }
+
+    // C-6: NGスタッフ
+    if (patient && patient.ngStaff) {
+      var ngIds = splitIds(patient.ngStaff);
+      if (ngIds.indexOf(targetStaffId) >= 0) {
+        violations.push(violation(
+          'CRITICAL', 'STAFF', 'C-6',
+          'NG\u30b9\u30bf\u30c3\u30d5',
+          (staff ? staff.name : targetStaffId) + '\u306f\u60a3\u8005' +
+          (patient.name || pid) + '\u306eNG\u30b9\u30bf\u30c3\u30d5\u306b\u6307\u5b9a\u3055\u308c\u3066\u3044\u307e\u3059',
+          'NG_STAFF'
+        ));
+      }
+    }
+
+    // C-7: 時間重複 (overlap with existing visits for targetStaff on this date)
+    if (startMin != null && endMin != null) {
+      var existingVisits = getStaffAssignments(targetStaffId, dateStr, state, visitId);
+      for (var ei = 0; ei < existingVisits.length; ei++) {
+        var ex = existingVisits[ei];
+        if (ex.startMin != null && ex.endMin != null) {
+          if (isOverlap(startMin, endMin, ex.startMin, ex.endMin)) {
+            violations.push(violation(
+              'CRITICAL', 'TIME', 'C-7',
+              '\u6642\u9593\u91cd\u8907',
+              '\u8a2a\u554f(' + minutesToTimeStr(startMin) + '-' + minutesToTimeStr(endMin) +
+              ')\u304c' + (ex.pname || ex.pid) + '(' + minutesToTimeStr(ex.startMin) +
+              '-' + minutesToTimeStr(ex.endMin) + ')\u3068\u91cd\u8907\u3057\u307e\u3059',
+              'TIME_OVERLAP'
+            ));
+            break; // report first overlap only
+          }
+        }
+      }
+    }
+
+    // C-8: イベント衝突
+    if (startMin != null && endMin != null) {
+      var events = getStaffEvents(targetStaffId, dateStr, state);
+      for (var evi = 0; evi < events.length; evi++) {
+        var ev = events[evi];
+        if (isOverlap(startMin, endMin, ev.startMin, ev.endMin)) {
+          violations.push(violation(
+            'CRITICAL', 'EVENT', 'C-8',
+            '\u30a4\u30d9\u30f3\u30c8\u885d\u7a81',
+            '\u8a2a\u554f(' + minutesToTimeStr(startMin) + '-' + minutesToTimeStr(endMin) +
+            ')\u304c\u30a4\u30d9\u30f3\u30c8\u300c' + (ev.title || '') + '\u300d(' +
+            minutesToTimeStr(ev.startMin) + '-' + minutesToTimeStr(ev.endMin) +
+            ')\u3068\u885d\u7a81\u3057\u307e\u3059',
+            'EVENT_CONFLICT'
+          ));
+          break;
+        }
+      }
+    }
+
+    // C-9: スタッフ休み (day off / full-day restriction)
+    var staffChanges = getStaffChanges(targetStaffId, dateStr, state);
+    for (var ci = 0; ci < staffChanges.length; ci++) {
+      var ch = staffChanges[ci];
+      if (ch.restrictionType === '\u4f11\u307f' ||
+          ch.restrictionType === '\u7d42\u65e5\u4e0d\u53ef' ||
+          ch.restrictionType === '\u7d42\u65e5') {
+        violations.push(violation(
+          'CRITICAL', 'CHANGE', 'C-9',
+          '\u30b9\u30bf\u30c3\u30d5\u4f11\u307f',
+          (staff ? staff.name : targetStaffId) + '\u306f' + dateStr +
+          '\u306f' + ch.restrictionType + '\u3067\u3059',
+          'STAFF_DAY_OFF'
+        ));
+        break;
+      }
+    }
+
+    // C-10: maxPerDay
+    if (staff && staff.maxPerDay != null) {
+      var currentCount = countStaffDayAssignments(targetStaffId, dateStr, state, visitId);
+      if (currentCount >= staff.maxPerDay) {
+        violations.push(violation(
+          'CRITICAL', 'STAFF', 'C-10',
+          '\u4e0a\u9650\u8d85\u904e',
+          (staff.name || targetStaffId) + '\u306e' + dateStr +
+          '\u306e\u8a2a\u554f\u6570(' + currentCount + ')\u304c\u4e0a\u9650(' +
+          staff.maxPerDay + ')\u306b\u9054\u3057\u3066\u3044\u307e\u3059',
+          'MAX_PER_DAY_EXCEEDED'
+        ));
+      }
+    }
+
+    // C-11: 曜日NG (patient ngDays)
+    if (patient && patient.ngDays && youbi) {
+      if (patient.ngDays.indexOf(youbi) >= 0) {
+        violations.push(violation(
+          'CRITICAL', 'DAY', 'C-11',
+          '\u66dc\u65e5NG',
+          '\u60a3\u8005' + (patient.name || pid) + '\u306f' + youbi +
+          '\u304cNG\u66dc\u65e5\u306b\u6307\u5b9a\u3055\u308c\u3066\u3044\u307e\u3059',
+          'PATIENT_DAY_NG'
+        ));
+      }
+    }
+
+    // C-12: キャンセル済み
+    var patientChange = getPatientChange(pid, dateStr, state);
+    if (patientChange && patientChange.op === '\u30ad\u30e3\u30f3\u30bb\u30eb') {
+      violations.push(violation(
+        'CRITICAL', 'CHANGE', 'C-12',
+        '\u30ad\u30e3\u30f3\u30bb\u30eb\u6e08\u307f',
+        '\u60a3\u8005' + (patient ? patient.name : pid) + '\u306e' + dateStr +
+        '\u306e\u8a2a\u554f\u306f\u30ad\u30e3\u30f3\u30bb\u30eb\u6e08\u307f\u3067\u3059',
+        'CANCELLED'
+      ));
+    }
+
+    // C-13: 特別訪問週間REPLACE
+    if (state.specialWeek && state.specialWeek.mode === 'REPLACE') {
+      var hasSpecialEntry = false;
+      var swDetails = state.specialWeek.details || [];
+      for (var si = 0; si < swDetails.length; si++) {
+        if (swDetails[si].pid === pid && swDetails[si].dateStr === dateStr) {
+          hasSpecialEntry = true;
+          break;
+        }
+      }
+      if (!hasSpecialEntry) {
+        violations.push(violation(
+          'CRITICAL', 'SPECIAL', 'C-13',
+          '\u7279\u5225\u8a2a\u554f\u9031\u9593REPLACE',
+          '\u7279\u5225\u8a2a\u554f\u9031\u9593(REPLACE\u30e2\u30fc\u30c9)\u306b\u3053\u306e\u60a3\u8005/\u65e5\u4ed8\u306e\u30a8\u30f3\u30c8\u30ea\u304c\u3042\u308a\u307e\u305b\u3093',
+          'SPECIAL_WEEK_REPLACE'
+        ));
+      }
+    }
+
+    // ==========================================================
+    // WARNING checks (W-1 .. W-10)
+    // ==========================================================
+
+    // W-1: 指定スタッフ希望 (fixedType === '希望', not '必須')
+    if (patient && patient.fixedType === '\u5e0c\u671b' && patient.fixedStaff) {
+      var prefIds = splitIds(patient.fixedStaff);
+      if (prefIds.length > 0 && prefIds.indexOf(targetStaffId) < 0) {
+        violations.push(violation(
+          'WARNING', 'STAFF', 'W-1',
+          '\u6307\u5b9a\u30b9\u30bf\u30c3\u30d5\u5e0c\u671b',
+          '\u60a3\u8005' + (patient.name || pid) +
+          '\u306f\u30b9\u30bf\u30c3\u30d5\u5e0c\u671b(' + prefIds.join(',') +
+          ')\u3067\u3059\u304c\u3001' + (staff ? staff.name : targetStaffId) +
+          '\u306f\u542b\u307e\u308c\u3066\u3044\u307e\u305b\u3093',
+          'FIXED_STAFF_PREFERRED'
+        ));
+      }
+    }
+
+    // W-2: 希望曜日
+    if (patient && patient.prefDays && patient.prefDays.length > 0 && youbi) {
+      if (patient.prefDays.indexOf(youbi) < 0) {
+        violations.push(violation(
+          'WARNING', 'DAY', 'W-2',
+          '\u5e0c\u671b\u66dc\u65e5\u5916',
+          '\u60a3\u8005' + (patient.name || pid) + '\u306e\u5e0c\u671b\u66dc\u65e5(' +
+          patient.prefDays.join(',') + ')\u306b' + youbi +
+          '\u304c\u542b\u307e\u308c\u3066\u3044\u307e\u305b\u3093',
+          'PREF_DAY_MISMATCH'
+        ));
+      }
+    }
+
+    // W-3: 継続希望 (contPref === '同じ人希望')
+    if (patient && patient.contPref === '\u540c\u3058\u4eba\u5e0c\u671b') {
+      if (visitData.staffId && visitData.staffId !== targetStaffId) {
+        violations.push(violation(
+          'WARNING', 'STAFF', 'W-3',
+          '\u7d99\u7d9a\u5e0c\u671b',
+          '\u60a3\u8005' + (patient.name || pid) +
+          '\u306f\u300c\u540c\u3058\u4eba\u5e0c\u671b\u300d\u3067\u3059\u304c\u3001\u62c5\u5f53\u304c' +
+          (visitData.staffName || visitData.staffId) + '\u304b\u3089' +
+          (staff ? staff.name : targetStaffId) + '\u306b\u5909\u66f4\u3055\u308c\u307e\u3059',
+          'CONTINUITY_PREFERRED'
+        ));
+      }
+    }
+
+    // W-4: 半休 (午前休 / 午後休)
+    for (var w4i = 0; w4i < staffChanges.length; w4i++) {
+      var w4ch = staffChanges[w4i];
+      if (w4ch.restrictionType === '\u5348\u524d\u4f11' && startMin != null && startMin < 720) {
+        violations.push(violation(
+          'WARNING', 'CHANGE', 'W-4',
+          '\u534a\u4f11',
+          (staff ? staff.name : targetStaffId) + '\u306f' + dateStr +
+          '\u306f\u5348\u524d\u4f11\u3067\u3059\u304c\u3001\u8a2a\u554f\u304c\u5348\u524d(' +
+          minutesToTimeStr(startMin) + ')\u306b\u304b\u304b\u308a\u307e\u3059',
+          'STAFF_HALF_DAY_OFF'
+        ));
+      }
+      if (w4ch.restrictionType === '\u5348\u5f8c\u4f11' && endMin != null && endMin > 720) {
+        violations.push(violation(
+          'WARNING', 'CHANGE', 'W-4',
+          '\u534a\u4f11',
+          (staff ? staff.name : targetStaffId) + '\u306f' + dateStr +
+          '\u306f\u5348\u5f8c\u4f11\u3067\u3059\u304c\u3001\u8a2a\u554f\u304c\u5348\u5f8c(' +
+          minutesToTimeStr(endMin) + ')\u306b\u304b\u304b\u308a\u307e\u3059',
+          'STAFF_HALF_DAY_OFF'
+        ));
+      }
+    }
+
+    // W-5: 遅刻 / 早退
+    for (var w5i = 0; w5i < staffChanges.length; w5i++) {
+      var w5ch = staffChanges[w5i];
+      if (w5ch.restrictionType === '\u9045\u523b' &&
+          w5ch.startTime != null && startMin != null) {
+        if (startMin < w5ch.startTime) {
+          violations.push(violation(
+            'WARNING', 'CHANGE', 'W-5',
+            '\u9045\u523b',
+            (staff ? staff.name : targetStaffId) + '\u306f' + dateStr +
+            '\u306f\u9045\u523b(' + minutesToTimeStr(w5ch.startTime) +
+            '\u304b\u3089)\u3067\u3059\u304c\u3001\u8a2a\u554f\u958b\u59cb\u304c' +
+            minutesToTimeStr(startMin) + '\u3067\u3059',
+            'STAFF_RESTRICTED'
+          ));
+        }
+      }
+      if (w5ch.restrictionType === '\u65e9\u9000' &&
+          w5ch.endTime != null && endMin != null) {
+        if (endMin > w5ch.endTime) {
+          violations.push(violation(
+            'WARNING', 'CHANGE', 'W-5',
+            '\u65e9\u9000',
+            (staff ? staff.name : targetStaffId) + '\u306f' + dateStr +
+            '\u306f\u65e9\u9000(' + minutesToTimeStr(w5ch.endTime) +
+            '\u307e\u3067)\u3067\u3059\u304c\u3001\u8a2a\u554f\u7d42\u4e86\u304c' +
+            minutesToTimeStr(endMin) + '\u3067\u3059',
+            'STAFF_RESTRICTED'
+          ));
+        }
+      }
+    }
+
+    // W-6: 時間指定制限
+    if (startMin != null && endMin != null) {
+      for (var w6i = 0; w6i < staffChanges.length; w6i++) {
+        var w6ch = staffChanges[w6i];
+        if (w6ch.restrictionType === '\u6642\u9593\u6307\u5b9a' &&
+            w6ch.startTime != null && w6ch.endTime != null) {
+          if (isOverlap(startMin, endMin, w6ch.startTime, w6ch.endTime)) {
+            violations.push(violation(
+              'WARNING', 'CHANGE', 'W-6',
+              '\u6642\u9593\u6307\u5b9a\u5236\u9650',
+              (staff ? staff.name : targetStaffId) + '\u306f' + dateStr +
+              '\u306b\u6642\u9593\u6307\u5b9a\u5236\u9650(' +
+              minutesToTimeStr(w6ch.startTime) + '-' + minutesToTimeStr(w6ch.endTime) +
+              ')\u304c\u3042\u308a\u3001\u8a2a\u554f\u3068\u91cd\u8907\u3057\u307e\u3059',
+              'STAFF_RESTRICTED'
+            ));
+          }
+        }
+      }
+    }
+
+    // W-7: 時間帯逸脱 (buffer +/- BUFFER_MIN)
+    checkTimeWindowDeviation(visitData, patient, violations);
+
+    // W-8: サービス時間不一致
+    if (patient && patient.svcMin && startMin != null && endMin != null) {
+      var actualDuration = endMin - startMin;
+      if (Math.abs(actualDuration - patient.svcMin) > BUFFER_MIN) {
+        violations.push(violation(
+          'WARNING', 'TIME', 'W-8',
+          '\u30b5\u30fc\u30d3\u30b9\u6642\u9593\u4e0d\u4e00\u81f4',
+          '\u5b9f\u30b5\u30fc\u30d3\u30b9\u6642\u9593(' + actualDuration +
+          '\u5206)\u304c\u60a3\u8005\u898f\u5b9a(' + patient.svcMin +
+          '\u5206)\u3068' + Math.abs(actualDuration - patient.svcMin) +
+          '\u5206\u4e56\u96e2\u3057\u3066\u3044\u307e\u3059(\u30d0\u30c3\u30d5\u30a1' +
+          BUFFER_MIN + '\u5206\u8d85)',
+          'SVC_DURATION_MISMATCH'
+        ));
+      }
+    }
+
+    // W-9: 週回数不一致
+    if (patient && patient.weeklyCount != null && patient.weeklyCount > 0) {
+      var weekVisits = countPatientWeekVisits(pid, state);
+      if (weekVisits !== patient.weeklyCount) {
+        violations.push(violation(
+          'WARNING', 'DAY', 'W-9',
+          '\u9031\u56de\u6570\u4e0d\u4e00\u81f4',
+          '\u60a3\u8005' + (patient.name || pid) + '\u306e\u9031\u8a2a\u554f\u6570(' +
+          weekVisits + ')\u304c\u898f\u5b9a(' + patient.weeklyCount +
+          ')\u3068\u4e00\u81f4\u3057\u307e\u305b\u3093',
+          'WEEKLY_COUNT_MISMATCH'
+        ));
+      }
+    }
+
+    // W-10: ソフトキャップ
+    if (staff) {
+      var currentCountW10 = countStaffDayAssignments(targetStaffId, dateStr, state, visitId);
+      var softCap = getSoftCap(staff);
+      if (staff.maxPerDay != null &&
+          currentCountW10 < staff.maxPerDay &&
+          currentCountW10 >= softCap) {
+        violations.push(violation(
+          'WARNING', 'STAFF', 'W-10',
+          '\u30bd\u30d5\u30c8\u30ad\u30e3\u30c3\u30d7',
+          (staff.name || targetStaffId) + '\u306e' + dateStr +
+          '\u306e\u8a2a\u554f\u6570(' + currentCountW10 +
+          ')\u304c\u30bd\u30d5\u30c8\u30ad\u30e3\u30c3\u30d7(' + softCap +
+          ')\u306b\u9054\u3057\u3066\u3044\u307e\u3059 (\u914d\u5206: ' +
+          (staff.allocPref || '\u5747\u7b49') + ')',
+          'SOFT_CAP'
+        ));
+      }
+    }
+
+    return buildResult(violations);
+  }
+
+  // ===========================================================
+  // 4. validateFixedTime
+  // ===========================================================
+
+  /**
+   * Same as validateMove but with a user-specified fixed time override.
+   * Creates a shallow copy of visitData with the overridden times and
+   * delegates to validateMove.
+   *
+   * @param {object} visitData      - The visit being moved.
+   * @param {string} targetStaffId  - Target staff.
+   * @param {number} fixedStartMin  - User-specified start time in minutes.
+   * @param {number} fixedEndMin    - User-specified end time in minutes.
+   * @param {object} state          - Complete local state.
+   * @return {{status:string, violations:object[]}}
+   */
+  function validateFixedTime(visitData, targetStaffId, fixedStartMin, fixedEndMin, state) {
+    var modified = {};
+    for (var key in visitData) {
+      if (visitData.hasOwnProperty(key)) {
+        modified[key] = visitData[key];
+      }
+    }
+    modified.startMin = fixedStartMin;
+    modified.endMin = fixedEndMin;
+    modified.timeType = '\u56fa\u5b9a'; // 固定
+    modified.earliestMin = fixedStartMin;
+    modified.latestMin = fixedEndMin;
+
+    return validateMove(modified, targetStaffId, state);
+  }
+
+  // ===========================================================
+  // 2. validateAllDropTargets
+  // ===========================================================
+
+  /**
+   * Pre-validate ALL staff cells in the same column (same day) for drag highlight.
+   * Returns a map keyed by staffId with a quick validation result.
+   *
+   * This function is designed to be FAST -- it is called on dragstart for
+   * all ~6-8 staff members. It runs only the cheapest CRITICAL checks and
+   * a small selection of WARNING checks.
+   *
+   * @param {object} visitData - The visit being dragged.
+   * @param {object} state     - Complete local state.
+   * @return {object} Map: { staffId: { canAccept:boolean, status:string, quickReason:string } }
+   */
+  function validateAllDropTargets(visitData, state) {
+    var results = {};
+    if (!state.staffMasterMap || !visitData) return results;
+
+    var staffIds = Object.keys(state.staffMasterMap);
+    for (var i = 0; i < staffIds.length; i++) {
+      results[staffIds[i]] = validateSingleDropTarget(visitData, staffIds[i], state);
+    }
+    return results;
+  }
+
+  /**
+   * Quick validation for a single drop target.
+   * Evaluates CRITICAL checks first (short-circuit on first failure) then
+   * a representative subset of WARNING checks.
+   *
+   * @param {object} visitData
+   * @param {string} targetStaffId
+   * @param {object} state
+   * @return {{canAccept:boolean, status:string, quickReason:string}}
+   */
+  function validateSingleDropTarget(visitData, targetStaffId, state) {
+    var staff = getStaff(targetStaffId, state);
+    var patient = getPatient(visitData.pid, state);
+    var dateStr = visitData.dateStr;
+    var youbi = visitData.youbi || getYoubiEn(dateStr);
+    var startMin = visitData.startMin;
+    var endMin = visitData.endMin;
+    var visitId = visitData.visitId;
+    var pid = visitData.pid;
+
+    if (!staff) {
+      return { canAccept: false, status: 'NG',
+               quickReason: '\u30b9\u30bf\u30c3\u30d5\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093' };
+    }
+
+    // --- CRITICAL short-circuit checks (cheapest first) ---
+
+    // C-9: Day off
+    var staffChanges = getStaffChanges(targetStaffId, dateStr, state);
+    for (var ci = 0; ci < staffChanges.length; ci++) {
+      var rType = staffChanges[ci].restrictionType;
+      if (rType === '\u4f11\u307f' || rType === '\u7d42\u65e5\u4e0d\u53ef' || rType === '\u7d42\u65e5') {
+        return { canAccept: false, status: 'NG', quickReason: rType };
+      }
+    }
+
+    // C-4: Work day
+    if (staff.workDays && youbi && staff.workDays.indexOf(youbi) < 0) {
+      return { canAccept: false, status: 'NG',
+               quickReason: '\u52e4\u52d9\u66dc\u65e5\u5916' };
+    }
+
+    // C-2: Gender
+    if (patient && patient.sexLimit) {
+      if (patient.sexLimit === '\u5973\u6027\u306e\u307f' && staff.gender !== '\u5973\u6027') {
+        return { canAccept: false, status: 'NG',
+                 quickReason: '\u6027\u5225\u5236\u9650\u9055\u53cd' };
+      }
+      if (patient.sexLimit === '\u7537\u6027\u306e\u307f' && staff.gender !== '\u7537\u6027') {
+        return { canAccept: false, status: 'NG',
+                 quickReason: '\u6027\u5225\u5236\u9650\u9055\u53cd' };
+      }
+    }
+
+    // C-5: Fixed staff required
+    if (patient && patient.fixedType === '\u5fc5\u9808' && patient.fixedStaff) {
+      var requiredIds = splitIds(patient.fixedStaff);
+      if (requiredIds.length > 0 && requiredIds.indexOf(targetStaffId) < 0) {
+        return { canAccept: false, status: 'NG',
+                 quickReason: '\u6307\u5b9a\u30b9\u30bf\u30c3\u30d5\u5fc5\u9808' };
+      }
+    }
+
+    // C-6: NG staff
+    if (patient && patient.ngStaff) {
+      var ngIds = splitIds(patient.ngStaff);
+      if (ngIds.indexOf(targetStaffId) >= 0) {
+        return { canAccept: false, status: 'NG',
+                 quickReason: 'NG\u30b9\u30bf\u30c3\u30d5' };
+      }
+    }
+
+    // C-3: Shift time
+    if (startMin != null && endMin != null) {
+      if (startMin < staff.shiftStartMin || endMin > staff.shiftEndMin) {
+        return { canAccept: false, status: 'NG',
+                 quickReason: '\u30b7\u30d5\u30c8\u6642\u9593\u5916' };
+      }
+    }
+
+    // C-10: maxPerDay
+    if (staff.maxPerDay != null) {
+      var count = countStaffDayAssignments(targetStaffId, dateStr, state, visitId);
+      if (count >= staff.maxPerDay) {
+        return { canAccept: false, status: 'NG',
+                 quickReason: '\u4e0a\u9650\u8d85\u904e(' + count + '/' + staff.maxPerDay + ')' };
+      }
+    }
+
+    // C-12: Cancelled
+    var patientChange = getPatientChange(pid, dateStr, state);
+    if (patientChange && patientChange.op === '\u30ad\u30e3\u30f3\u30bb\u30eb') {
+      return { canAccept: false, status: 'NG',
+               quickReason: '\u30ad\u30e3\u30f3\u30bb\u30eb\u6e08\u307f' };
+    }
+
+    // C-11: Patient day NG
+    if (patient && patient.ngDays && youbi && patient.ngDays.indexOf(youbi) >= 0) {
+      return { canAccept: false, status: 'NG',
+               quickReason: '\u66dc\u65e5NG' };
+    }
+
+    // C-7: Time overlap
+    if (startMin != null && endMin != null) {
+      var existing = getStaffAssignments(targetStaffId, dateStr, state, visitId);
+      for (var ei = 0; ei < existing.length; ei++) {
+        var ex = existing[ei];
+        if (ex.startMin != null && ex.endMin != null &&
+            isOverlap(startMin, endMin, ex.startMin, ex.endMin)) {
+          return { canAccept: false, status: 'NG',
+                   quickReason: '\u6642\u9593\u91cd\u8907(' + (ex.pname || ex.pid) + ')' };
+        }
+      }
+    }
+
+    // C-8: Event conflict
+    if (startMin != null && endMin != null) {
+      var evts = getStaffEvents(targetStaffId, dateStr, state);
+      for (var evi = 0; evi < evts.length; evi++) {
+        var evt = evts[evi];
+        if (isOverlap(startMin, endMin, evt.startMin, evt.endMin)) {
+          return { canAccept: false, status: 'NG',
+                   quickReason: '\u30a4\u30d9\u30f3\u30c8\u885d\u7a81(' + (evt.title || '') + ')' };
+        }
+      }
+    }
+
+    // C-1: Two-staff duplicate
+    if (patient && patient.needStaff >= 2) {
+      if (checkTwoStaffQuick(visitData, targetStaffId, state)) {
+        return { canAccept: false, status: 'NG',
+                 quickReason: '2\u540d\u4f53\u5236\u30b9\u30bf\u30c3\u30d5\u91cd\u8907' };
+      }
+    }
+
+    // --- No CRITICAL issues. Check representative WARNINGs. ---
+    var hasWarning = false;
+    var warnReason = '';
+
+    // W-1: Preferred staff
+    if (patient && patient.fixedType === '\u5e0c\u671b' && patient.fixedStaff) {
+      var prefIds = splitIds(patient.fixedStaff);
+      if (prefIds.length > 0 && prefIds.indexOf(targetStaffId) < 0) {
+        hasWarning = true;
+        warnReason = '\u5e0c\u671b\u30b9\u30bf\u30c3\u30d5\u5916';
+      }
+    }
+
+    // W-3: Continuity preference
+    if (!hasWarning && patient && patient.contPref === '\u540c\u3058\u4eba\u5e0c\u671b') {
+      if (visitData.staffId && visitData.staffId !== targetStaffId) {
+        hasWarning = true;
+        warnReason = '\u7d99\u7d9a\u5e0c\u671b';
+      }
+    }
+
+    // W-4: Half day
+    if (!hasWarning) {
+      for (var w4i = 0; w4i < staffChanges.length; w4i++) {
+        var w4r = staffChanges[w4i].restrictionType;
+        if (w4r === '\u5348\u524d\u4f11' && startMin != null && startMin < 720) {
+          hasWarning = true;
+          warnReason = '\u5348\u524d\u4f11';
+          break;
+        }
+        if (w4r === '\u5348\u5f8c\u4f11' && endMin != null && endMin > 720) {
+          hasWarning = true;
+          warnReason = '\u5348\u5f8c\u4f11';
+          break;
+        }
+      }
+    }
+
+    // W-10: Soft cap
+    if (!hasWarning && staff.maxPerDay != null) {
+      var countW10 = countStaffDayAssignments(targetStaffId, dateStr, state, visitId);
+      var sc = getSoftCap(staff);
+      if (countW10 < staff.maxPerDay && countW10 >= sc) {
+        hasWarning = true;
+        warnReason = '\u30bd\u30d5\u30c8\u30ad\u30e3\u30c3\u30d7(' + countW10 + '/' + sc + ')';
+      }
+    }
+
+    if (hasWarning) {
+      return { canAccept: true, status: 'WARN', quickReason: warnReason };
+    }
+    return { canAccept: true, status: 'OK', quickReason: '' };
+  }
+
+  // ===========================================================
+  // Visit packing helpers (shared by computeImpact & repackStaffDay)
+  // ===========================================================
+
+  /**
+   * Determine if a visit should be treated as a fixed-time anchor.
+   * Events and visits with timeType '固定' are immovable.
+   * @param {object} visit
+   * @return {boolean}
+   */
+  function isVisitFixed(visit) {
+    if (!visit) return false;
+    if (visit.kind === 'event') return true;
+    if (visit.timeType === '\u56fa\u5b9a') return true;
+    return false;
+  }
+
+  /**
+   * Pack flexible visits into the gaps between fixed anchors within a day.
+   *
+   * Algorithm:
+   *  1. Sort fixed anchors by start time.
+   *  2. Compute available gaps between anchors (respecting ASSIGN_BUFFER_MIN).
+   *  3. For each flexible visit (sorted by preferred earliest start):
+   *     a. Find the best-fitting gap (closest to the visit's time preference).
+   *     b. Place the visit at the earliest available position in that gap.
+   *  4. If a visit cannot fit anywhere, mark it as displaced.
+   *
+   * @param {object[]} fixedAnchors - Events and fixed visits (immovable).
+   *   Each: { visitId, startMin, endMin, isEvent }
+   * @param {object[]} flexVisits - Movable visits to pack.
+   *   Each: { visitId, pid, pname, svcMin, earliestMin, latestMin, ... }
+   * @param {number} dayStart - Shift start in minutes.
+   * @param {number} dayEnd   - Shift end in minutes.
+   * @return {{schedule:object[], displaced:object[]}}
+   */
+  function packVisitsIntoDay(fixedAnchors, flexVisits, dayStart, dayEnd) {
+    // Sort anchors by start time
+    var anchors = fixedAnchors.slice().sort(function (a, b) {
+      return a.startMin - b.startMin;
+    });
+
+    // Compute gaps between anchors
+    var gaps = [];
+    var cursor = dayStart;
+    for (var ai = 0; ai < anchors.length; ai++) {
+      if (cursor + ASSIGN_BUFFER_MIN < anchors[ai].startMin) {
+        gaps.push({
+          start: cursor,
+          end: anchors[ai].startMin - ASSIGN_BUFFER_MIN
+        });
+      }
+      cursor = Math.max(cursor, anchors[ai].endMin + ASSIGN_BUFFER_MIN);
+    }
+    if (cursor < dayEnd) {
+      gaps.push({ start: cursor, end: dayEnd });
+    }
+
+    var schedule = [];
+    var displaced = [];
+
+    // Place fixed anchors (non-event) into the schedule
+    for (var fi = 0; fi < anchors.length; fi++) {
+      if (!anchors[fi].isEvent) {
+        schedule.push({
+          visitId: anchors[fi].visitId,
+          startMin: anchors[fi].startMin,
+          endMin: anchors[fi].endMin
+        });
+      }
+    }
+
+    // Track packing cursor per gap
+    var gapCursors = [];
+    for (var gi = 0; gi < gaps.length; gi++) {
+      gapCursors.push(gaps[gi].start);
+    }
+
+    // Place flexible visits into gaps
+    for (var fvi = 0; fvi < flexVisits.length; fvi++) {
+      var fv = flexVisits[fvi];
+      var placed = false;
+      var bestGap = -1;
+      var bestStart = -1;
+
+      for (var gj = 0; gj < gaps.length; gj++) {
+        var gapAvailStart = gapCursors[gj];
+        var gapEnd = gaps[gj].end;
+
+        var candidateStart = gapAvailStart;
+
+        // Honour preferred earliest time if possible
+        if (fv.earliestMin != null && fv.earliestMin > candidateStart) {
+          candidateStart = fv.earliestMin;
+        }
+
+        var candidateEnd = candidateStart + fv.svcMin;
+        if (candidateEnd <= gapEnd) {
+          if (bestGap < 0) {
+            bestGap = gj;
+            bestStart = candidateStart;
+          } else if (fv.earliestMin != null) {
+            // Prefer the gap where candidateStart is closest to earliestMin
+            var distCurrent = Math.abs(candidateStart - fv.earliestMin);
+            var distBest = Math.abs(bestStart - fv.earliestMin);
+            if (distCurrent < distBest) {
+              bestGap = gj;
+              bestStart = candidateStart;
+            }
+          }
+        }
+      }
+
+      if (bestGap >= 0) {
+        var endMinPlaced = bestStart + fv.svcMin;
+        schedule.push({
+          visitId: fv.visitId,
+          pid: fv.pid,
+          pname: fv.pname,
+          startMin: bestStart,
+          endMin: endMinPlaced
+        });
+        gapCursors[bestGap] = endMinPlaced + ASSIGN_BUFFER_MIN;
+        placed = true;
+      }
+
+      if (!placed) {
+        displaced.push({
+          visitId: fv.visitId,
+          pid: fv.pid,
+          pname: fv.pname || '',
+          reason: '\u6642\u9593\u91cd\u8907' // no gap available
+        });
+      }
+    }
+
+    // Sort schedule by start time
+    schedule.sort(function (a, b) { return a.startMin - b.startMin; });
+
+    return { schedule: schedule, displaced: displaced };
+  }
+
+  // ===========================================================
+  // 3. computeImpact
+  // ===========================================================
+
+  /**
+   * Calculate cascading effects of moving a visit to a target staff.
+   *
+   * Process:
+   *  1. Collect the target staff's existing visits on that day (minus the
+   *     visit being moved, if it was already there).
+   *  2. Add the moved visit to the collection.
+   *  3. Separate into fixed anchors (events + fixed-time visits) and
+   *     flexible visits.
+   *  4. Repack flexible visits into the gaps between anchors.
+   *  5. Any visit that does not fit is reported as displaced.
+   *
+   * @param {object} visitData      - The visit being moved.
+   * @param {string} targetStaffId  - The target staff ID.
+   * @param {object} state          - Complete local state (NOT mutated).
+   * @return {{displaced:object[], newSchedule:object[]}}
+   */
+  function computeImpact(visitData, targetStaffId, state) {
+    if (!visitData || !targetStaffId || !state) {
+      return { displaced: [], newSchedule: [] };
+    }
+
+    var dateStr = visitData.dateStr;
+    var visitId = visitData.visitId;
+    var svcMin = visitData.svcMin ||
+                 (visitData.endMin != null && visitData.startMin != null
+                   ? visitData.endMin - visitData.startMin
+                   : 30);
+
+    // Get existing assignments for target staff, excluding the visit being moved
+    var existingVisits = getStaffAssignments(targetStaffId, dateStr, state, visitId);
+
+    // Build the combined list
+    var allVisits = [];
+    for (var i = 0; i < existingVisits.length; i++) {
+      var exv = existingVisits[i];
+      allVisits.push({
+        visitId: exv.visitId,
+        pid: exv.pid,
+        pname: exv.pname || '',
+        startMin: exv.startMin,
+        endMin: exv.endMin,
+        svcMin: exv.svcMin ||
+                (exv.endMin != null && exv.startMin != null ? exv.endMin - exv.startMin : 30),
+        isFixed: isVisitFixed(exv),
+        isMovedVisit: false,
+        timeType: exv.timeType,
+        earliestMin: exv.earliestMin,
+        latestMin: exv.latestMin
+      });
+    }
+
+    // Add the moved visit
+    allVisits.push({
+      visitId: visitId,
+      pid: visitData.pid,
+      pname: visitData.pname || '',
+      startMin: visitData.startMin,
+      endMin: visitData.endMin,
+      svcMin: svcMin,
+      isFixed: isVisitFixed(visitData),
+      isMovedVisit: true,
+      timeType: visitData.timeType,
+      earliestMin: visitData.earliestMin,
+      latestMin: visitData.latestMin
+    });
+
+    // Collect events as fixed anchors
+    var events = getStaffEvents(targetStaffId, dateStr, state);
+    var fixedAnchors = [];
+    for (var ei = 0; ei < events.length; ei++) {
+      fixedAnchors.push({
+        visitId: events[ei].eventId || ('EVT_' + ei),
+        startMin: events[ei].startMin,
+        endMin: events[ei].endMin,
+        isEvent: true
+      });
+    }
+
+    // Separate visits into fixed (-> anchors) and flexible
+    var flexVisits = [];
+    for (var vi = 0; vi < allVisits.length; vi++) {
+      if (allVisits[vi].isFixed) {
+        fixedAnchors.push({
+          visitId: allVisits[vi].visitId,
+          startMin: allVisits[vi].startMin,
+          endMin: allVisits[vi].endMin,
+          isEvent: false
+        });
+      } else {
+        flexVisits.push(allVisits[vi]);
+      }
+    }
+
+    // Sort flex visits by preferred earliest start
+    flexVisits.sort(function (a, b) {
+      var aE = a.earliestMin != null ? a.earliestMin : a.startMin;
+      var bE = b.earliestMin != null ? b.earliestMin : b.startMin;
+      return (aE || 0) - (bE || 0);
+    });
+
+    // Determine day boundaries
+    var staff = getStaff(targetStaffId, state);
+    var dayStart = staff
+      ? (staff.shiftStartMin != null ? staff.shiftStartMin : 540)
+      : 540;
+    var dayEnd = staff
+      ? (staff.shiftEndMin != null ? staff.shiftEndMin : 1080)
+      : 1080;
+    dayStart = Math.max(dayStart, 540); // Guard: 09:00 minimum
+
+    var packResult = packVisitsIntoDay(fixedAnchors, flexVisits, dayStart, dayEnd);
+
+    return {
+      displaced: packResult.displaced,
+      newSchedule: packResult.schedule
+    };
+  }
+
+  // ===========================================================
+  // 5. repackStaffDay
+  // ===========================================================
+
+  /**
+   * Re-distribute visits for a staff member on a given day around fixed anchors.
+   *
+   * Unlike computeImpact, this function does NOT add a new visit -- it simply
+   * repacks the existing visits, removing any that no longer fit.
+   *
+   * @param {string} staffId       - Staff ID.
+   * @param {string} dateStr       - Date string "yyyy/MM/dd".
+   * @param {object[]} fixedAnchors - Caller-specified immovable items:
+   *   [{ visitId, startMin, endMin }]. Events are automatically included.
+   * @param {object} state         - Complete local state (not mutated).
+   * @return {{schedule:object[], displaced:object[]}}
+   */
+  function repackStaffDay(staffId, dateStr, fixedAnchors, state) {
+    if (!staffId || !dateStr || !state) {
+      return { schedule: [], displaced: [] };
+    }
+
+    var staff = getStaff(staffId, state);
+    var dayStart = staff
+      ? (staff.shiftStartMin != null ? staff.shiftStartMin : 540) : 540;
+    var dayEnd = staff
+      ? (staff.shiftEndMin != null ? staff.shiftEndMin : 1080) : 1080;
+    dayStart = Math.max(dayStart, 540);
+
+    // Merge caller-supplied anchors with events
+    var allAnchors = (fixedAnchors || []).slice();
+    var events = getStaffEvents(staffId, dateStr, state);
+    for (var ei = 0; ei < events.length; ei++) {
+      allAnchors.push({
+        visitId: events[ei].eventId || ('EVT_' + ei),
+        startMin: events[ei].startMin,
+        endMin: events[ei].endMin,
+        isEvent: true
+      });
+    }
+
+    // Build set of anchor visitIds for quick lookup
+    var fixedIdSet = {};
+    for (var ai = 0; ai < allAnchors.length; ai++) {
+      fixedIdSet[allAnchors[ai].visitId] = true;
+    }
+
+    // Get all assignments for this staff on this date
+    var assignments = getStaffAssignments(staffId, dateStr, state);
+
+    // Separate into fixed and flexible
+    var flexVisits = [];
+    for (var vi = 0; vi < assignments.length; vi++) {
+      var a = assignments[vi];
+      if (fixedIdSet[a.visitId]) {
+        continue; // already represented in anchors
+      }
+      if (isVisitFixed(a)) {
+        // Inherently fixed visit not already in caller-supplied anchors
+        allAnchors.push({
+          visitId: a.visitId,
+          startMin: a.startMin,
+          endMin: a.endMin,
+          isEvent: false
+        });
+      } else {
+        flexVisits.push({
+          visitId: a.visitId,
+          pid: a.pid,
+          pname: a.pname || '',
+          startMin: a.startMin,
+          endMin: a.endMin,
+          svcMin: a.svcMin ||
+                  (a.endMin != null && a.startMin != null ? a.endMin - a.startMin : 30),
+          isFixed: false,
+          timeType: a.timeType,
+          earliestMin: a.earliestMin,
+          latestMin: a.latestMin
+        });
+      }
+    }
+
+    // Sort flex visits by preference
+    flexVisits.sort(function (a, b) {
+      var aE = a.earliestMin != null ? a.earliestMin : a.startMin;
+      var bE = b.earliestMin != null ? b.earliestMin : b.startMin;
+      return (aE || 0) - (bE || 0);
+    });
+
+    return packVisitsIntoDay(allAnchors, flexVisits, dayStart, dayEnd);
+  }
+
+  // ===========================================================
+  // Expose public API via window.ConstraintEngine
+  // ===========================================================
+
+  global.ConstraintEngine = {
+    // ---- Primary API ----
+    validateMove: validateMove,
+    validateAllDropTargets: validateAllDropTargets,
+    computeImpact: computeImpact,
+    validateFixedTime: validateFixedTime,
+    repackStaffDay: repackStaffDay,
+
+    // ---- Helper functions (exposed for testing / external use) ----
+    isOverlap: isOverlap,
+    minutesToTimeStr: minutesToTimeStr,
+    timeStrToMinutes: timeStrToMinutes,
+    getYoubiEn: getYoubiEn,
+    getStaffBlockedIntervals: getStaffBlockedIntervals,
+    getStaffAssignments: getStaffAssignments,
+    countStaffDayAssignments: countStaffDayAssignments,
+
+    // ---- Constants (read-only references) ----
+    BUFFER_MIN: BUFFER_MIN,
+    ASSIGN_BUFFER_MIN: ASSIGN_BUFFER_MIN
+  };
+
+})(typeof window !== 'undefined' ? window : this);
