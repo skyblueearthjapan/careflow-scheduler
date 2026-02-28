@@ -729,14 +729,15 @@ function audit_analyzeConditions_(dataset, pid, dateStr, youbi) {
     // 性別制限（「選択なし」「選択肢なし」「指定なし」「-」「なし」は制限なしとして除外）
     if (master.sexLimit && master.sexLimit !== '指定なし' && master.sexLimit !== '-'
         && master.sexLimit !== '選択なし' && master.sexLimit !== '選択肢なし' && master.sexLimit !== 'なし') {
+      var sexName = master.sexLimit.replace('のみ', '').replace('スタッフ', '').trim();
       conditions.push({
         category: AUDIT_CONDITION_CATEGORY.STAFF,
         source: 'MASTER',
         label: '性別制限',
         severity: AUDIT_SEVERITY.CRITICAL,
-        expected: master.sexLimit + 'スタッフのみ',
+        expected: sexName + 'スタッフのみ',
         isOk: null,  // スタッフ情報があれば後で判定
-        description: master.sexLimit + 'スタッフのみ訪問可能'
+        description: sexName + 'スタッフのみ訪問可能'
       });
     }
 
@@ -954,10 +955,10 @@ function audit_evaluateConditions_(conditionAnalysis, actuals, dataset) {
         if (cond.label === '性別制限') {
           if (staffMaster && staffMaster.sex) {
             result.actual = staffMaster.name + '（' + staffMaster.sex + '）';
-            var expectedSex = cond.expected.replace('スタッフのみ', '');
+            var expectedSex = cond.expected.replace('スタッフのみ', '').replace('のみ', '').replace('スタッフ', '').trim();
             if (staffMaster.sex !== expectedSex) {
               result.status = AUDIT_STATUS.NG;
-              result.diffDetail = '性別制限違反: ' + expectedSex + '希望だが' + staffMaster.sex + 'スタッフ';
+              result.diffDetail = '性別制限違反: ' + expectedSex + 'スタッフ希望だが' + staffMaster.sex + 'スタッフ';
             }
           } else {
             result.actual = actual.staffName || staffId || '不明';
