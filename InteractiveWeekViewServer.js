@@ -188,7 +188,7 @@ function saveSnapshot(weekStartStr) {
  * スプレッドシートを取得（Web Appコンテキスト対応）
  */
 function iwv_getSpreadsheet_() {
-  var ss = iwv_getSpreadsheet_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss && typeof SPREADSHEET_ID !== 'undefined' && SPREADSHEET_ID) {
     ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   }
