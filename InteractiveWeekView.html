@@ -769,6 +769,20 @@
     .context-menu-item.danger { color: var(--color-error-dark); }
     .context-menu-item.danger:hover { background: #FFEBEE; }
     .context-menu-sep { height: 1px; background: var(--color-border); margin: 2px 0; }
+    .context-menu-label { padding: 6px 14px; font-size: 11px; color: #888; font-weight: 600; }
+    .context-staff-list { max-height: 260px; overflow-y: auto; }
+    .context-staff-item {
+      padding: 5px 14px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+      font-size: 11px; transition: background 0.1s;
+    }
+    .context-staff-item:hover { background: var(--color-green-light); }
+    .context-staff-item .ctx-badge {
+      display: inline-block; padding: 1px 5px; border-radius: 3px;
+      font-size: 9px; font-weight: 600; line-height: 1.4;
+    }
+    .ctx-badge.ok { background: #C8E6C9; color: #2E7D32; }
+    .ctx-badge.warn { background: #FFF3E0; color: #E65100; }
+    .ctx-badge.ng { background: #FFCDD2; color: #C62828; }
   </style>
 </head>
 <body>
@@ -939,6 +953,9 @@
   <div class="context-menu" id="contextMenu">
     <div class="context-menu-item" onclick="onContextSetTime()">&#128344; 時間を設定</div>
     <div class="context-menu-item" onclick="onContextShowConstraints()">&#128203; 制約情報を表示</div>
+    <div class="context-menu-sep"></div>
+    <div class="context-menu-label">&#8596; スタッフに移動</div>
+    <div class="context-staff-list" id="contextStaffList"></div>
     <div class="context-menu-sep"></div>
     <div class="context-menu-item" onclick="onContextMoveToUnassigned()">&#8599; 未割当に移動</div>
     <div class="context-menu-sep"></div>
@@ -1722,7 +1739,14 @@
       var scrollEl = document.getElementById('gridScroll');
       if (!scrollEl) return;
       var rect = scrollEl.getBoundingClientRect();
-      var distTop = clientY - rect.top;
+      // Use thead bottom as top boundary (below weekday headers)
+      var thead = document.getElementById('weekGridHead');
+      var topEdge = rect.top;
+      if (thead) {
+        var theadRect = thead.getBoundingClientRect();
+        topEdge = theadRect.bottom;
+      }
+      var distTop = clientY - topEdge;
       var distBottom = rect.bottom - clientY;
 
       if (distTop < AUTOSCROLL_EDGE && distTop >= 0) {
@@ -2240,9 +2264,72 @@
     function showContextMenu(e, visitId) {
       _contextVisitId = visitId;
       var menu = document.getElementById('contextMenu');
+
+      // Build staff move list
+      var staffListEl = document.getElementById('contextStaffList');
+      staffListEl.innerHTML = '';
+      var visit = findVisitById(visitId);
+      if (visit && _state && _state.staffList) {
+        var validationMap = null;
+        if (typeof ConstraintEngine !== 'undefined') {
+          validationMap = ConstraintEngine.validateAllDropTargets(visit, _state);
+        }
+        var sorted = _state.staffList.slice().sort(function(a, b) {
+          // OK first, then WARN, then NG
+          if (validationMap) {
+            var ra = validationMap[a.id], rb = validationMap[b.id];
+            var oa = ra ? (ra.status === 'OK' ? 0 : ra.status === 'WARN' ? 1 : 2) : 3;
+            var ob = rb ? (rb.status === 'OK' ? 0 : rb.status === 'WARN' ? 1 : 2) : 3;
+            if (oa !== ob) return oa - ob;
+          }
+          return (a.name || '').localeCompare(b.name || '');
+        });
+        for (var si = 0; si < sorted.length; si++) {
+          var staff = sorted[si];
+          if (staff.id === visit.staffId) continue; // skip current staff
+          var item = document.createElement('div');
+          item.className = 'context-staff-item';
+          var res = validationMap ? validationMap[staff.id] : null;
+          var badge = document.createElement('span');
+          badge.className = 'ctx-badge';
+          if (res) {
+            if (res.status === 'OK') { badge.classList.add('ok'); badge.textContent = 'OK'; }
+            else if (res.status === 'WARN') { badge.classList.add('warn'); badge.textContent = 'WARN'; }
+            else { badge.classList.add('ng'); badge.textContent = 'NG'; }
+          } else {
+            badge.classList.add('ok'); badge.textContent = '?';
+          }
+          item.appendChild(badge);
+          var nameSpan = document.createElement('span');
+          nameSpan.textContent = staff.name || staff.id;
+          item.appendChild(nameSpan);
+          if (res && res.quickReason) {
+            var reason = document.createElement('span');
+            reason.style.cssText = 'color:#999;font-size:10px;margin-left:auto;';
+            reason.textContent = res.quickReason;
+            item.appendChild(reason);
+          }
+          item.setAttribute('data-staff-id', staff.id);
+          item.addEventListener('click', (function(sid) {
+            return function() {
+              hideContextMenu();
+              onContextMoveToStaff(sid);
+            };
+          })(staff.id));
+          staffListEl.appendChild(item);
+        }
+      }
+
       // Position, clamped to viewport
-      var x = Math.min(e.clientX, window.innerWidth - 180);
-      var y = Math.min(e.clientY, window.innerHeight - 160);
+      menu.style.left = '0px';
+      menu.style.top = '0px';
+      menu.classList.add('show');
+      var mw = menu.offsetWidth || 220;
+      var mh = menu.offsetHeight || 400;
+      menu.classList.remove('show');
+      var x = Math.min(e.clientX, window.innerWidth - mw - 10);
+      var y = Math.min(e.clientY, window.innerHeight - mh - 10);
+      if (y < 0) y = 0;
       menu.style.left = x + 'px';
       menu.style.top  = y + 'px';
       menu.classList.add('show');
@@ -2266,6 +2353,29 @@
       if (_contextVisitId) selectVisit(_contextVisitId);
     }
     window.onContextShowConstraints = onContextShowConstraints;
+
+    function onContextMoveToStaff(targetStaffId) {
+      if (!_contextVisitId || !_state) return;
+      var visit = findVisitById(_contextVisitId);
+      if (!visit) return;
+      // Build visitData same as drag
+      var visitData = {
+        visitId: visit.visitId,
+        pid: visit.pid,
+        staffId: visit.staffId,
+        dateStr: visit.dateStr,
+        startMin: visit.startMin,
+        endMin: visit.endMin,
+        svcMin: visit.svcMin,
+        pname: visit.pname,
+        timeType: visit.timeType,
+        earliestMin: visit.earliestMin,
+        latestMin: visit.latestMin,
+        kind: visit.kind,
+        youbi: visit.youbi
+      };
+      showConfirmDialog(visitData, targetStaffId, visit.dateStr);
+    }
 
     function onContextMoveToUnassigned() {
       hideContextMenu();
