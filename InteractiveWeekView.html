@@ -552,6 +552,82 @@
     .constraint-tag.warn { background: #FFF8E1; color: #F57F17; }
     .constraint-tag.ok   { background: #E8F5E9; color: #2E7D32; }
 
+    /* Timeline bar for available window visualization */
+    .timeline-bar-container {
+      position: relative; height: 28px; background: #F5F5F5;
+      border-radius: 4px; margin: 6px 0; overflow: hidden;
+      border: 1px solid var(--color-border); font-size: 9px;
+    }
+    .timeline-bar-container .tl-label {
+      position: absolute; top: -14px; font-size: 9px; color: #888;
+    }
+    .tl-blocked {
+      position: absolute; top: 0; height: 100%;
+      background: repeating-linear-gradient(45deg, #FFCDD2, #FFCDD2 3px, #EF9A9A 3px, #EF9A9A 6px);
+      opacity: 0.7; z-index: 1;
+    }
+    .tl-available {
+      position: absolute; top: 0; height: 100%;
+      background: #C8E6C9; z-index: 1; border-radius: 2px;
+    }
+    .tl-current {
+      position: absolute; top: 2px; height: calc(100% - 4px);
+      background: #42A5F5; z-index: 3; border-radius: 2px; opacity: 0.8;
+    }
+    .tl-suggestion {
+      position: absolute; top: 4px; height: calc(100% - 8px);
+      background: #FFD54F; z-index: 2; border-radius: 2px; opacity: 0.7;
+      cursor: pointer; border: 1px solid #FFB300;
+    }
+    .tl-suggestion:hover { opacity: 1; }
+    .tl-tick {
+      position: absolute; top: 0; width: 1px; height: 100%;
+      background: rgba(0,0,0,0.08); z-index: 0;
+    }
+    .tl-tick-label {
+      position: absolute; bottom: -12px; font-size: 8px; color: #999;
+      transform: translateX(-50%);
+    }
+    .tl-legend {
+      display: flex; gap: 8px; font-size: 9px; margin: 2px 0 6px;
+      color: var(--color-text-light);
+    }
+    .tl-legend span::before {
+      content: ''; display: inline-block; width: 10px; height: 10px;
+      border-radius: 2px; margin-right: 3px; vertical-align: middle;
+    }
+    .tl-legend .lg-available::before { background: #C8E6C9; }
+    .tl-legend .lg-blocked::before { background: #EF9A9A; }
+    .tl-legend .lg-current::before { background: #42A5F5; }
+    .tl-legend .lg-suggest::before { background: #FFD54F; }
+
+    /* Constraint source list */
+    .constraint-source {
+      padding: 4px 0; font-size: 10px; border-bottom: 1px solid #F0F0F0;
+    }
+    .constraint-source .cs-source {
+      font-weight: 600; color: var(--color-primary);
+      display: inline-block; min-width: 80px;
+    }
+    .constraint-source .cs-detail { color: var(--color-text); }
+
+    /* Suggestion slot buttons */
+    .suggest-slot {
+      display: inline-block; padding: 4px 10px; margin: 2px;
+      background: #FFF8E1; border: 1px solid #FFB300;
+      border-radius: 4px; font-size: 11px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .suggest-slot:hover { background: #FFE082; }
+    .suggest-slot.best { border: 2px solid #F57F17; font-weight: 600; }
+
+    /* Staff window tag in drop targets */
+    .staff-window-tag {
+      font-size: 9px; color: #666; display: block;
+      margin-top: 1px; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     /* ============================================================
        Footer
        ============================================================ */
@@ -942,6 +1018,11 @@
         </div>
         <div class="constraint-section ok" id="okSection" style="display:none">
           <h4>&#10003; 問題なし</h4>
+        </div>
+        <div class="constraint-section" id="suggestSection" style="display:none; background:#FFFDE7; border-left:3px solid #FFB300;">
+          <h4>&#128161; 受入可能な時間帯</h4>
+          <div id="suggestWindowText" style="font-size:11px; margin-bottom:6px;"></div>
+          <div id="suggestSlotList"></div>
         </div>
       </div>
       <div class="btn-confirm-disabled-reason" id="confirmDisabledReason" style="display:none"></div>
@@ -1806,7 +1887,205 @@
       }
       container.appendChild(card);
 
-      // -- Drop target validation card --
+      // -- Available Window & Timeline (Phase 3) --
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.computeAvailableWindow) {
+        // Compute available window for current staff
+        var aw = ConstraintEngine.computeAvailableWindow(
+          visit.pid, visit.dateStr, visit.staffId, _state, visit.visitId
+        );
+
+        // Constraint sources card
+        if (aw.constraints && aw.constraints.length > 0) {
+          var csCard = document.createElement('div');
+          csCard.className = 'constraint-info-card';
+          var csH4 = document.createElement('h4');
+          csH4.textContent = '\u5236\u7d04\u30bd\u30fc\u30b9\u4e00\u89a7'; // 制約ソース一覧
+          csCard.appendChild(csH4);
+          for (var ci = 0; ci < aw.constraints.length; ci++) {
+            var cDiv = document.createElement('div');
+            cDiv.className = 'constraint-source';
+            var cSrc = document.createElement('span');
+            cSrc.className = 'cs-source';
+            cSrc.textContent = aw.constraints[ci].source;
+            var cDet = document.createElement('span');
+            cDet.className = 'cs-detail';
+            cDet.textContent = aw.constraints[ci].detail;
+            cDiv.appendChild(cSrc);
+            cDiv.appendChild(cDet);
+            csCard.appendChild(cDiv);
+          }
+          container.appendChild(csCard);
+        }
+
+        // Timeline bar card
+        var tlCard = document.createElement('div');
+        tlCard.className = 'constraint-info-card';
+        var tlH4 = document.createElement('h4');
+        tlH4.textContent = '\u6642\u9593\u5e2f\u30bf\u30a4\u30e0\u30e9\u30a4\u30f3'; // 時間帯タイムライン
+        tlCard.appendChild(tlH4);
+
+        // Legend
+        var legend = document.createElement('div');
+        legend.className = 'tl-legend';
+        legend.innerHTML = '<span class="lg-available">\u79fb\u52d5\u53ef\u80fd</span>' +
+          '<span class="lg-blocked">\u30d6\u30ed\u30c3\u30af</span>' +
+          '<span class="lg-current">\u73fe\u5728</span>' +
+          '<span class="lg-suggest">\u63d0\u6848</span>';
+        tlCard.appendChild(legend);
+
+        // Timeline bar range: 7:00 (420) - 19:00 (1140)
+        var tlStart = 420, tlEnd = 1140, tlRange = tlEnd - tlStart;
+        var bar = document.createElement('div');
+        bar.className = 'timeline-bar-container';
+        bar.style.position = 'relative';
+
+        // Hour ticks
+        for (var h = 7; h <= 19; h++) {
+          var tickMin = h * 60;
+          var tickPct = ((tickMin - tlStart) / tlRange * 100);
+          var tick = document.createElement('div');
+          tick.className = 'tl-tick';
+          tick.style.left = tickPct + '%';
+          bar.appendChild(tick);
+          if (h % 2 === 1 || h === 7 || h === 19) {
+            var tickLbl = document.createElement('div');
+            tickLbl.className = 'tl-tick-label';
+            tickLbl.style.left = tickPct + '%';
+            tickLbl.textContent = h + ':00';
+            bar.appendChild(tickLbl);
+          }
+        }
+
+        // Available windows (green)
+        if (aw.windows) {
+          for (var awi = 0; awi < aw.windows.length; awi++) {
+            var w = aw.windows[awi];
+            var wLeft = Math.max(0, (w.startMin - tlStart) / tlRange * 100);
+            var wRight = Math.min(100, (w.endMin - tlStart) / tlRange * 100);
+            var wEl = document.createElement('div');
+            wEl.className = 'tl-available';
+            wEl.style.left = wLeft + '%';
+            wEl.style.width = (wRight - wLeft) + '%';
+            wEl.title = '\u79fb\u52d5\u53ef\u80fd: ' + ConstraintEngine.minutesToTimeStr(w.startMin) +
+              '\u301C' + ConstraintEngine.minutesToTimeStr(w.endMin);
+            bar.appendChild(wEl);
+          }
+        }
+
+        // Blocked intervals (red striped)
+        if (aw.blocked) {
+          for (var bi = 0; bi < aw.blocked.length; bi++) {
+            var bk = aw.blocked[bi];
+            var bkS = Math.max(bk.startMin, tlStart);
+            var bkE = Math.min(bk.endMin, tlEnd);
+            if (bkS >= bkE) continue;
+            var bLeft = (bkS - tlStart) / tlRange * 100;
+            var bWidth = (bkE - bkS) / tlRange * 100;
+            var bEl = document.createElement('div');
+            bEl.className = 'tl-blocked';
+            bEl.style.left = bLeft + '%';
+            bEl.style.width = bWidth + '%';
+            bEl.title = bk.reason;
+            bar.appendChild(bEl);
+          }
+        }
+
+        // Current assignment (blue)
+        if (visit.startMin != null && visit.endMin != null) {
+          var cLeft = Math.max(0, (visit.startMin - tlStart) / tlRange * 100);
+          var cWidth = Math.min(100, (visit.endMin - tlStart) / tlRange * 100) - cLeft;
+          var cEl = document.createElement('div');
+          cEl.className = 'tl-current';
+          cEl.style.left = cLeft + '%';
+          cEl.style.width = Math.max(cWidth, 0.5) + '%';
+          cEl.title = '\u73fe\u5728: ' + fmtMin(visit.startMin) + '\u301C' + fmtMin(visit.endMin);
+          bar.appendChild(cEl);
+        }
+
+        // Suggestion slots (yellow) - get from suggestTimeSlots
+        var suggestions = [];
+        if (ConstraintEngine.suggestTimeSlots) {
+          var sugResult = ConstraintEngine.suggestTimeSlots(
+            visit.pid, visit.dateStr, visit.staffId, _state,
+            { excludeVisitId: visit.visitId, maxSuggestions: 3 }
+          );
+          suggestions = sugResult.suggestions || [];
+          for (var sgi = 0; sgi < suggestions.length; sgi++) {
+            var sg = suggestions[sgi];
+            var sgLeft = Math.max(0, (sg.startMin - tlStart) / tlRange * 100);
+            var sgWidth = Math.min(100, (sg.endMin - tlStart) / tlRange * 100) - sgLeft;
+            var sgEl = document.createElement('div');
+            sgEl.className = 'tl-suggestion';
+            sgEl.style.left = sgLeft + '%';
+            sgEl.style.width = Math.max(sgWidth, 0.5) + '%';
+            sgEl.title = '\u63d0\u6848: ' + sg.label;
+            sgEl.setAttribute('data-start', sg.startMin);
+            sgEl.setAttribute('data-end', sg.endMin);
+            sgEl.addEventListener('click', (function(startMin, endMin) {
+              return function() { applySuggestedTime(visit.visitId, startMin, endMin); };
+            })(sg.startMin, sg.endMin));
+            bar.appendChild(sgEl);
+          }
+        }
+
+        tlCard.appendChild(bar);
+
+        // Spacer for tick labels
+        var spacer = document.createElement('div');
+        spacer.style.height = '14px';
+        tlCard.appendChild(spacer);
+
+        // Summary text
+        if (aw.windows && aw.windows.length > 0) {
+          var sumDiv = document.createElement('div');
+          sumDiv.style.fontSize = '10px';
+          sumDiv.style.color = '#2E7D32';
+          sumDiv.style.marginTop = '4px';
+          var winTexts = [];
+          for (var swi = 0; swi < aw.windows.length; swi++) {
+            winTexts.push(ConstraintEngine.minutesToTimeStr(aw.windows[swi].startMin) + '\u301C' +
+                          ConstraintEngine.minutesToTimeStr(aw.windows[swi].endMin));
+          }
+          sumDiv.textContent = '\u53d7\u5165\u53ef\u80fd: ' + winTexts.join(', '); // 受入可能
+          tlCard.appendChild(sumDiv);
+        } else {
+          var noDiv = document.createElement('div');
+          noDiv.style.fontSize = '10px';
+          noDiv.style.color = '#C62828';
+          noDiv.textContent = '\u3053\u306e\u30b9\u30bf\u30c3\u30d5\u3067\u306f\u53d7\u5165\u4e0d\u53ef'; // このスタッフでは受入不可
+          tlCard.appendChild(noDiv);
+        }
+
+        container.appendChild(tlCard);
+
+        // Suggestion slots card (clickable buttons)
+        if (suggestions.length > 0) {
+          var sgCard = document.createElement('div');
+          sgCard.className = 'constraint-info-card';
+          var sgH4 = document.createElement('h4');
+          sgH4.textContent = '\u63d0\u6848\u6642\u9593\u30b9\u30ed\u30c3\u30c8'; // 提案時間スロット
+          sgCard.appendChild(sgH4);
+          var sgNote = document.createElement('div');
+          sgNote.style.fontSize = '10px';
+          sgNote.style.color = '#888';
+          sgNote.style.marginBottom = '6px';
+          sgNote.textContent = '\u30af\u30ea\u30c3\u30af\u3067\u6642\u9593\u3092\u9069\u7528'; // クリックで時間を適用
+          sgCard.appendChild(sgNote);
+          for (var sbi = 0; sbi < suggestions.length; sbi++) {
+            var s = suggestions[sbi];
+            var btn = document.createElement('span');
+            btn.className = 'suggest-slot' + (sbi === 0 ? ' best' : '');
+            btn.textContent = s.label;
+            btn.addEventListener('click', (function(startMin, endMin) {
+              return function() { applySuggestedTime(visit.visitId, startMin, endMin); };
+            })(s.startMin, s.endMin));
+            sgCard.appendChild(btn);
+          }
+          container.appendChild(sgCard);
+        }
+      }
+
+      // -- Drop target validation card (with available windows) --
       if (typeof ConstraintEngine !== 'undefined') {
         var targets = ConstraintEngine.validateAllDropTargets(visit, _state);
         var targetIds = Object.keys(targets);
@@ -1814,7 +2093,7 @@
           var tcard = document.createElement('div');
           tcard.className = 'constraint-info-card';
           var th4 = document.createElement('h4');
-          th4.textContent = '\u79fb\u52d5\u53ef\u80fd\u5148';
+          th4.textContent = '\u79fb\u52d5\u53ef\u80fd\u5148'; // 移動可能先
           tcard.appendChild(th4);
 
           for (var ti = 0; ti < targetIds.length; ti++) {
@@ -1823,6 +2102,7 @@
             var res = targets[tid];
             var trow = document.createElement('div');
             trow.className = 'ci-row';
+            trow.style.flexWrap = 'wrap';
             var tl = document.createElement('span');
             tl.className = 'ci-label';
             tl.textContent = getStaffName(tid);
@@ -1841,6 +2121,25 @@
               if (res.quickReason) tag.title = res.quickReason;
             }
             trow.appendChild(tag);
+
+            // Add available window info for this staff
+            if (ConstraintEngine.computeAvailableWindow && res.status !== 'NG') {
+              var staffAw = ConstraintEngine.computeAvailableWindow(
+                visit.pid, visit.dateStr, tid, _state, visit.visitId
+              );
+              if (staffAw.windows && staffAw.windows.length > 0) {
+                var winTag = document.createElement('span');
+                winTag.className = 'staff-window-tag';
+                var wTexts = [];
+                for (var wti = 0; wti < staffAw.windows.length; wti++) {
+                  wTexts.push(ConstraintEngine.minutesToTimeStr(staffAw.windows[wti].startMin) + '\u301C' +
+                              ConstraintEngine.minutesToTimeStr(staffAw.windows[wti].endMin));
+                }
+                winTag.textContent = wTexts.join(', ');
+                trow.appendChild(winTag);
+              }
+            }
+
             tcard.appendChild(trow);
           }
           container.appendChild(tcard);
@@ -2058,8 +2357,23 @@
           var r = validationMap[cStaff];
           if (r.status === 'NG' || r.canAccept === false) {
             c.classList.add('highlight-invalid');
+            c.title = r.quickReason || 'NG';
           } else {
             c.classList.add('highlight-valid');
+            // Add available window tooltip
+            if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.computeAvailableWindow) {
+              var aw = ConstraintEngine.computeAvailableWindow(
+                visitData.pid, dateStr, cStaff, _state, visitData.visitId
+              );
+              if (aw.windows && aw.windows.length > 0) {
+                var wTexts = [];
+                for (var wj = 0; wj < aw.windows.length; wj++) {
+                  wTexts.push(ConstraintEngine.minutesToTimeStr(aw.windows[wj].startMin) + '\u301C' +
+                              ConstraintEngine.minutesToTimeStr(aw.windows[wj].endMin));
+                }
+                c.title = '\u53d7\u5165\u53ef\u80fd: ' + wTexts.join(', ');
+              }
+            }
           }
         } else {
           c.classList.add('highlight-valid');
@@ -2072,6 +2386,7 @@
       for (var i = 0; i < cells.length; i++) {
         cells[i].classList.remove('highlight-valid', 'highlight-invalid',
                                    'drag-over-valid', 'drag-over-invalid');
+        cells[i].title = '';
       }
     }
 
@@ -2154,6 +2469,42 @@
       } else {
         btnConfirm.disabled = false;
         disabledEl.style.display = 'none';
+      }
+
+      // --- Suggest available time slots for target staff (Phase 4) ---
+      var sugSec = document.getElementById('suggestSection');
+      var sugWinText = document.getElementById('suggestWindowText');
+      var sugSlotList = document.getElementById('suggestSlotList');
+      sugSec.style.display = 'none';
+      sugWinText.textContent = '';
+      sugSlotList.innerHTML = '';
+
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.suggestTimeSlots) {
+        var sugResult = ConstraintEngine.suggestTimeSlots(
+          visitData.pid, dateStr, targetStaffId, _state,
+          { excludeVisitId: visitData.visitId, maxSuggestions: 5 }
+        );
+        var sugAw = sugResult.availableWindow;
+        if (sugAw && sugAw.windows && sugAw.windows.length > 0) {
+          sugSec.style.display = '';
+          var winTexts = [];
+          for (var swi = 0; swi < sugAw.windows.length; swi++) {
+            winTexts.push(ConstraintEngine.minutesToTimeStr(sugAw.windows[swi].startMin) + '\u301C' +
+                          ConstraintEngine.minutesToTimeStr(sugAw.windows[swi].endMin));
+          }
+          sugWinText.textContent = winTexts.join(', ');
+        }
+        if (sugResult.suggestions && sugResult.suggestions.length > 0) {
+          sugSec.style.display = '';
+          for (var ssi = 0; ssi < sugResult.suggestions.length; ssi++) {
+            var ss = sugResult.suggestions[ssi];
+            var ssBtn = document.createElement('span');
+            ssBtn.className = 'suggest-slot' + (ssi === 0 ? ' best' : '');
+            ssBtn.textContent = ss.label;
+            ssBtn.title = '\u30b9\u30b3\u30a2: ' + ss.score;
+            sugSlotList.appendChild(ssBtn);
+          }
+        }
       }
 
       document.getElementById('confirmOverlay').classList.add('show');
@@ -2435,6 +2786,46 @@
       showToast('\u6642\u9593\u3092\u8a2d\u5b9a\u3057\u307e\u3057\u305f: ' + fmtMin(newStart) + '\u301C' + fmtMin(newEnd), 'success');
     }
     window.applyTimeSet = applyTimeSet;
+
+    /**
+     * Apply a suggested time slot from the constraint panel.
+     * Reuses the same logic as applyTimeSet but takes explicit parameters.
+     */
+    function applySuggestedTime(visitId, newStart, newEnd) {
+      if (!visitId || !_state) return;
+      var visit = findVisitById(visitId);
+      if (!visit) return;
+      if (newEnd <= newStart) return;
+
+      var chg = {
+        type: 'timeSet',
+        visitId: visitId,
+        pid: visit.pid,
+        staffId: visit.staffId,
+        dateStr: visit.dateStr,
+        origStartMin: visit.startMin,
+        origEndMin: visit.endMin,
+        newStartMin: newStart,
+        newEndMin: newEnd,
+        timestamp: new Date().toISOString()
+      };
+      _state.pendingChanges.push(chg);
+
+      visit.startMin = newStart;
+      visit.endMin   = newEnd;
+
+      // Repack if ConstraintEngine available
+      if (typeof ConstraintEngine !== 'undefined') {
+        var anchors = [{ visitId: visit.visitId, startMin: newStart, endMin: newEnd, isEvent: false }];
+        var repack = ConstraintEngine.repackStaffDay(visit.staffId, visit.dateStr, anchors, _state);
+        if (repack.schedule) applyNewSchedule(visit.staffId, visit.dateStr, repack.schedule);
+      }
+
+      renderGrid();
+      renderSidePanel();
+      updateStatusBar();
+      showToast('\u63d0\u6848\u6642\u9593\u3092\u9069\u7528: ' + fmtMin(newStart) + '\u301C' + fmtMin(newEnd), 'success');
+    }
 
     // ================================================================
     // Context Menu

@@ -1591,6 +1591,416 @@
   }
 
   // ===========================================================
+  // 6. computeAvailableWindow
+  //    Compute the available time windows for a patient on a
+  //    given date with a given staff, merging ALL constraint
+  //    sources: patient master, individual change requests,
+  //    special visit weeks, staff shift, staff changes, events,
+  //    and existing assignments.
+  // ===========================================================
+
+  /**
+   * Compute the available time windows for a patient+date+staff combination.
+   *
+   * Merges 5 constraint sources into a set of available intervals:
+   *   1. Patient master: timeType, startPref, endPref
+   *   2. Patient individual change requests: override times
+   *   3. Special visit week details: ADD or REPLACE mode
+   *   4. Staff shift & staff individual changes (blocked intervals)
+   *   5. Events + existing assignments (occupied intervals)
+   *
+   * @param {string} pid             - Patient ID
+   * @param {string} dateStr         - Date "yyyy/MM/dd"
+   * @param {string} targetStaffId   - Staff to evaluate
+   * @param {object} state           - Complete local state (not mutated)
+   * @param {string} [excludeVisitId] - Visit to exclude from occupied check
+   * @return {{
+   *   windows: {startMin:number, endMin:number}[],
+   *   blocked: {startMin:number, endMin:number, reason:string}[],
+   *   patientWindow: {startMin:number, endMin:number},
+   *   effectiveTimeType: string,
+   *   svcMin: number,
+   *   constraints: {source:string, detail:string}[]
+   * }}
+   */
+  function computeAvailableWindow(pid, dateStr, targetStaffId, state, excludeVisitId) {
+    var patient = getPatient(pid, state);
+    var staff = getStaff(targetStaffId, state);
+    var constraints = []; // human-readable constraint list
+    var blocked = [];     // blocked intervals with reasons
+
+    // -------------------------------------------------------
+    // Step 1: Patient master → base window
+    // -------------------------------------------------------
+    var effectiveTimeType = (patient && patient.timeType) ? patient.timeType : '終日';
+    var svcMin = (patient && patient.svcMin) ? patient.svcMin : 30;
+
+    var baseStart, baseEnd;
+    if (patient && patient.startPref != null && patient.endPref != null) {
+      baseStart = patient.startPref;
+      baseEnd = patient.endPref;
+    } else {
+      var ttDef = TIME_TYPE_DEFAULTS[effectiveTimeType];
+      if (ttDef) {
+        baseStart = ttDef.earliestMin;
+        baseEnd = ttDef.latestMin;
+      } else {
+        baseStart = 540;
+        baseEnd = 1080;
+      }
+    }
+
+    constraints.push({
+      source: '患者マスター',
+      detail: effectiveTimeType + ' ' + minutesToTimeStr(baseStart) + '〜' + minutesToTimeStr(baseEnd)
+    });
+
+    // -------------------------------------------------------
+    // Step 2: Patient individual change requests → override
+    // -------------------------------------------------------
+    var pChange = getPatientChange(pid, dateStr, state);
+    if (pChange) {
+      if (pChange.op === 'キャンセル') {
+        constraints.push({ source: '個別変更', detail: 'キャンセル済み' });
+        return {
+          windows: [],
+          blocked: [{ startMin: 0, endMin: 1440, reason: 'キャンセル済み' }],
+          patientWindow: { startMin: baseStart, endMin: baseEnd },
+          effectiveTimeType: effectiveTimeType,
+          svcMin: svcMin,
+          constraints: constraints
+        };
+      }
+      // Override time type and window if specified
+      if (pChange.newTimeType) {
+        effectiveTimeType = pChange.newTimeType;
+      }
+      if (pChange.earliestMin != null && pChange.latestMin != null) {
+        baseStart = pChange.earliestMin;
+        baseEnd = pChange.latestMin;
+        constraints.push({
+          source: '個別変更',
+          detail: '時間変更 ' + minutesToTimeStr(baseStart) + '〜' + minutesToTimeStr(baseEnd)
+        });
+      } else if (pChange.newStartMin != null && pChange.newEndMin != null) {
+        baseStart = pChange.newStartMin;
+        baseEnd = pChange.newEndMin;
+        constraints.push({
+          source: '個別変更',
+          detail: '固定時間 ' + minutesToTimeStr(baseStart) + '〜' + minutesToTimeStr(baseEnd)
+        });
+      }
+    }
+
+    // -------------------------------------------------------
+    // Step 3: Special visit week → ADD or REPLACE override
+    // -------------------------------------------------------
+    if (state.specialWeek && state.specialWeek.details && state.specialWeek.details.length > 0) {
+      var swMode = state.specialWeek.mode || 'ADD';
+      var swMatches = [];
+      for (var si = 0; si < state.specialWeek.details.length; si++) {
+        var sd = state.specialWeek.details[si];
+        if (sd.pid === pid && sd.dateStr === dateStr) {
+          swMatches.push(sd);
+        }
+      }
+      if (swMatches.length > 0) {
+        var sw = swMatches[0];
+        if (swMode === 'REPLACE') {
+          // Complete override
+          if (sw.earliestMin != null && sw.latestMin != null) {
+            baseStart = sw.earliestMin;
+            baseEnd = sw.latestMin;
+          } else if (sw.startMin != null && sw.endMin != null) {
+            baseStart = sw.startMin;
+            baseEnd = sw.endMin;
+          }
+          if (sw.timeType) effectiveTimeType = sw.timeType;
+          constraints.push({
+            source: '特別訪問週間(REPLACE)',
+            detail: minutesToTimeStr(baseStart) + '〜' + minutesToTimeStr(baseEnd)
+          });
+        } else {
+          // ADD mode: widen the window
+          var addStart = sw.earliestMin != null ? sw.earliestMin : sw.startMin;
+          var addEnd = sw.latestMin != null ? sw.latestMin : sw.endMin;
+          if (addStart != null && addEnd != null) {
+            baseStart = Math.min(baseStart, addStart);
+            baseEnd = Math.max(baseEnd, addEnd);
+            constraints.push({
+              source: '特別訪問週間(ADD)',
+              detail: '拡張 ' + minutesToTimeStr(baseStart) + '〜' + minutesToTimeStr(baseEnd)
+            });
+          }
+        }
+      }
+    }
+
+    var patientWindow = { startMin: baseStart, endMin: baseEnd };
+
+    // -------------------------------------------------------
+    // Step 4: Staff shift → intersect with patient window
+    // -------------------------------------------------------
+    var shiftStart = staff ? (staff.shiftStartMin != null ? staff.shiftStartMin : 540) : 540;
+    var shiftEnd = staff ? (staff.shiftEndMin != null ? staff.shiftEndMin : 1080) : 1080;
+
+    var windowStart = Math.max(baseStart, shiftStart);
+    var windowEnd = Math.min(baseEnd, shiftEnd);
+
+    if (windowStart >= windowEnd) {
+      constraints.push({
+        source: 'スタッフシフト',
+        detail: minutesToTimeStr(shiftStart) + '〜' + minutesToTimeStr(shiftEnd) + '（患者時間帯と重複なし）'
+      });
+      return {
+        windows: [],
+        blocked: [{ startMin: baseStart, endMin: baseEnd, reason: 'スタッフシフト外' }],
+        patientWindow: patientWindow,
+        effectiveTimeType: effectiveTimeType,
+        svcMin: svcMin,
+        constraints: constraints
+      };
+    }
+    constraints.push({
+      source: 'スタッフシフト',
+      detail: minutesToTimeStr(shiftStart) + '〜' + minutesToTimeStr(shiftEnd)
+    });
+
+    // -------------------------------------------------------
+    // Step 5: Staff individual changes → blocked intervals
+    // -------------------------------------------------------
+    var staffBlocked = getStaffBlockedIntervals(targetStaffId, dateStr, state);
+    for (var bi = 0; bi < staffBlocked.length; bi++) {
+      blocked.push({
+        startMin: staffBlocked[bi].start,
+        endMin: staffBlocked[bi].end,
+        reason: 'スタッフ制限'
+      });
+    }
+
+    // Add staff change detail to constraints
+    var staffChanges = getStaffChanges(targetStaffId, dateStr, state);
+    for (var sci = 0; sci < staffChanges.length; sci++) {
+      var sc = staffChanges[sci];
+      constraints.push({
+        source: 'スタッフ個別変更',
+        detail: sc.restrictionType +
+          (sc.startTime != null ? ' ' + minutesToTimeStr(sc.startTime) : '') +
+          (sc.endTime != null ? '〜' + minutesToTimeStr(sc.endTime) : '')
+      });
+    }
+
+    // -------------------------------------------------------
+    // Step 6: Events → blocked intervals
+    // -------------------------------------------------------
+    var events = getStaffEvents(targetStaffId, dateStr, state);
+    for (var ei = 0; ei < events.length; ei++) {
+      var ev = events[ei];
+      blocked.push({
+        startMin: ev.startMin,
+        endMin: ev.endMin,
+        reason: 'イベント: ' + (ev.title || ev.type || '予定')
+      });
+      constraints.push({
+        source: 'イベント',
+        detail: (ev.title || ev.type || '予定') + ' ' +
+                minutesToTimeStr(ev.startMin) + '〜' + minutesToTimeStr(ev.endMin)
+      });
+    }
+
+    // -------------------------------------------------------
+    // Step 7: Existing assignments → blocked intervals
+    // -------------------------------------------------------
+    var existing = getStaffAssignments(targetStaffId, dateStr, state, excludeVisitId);
+    for (var exi = 0; exi < existing.length; exi++) {
+      var ex = existing[exi];
+      blocked.push({
+        startMin: ex.startMin - ASSIGN_BUFFER_MIN,
+        endMin: ex.endMin + ASSIGN_BUFFER_MIN,
+        reason: '既存訪問: ' + (ex.pname || ex.pid)
+      });
+    }
+
+    // -------------------------------------------------------
+    // Step 8: Subtract blocked from [windowStart, windowEnd]
+    // -------------------------------------------------------
+    // Sort and merge all blocked intervals
+    blocked.sort(function (a, b) { return a.startMin - b.startMin; });
+    var mergedBlocked = [];
+    for (var mi = 0; mi < blocked.length; mi++) {
+      var blk = blocked[mi];
+      if (mergedBlocked.length > 0) {
+        var last = mergedBlocked[mergedBlocked.length - 1];
+        if (blk.startMin <= last.endMin) {
+          last.endMin = Math.max(last.endMin, blk.endMin);
+          last.reason = last.reason + ', ' + blk.reason;
+          continue;
+        }
+      }
+      mergedBlocked.push({
+        startMin: blk.startMin,
+        endMin: blk.endMin,
+        reason: blk.reason
+      });
+    }
+
+    // Compute available windows by subtracting blocked from [windowStart, windowEnd]
+    var windows = [];
+    var cursor = windowStart;
+    for (var wi = 0; wi < mergedBlocked.length; wi++) {
+      var b = mergedBlocked[wi];
+      // Blocked interval intersects our window?
+      var bStart = Math.max(b.startMin, windowStart);
+      var bEnd = Math.min(b.endMin, windowEnd);
+      if (bStart >= bEnd) continue; // doesn't affect our window
+
+      if (cursor < bStart) {
+        windows.push({ startMin: cursor, endMin: bStart });
+      }
+      cursor = Math.max(cursor, bEnd);
+    }
+    if (cursor < windowEnd) {
+      windows.push({ startMin: cursor, endMin: windowEnd });
+    }
+
+    return {
+      windows: windows,
+      blocked: mergedBlocked,
+      patientWindow: patientWindow,
+      effectiveTimeType: effectiveTimeType,
+      svcMin: svcMin,
+      constraints: constraints
+    };
+  }
+
+  // ===========================================================
+  // 7. suggestTimeSlots
+  //    Suggest concrete start/end times within available windows.
+  // ===========================================================
+
+  /**
+   * Suggest concrete time slots where a patient's visit can be placed.
+   *
+   * Uses computeAvailableWindow() to find open windows, then scans
+   * each window for slots where the service fits. Returns up to
+   * maxSuggestions results scored by proximity to the patient's
+   * preferred time.
+   *
+   * @param {string} pid             - Patient ID
+   * @param {string} dateStr         - Date "yyyy/MM/dd"
+   * @param {string} targetStaffId   - Staff to evaluate
+   * @param {object} state           - Complete local state (not mutated)
+   * @param {object} [options]       - Optional settings
+   * @param {number} [options.maxSuggestions=5] - Max suggestions to return
+   * @param {number} [options.stepMin=5]        - Scan step in minutes
+   * @param {string} [options.excludeVisitId]   - Visit to exclude from occupied
+   * @return {{
+   *   suggestions: {startMin:number, endMin:number, score:number, label:string}[],
+   *   availableWindow: object,
+   *   constraintSummary: string
+   * }}
+   */
+  function suggestTimeSlots(pid, dateStr, targetStaffId, state, options) {
+    var opts = options || {};
+    var maxSuggestions = opts.maxSuggestions || 5;
+    var stepMin = opts.stepMin || 5;
+    var excludeVisitId = opts.excludeVisitId || null;
+
+    var aw = computeAvailableWindow(pid, dateStr, targetStaffId, state, excludeVisitId);
+
+    if (!aw.windows || aw.windows.length === 0) {
+      return {
+        suggestions: [],
+        availableWindow: aw,
+        constraintSummary: buildConstraintSummary(aw)
+      };
+    }
+
+    var svcMin = aw.svcMin;
+    var patient = getPatient(pid, state);
+
+    // Determine preferred center time for scoring
+    var prefCenter;
+    if (patient && patient.startPref != null && patient.endPref != null) {
+      prefCenter = (patient.startPref + patient.endPref) / 2;
+    } else if (aw.patientWindow) {
+      prefCenter = (aw.patientWindow.startMin + aw.patientWindow.endMin) / 2;
+    } else {
+      prefCenter = 720; // noon as fallback
+    }
+
+    // Scan all windows for candidate slots
+    var candidates = [];
+    for (var wi = 0; wi < aw.windows.length; wi++) {
+      var win = aw.windows[wi];
+      for (var t = win.startMin; t + svcMin <= win.endMin; t += stepMin) {
+        var slotCenter = t + svcMin / 2;
+        // Score: lower distance = higher score (max 1000)
+        var distance = Math.abs(slotCenter - prefCenter);
+        var score = Math.max(0, 1000 - distance);
+        candidates.push({
+          startMin: t,
+          endMin: t + svcMin,
+          score: score,
+          label: minutesToTimeStr(t) + '〜' + minutesToTimeStr(t + svcMin)
+        });
+      }
+    }
+
+    // Sort by score descending
+    candidates.sort(function (a, b) { return b.score - a.score; });
+
+    // Take top N, but ensure diversity (no two suggestions within 10 min)
+    var suggestions = [];
+    for (var ci = 0; ci < candidates.length && suggestions.length < maxSuggestions; ci++) {
+      var cand = candidates[ci];
+      var tooClose = false;
+      for (var si = 0; si < suggestions.length; si++) {
+        if (Math.abs(suggestions[si].startMin - cand.startMin) < 10) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (!tooClose) {
+        suggestions.push(cand);
+      }
+    }
+
+    return {
+      suggestions: suggestions,
+      availableWindow: aw,
+      constraintSummary: buildConstraintSummary(aw)
+    };
+  }
+
+  /**
+   * Build a human-readable constraint summary string.
+   * @param {object} aw - Result from computeAvailableWindow
+   * @return {string}
+   */
+  function buildConstraintSummary(aw) {
+    if (!aw) return '';
+    var parts = [];
+    if (aw.windows && aw.windows.length > 0) {
+      var winStrs = [];
+      for (var i = 0; i < aw.windows.length; i++) {
+        winStrs.push(minutesToTimeStr(aw.windows[i].startMin) + '〜' +
+                     minutesToTimeStr(aw.windows[i].endMin));
+      }
+      parts.push('受入可能: ' + winStrs.join(', '));
+    } else {
+      parts.push('受入不可');
+    }
+    if (aw.constraints) {
+      for (var ci = 0; ci < aw.constraints.length; ci++) {
+        var c = aw.constraints[ci];
+        parts.push(c.source + ': ' + c.detail);
+      }
+    }
+    return parts.join(' / ');
+  }
+
+  // ===========================================================
   // Expose public API via window.ConstraintEngine
   // ===========================================================
 
@@ -1601,6 +2011,10 @@
     computeImpact: computeImpact,
     validateFixedTime: validateFixedTime,
     repackStaffDay: repackStaffDay,
+
+    // ---- Constraint Window API (Phase 1 & 2) ----
+    computeAvailableWindow: computeAvailableWindow,
+    suggestTimeSlots: suggestTimeSlots,
 
     // ---- Helper functions (exposed for testing / external use) ----
     isOverlap: isOverlap,
