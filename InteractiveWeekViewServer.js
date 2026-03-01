@@ -116,6 +116,10 @@ function commitChanges(weekStartStr, changesJson) {
   var colPid  = iwv_findHeaderIndex_(headers, 'patient_id');
   var colDate = iwv_findHeaderIndex_(headers, '日付');
   var colPname = iwv_findHeaderIndex_(headers, '患者名');
+  var colYoubi   = iwv_findHeaderIndex_(headers, '曜日');
+  var colArea    = iwv_findHeaderIndex_(headers, 'エリア');
+  var colSvcMin  = iwv_findHeaderIndex_(headers, 'サービス時間');
+  var colTType   = iwv_findHeaderIndex_(headers, '時間タイプ');
 
   var applied = 0;
   var logEntries = [];
@@ -195,7 +199,57 @@ function commitChanges(weekStartStr, changesJson) {
       }
     }
     if (!found) {
-      Logger.log('commitChanges: visit_id "' + change.visitId + '" が割当結果に見つかりません');
+      // UA_ prefix の visitId → 割当結果シートに新規行を INSERT
+      if (String(change.visitId).indexOf('UA_') === 0 &&
+          change.newStaffId && change.pid && change.dateStr) {
+        var newRow = [];
+        for (var ci = 0; ci < headers.length; ci++) newRow.push('');
+
+        // 決定論的な新visitId: pid_dateStr(スラッシュ除去)_staffId
+        var newVisitId = change.pid + '_' + String(change.dateStr).replace(/\//g, '') + '_' + change.newStaffId;
+        if (col.visitId >= 0)   newRow[col.visitId]   = newVisitId;
+        if (colPid >= 0)        newRow[colPid]         = change.pid;
+        if (colPname >= 0)      newRow[colPname]       = change.pname || '';
+        if (col.staffId >= 0)   newRow[col.staffId]    = change.newStaffId;
+        if (col.staffName >= 0) newRow[col.staffName]  = change.newStaffName || '';
+        if (colDate >= 0) {
+          var dp = iwv_parseDate_(change.dateStr);
+          newRow[colDate] = dp || change.dateStr;
+        }
+        if (colYoubi >= 0 && change.dateStr) {
+          var dp2 = iwv_parseDate_(change.dateStr);
+          newRow[colYoubi] = dp2 ? iwv_getYoubiJa_(dp2) : '';
+        }
+        if (col.startTime >= 0 && change.newStartMin != null) {
+          newRow[col.startTime] = iwv_minutesToSerial_(change.newStartMin);
+        }
+        if (col.endTime >= 0 && change.newEndMin != null) {
+          newRow[col.endTime] = iwv_minutesToSerial_(change.newEndMin);
+        }
+        if (colArea >= 0)    newRow[colArea]    = change.area || '';
+        if (colSvcMin >= 0)  newRow[colSvcMin]  = change.svcMin || '';
+        if (colTType >= 0)   newRow[colTType]   = change.timeType || '';
+        if (col.note >= 0)   newRow[col.note]   = '[手動挿入]';
+
+        data.push(newRow);
+
+        var pid   = change.pid || '';
+        var pname = change.pname || '';
+        var dateStr = change.dateStr || '';
+        logEntries.push([
+          now, newVisitId, pid, pname, dateStr,
+          '新規挿入',
+          '', '',  // 変更前staff (なし)
+          String(change.newStaffId), change.newStaffName || '',
+          '', '',  // 変更前時間 (なし)
+          change.newStartMin != null ? iwv_minutesToHHMM_(change.newStartMin) : '',
+          change.newEndMin   != null ? iwv_minutesToHHMM_(change.newEndMin)   : '',
+          weekStartStr
+        ]);
+        applied++;
+      } else {
+        Logger.log('commitChanges: visit_id "' + change.visitId + '" が割当結果に見つかりません');
+      }
     }
   });
 
@@ -314,6 +368,13 @@ function iwv_formatDate_(date) {
 function iwv_getYoubiEn_(date) {
   var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   return days[date.getDay()];
+}
+
+/**
+ * 日本語曜日を取得
+ */
+function iwv_getYoubiJa_(date) {
+  return ['日','月','火','水','木','金','土'][date.getDay()];
 }
 
 /**

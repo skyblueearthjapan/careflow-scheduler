@@ -527,6 +527,27 @@
     .unassigned-item .ua-date { font-size: 10px; color: var(--color-text-light); }
     .unassigned-item .ua-reason { font-size: 10px; color: var(--color-error-dark); margin-top: 2px; }
 
+    /* Reinsert buttons */
+    .ua-reinsert-btn {
+      padding: 2px 8px; margin-top: 4px;
+      background: var(--color-blue); color: var(--color-white);
+      border: none; border-radius: 4px; cursor: pointer;
+      font-size: 10px; font-weight: 600;
+      transition: background 0.15s;
+    }
+    .ua-reinsert-btn:hover { background: var(--color-blue-dark); }
+    .ua-reinsert-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .ua-bulk-btn {
+      display: block; width: 100%; padding: 8px;
+      margin-bottom: 8px;
+      background: var(--color-orange); color: var(--color-white);
+      border: none; border-radius: 6px; cursor: pointer;
+      font-size: 12px; font-weight: 600;
+      transition: background 0.15s;
+    }
+    .ua-bulk-btn:hover { background: var(--color-orange-dark); }
+    .ua-bulk-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
     /* Constraint info */
     .constraint-info-card {
       padding: 10px; background: var(--color-bg);
@@ -976,6 +997,7 @@
         <div id="changeLogList"></div>
       </div>
       <div class="side-panel-content" id="tabUnassigned" style="display:none;">
+        <button class="ua-bulk-btn" id="btnReinsertAll" onclick="onReinsertAll()">全未割当を再挿入</button>
         <div class="unassigned-empty" id="unassignedEmpty">未割当なし</div>
         <div id="unassignedList"></div>
       </div>
@@ -1823,13 +1845,174 @@
           item.appendChild(rd);
         }
 
+        // 再挿入ボタン
+        var reBtn = document.createElement('button');
+        reBtn.className = 'ua-reinsert-btn';
+        reBtn.textContent = '再挿入';
+        reBtn.addEventListener('click', (function(pid, dateStr, uaRef, btnRef) {
+          return function(e) {
+            e.stopPropagation();
+            reinsertSinglePatient(pid, dateStr, uaRef, btnRef);
+          };
+        })(ua.pid, ua.dateStr, ua, reBtn));
+        item.appendChild(reBtn);
+
         item.addEventListener('click', (function(pid) {
           return function() { selectVisitByPid(pid); };
         })(ua.pid));
 
         container.appendChild(item);
       }
+
+      // バルクボタンの表示/非表示
+      var bulkBtn = document.getElementById('btnReinsertAll');
+      if (bulkBtn) bulkBtn.style.display = _state.unassigned.length > 0 ? '' : 'none';
     }
+
+    // ================================================================
+    // Reinsert Functions
+    // ================================================================
+    function reinsertSinglePatient(pid, dateStr, ua, btn) {
+      if (!_state || typeof ConstraintEngine === 'undefined' || !ConstraintEngine.suggestTimeSlotsForAll) {
+        showToast('ConstraintEngine が利用できません', 'error');
+        return;
+      }
+
+      var result = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 1 });
+      if (!result.suggestions || result.suggestions.length === 0) {
+        showToast('割当可能なスタッフが見つかりません: ' + (ua.pname || pid), 'error');
+        return;
+      }
+
+      var best = result.suggestions[0];
+      var patient = getPatient(pid);
+      var pName = (patient && patient.name) ? patient.name : (ua.pname || pid);
+
+      // 迂回警告テキスト
+      var detourWarn = '';
+      if (typeof ConstraintEngine.calcRouteDetour === 'function') {
+        var detour = ConstraintEngine.calcRouteDetour(best.staffId, dateStr, best.startMin, best.endMin, pid, _state);
+        if (detour.warningText) detourWarn = '\n' + detour.warningText;
+      }
+
+      var msg = pName + ' → ' + best.staffName + ' ' +
+                fmtMin(best.startMin) + '〜' + fmtMin(best.endMin) + ' に挿入しますか？' + detourWarn;
+
+      if (!confirm(msg)) return;
+
+      // visitId
+      var visitId = ua.visitId || ('UA_' + pid + '_' + dateStr);
+
+      // pendingChanges追加
+      var change = {
+        type:        'move',
+        visitId:     visitId,
+        pid:         pid,
+        fromStaffId: '__UNASSIGNED__',
+        toStaffId:   best.staffId,
+        dateStr:     dateStr,
+        startMin:    null,
+        endMin:      null,
+        svcMin:      (patient && patient.svcMin) || ua.svcMin || 30,
+        timeType:    (patient && patient.timeType) || '',
+        area:        (patient && patient.area) || '',
+        newStaffId:   best.staffId,
+        newStaffName: best.staffName,
+        newStartMin:  best.startMin,
+        newEndMin:    best.endMin,
+        timestamp:   new Date().toISOString()
+      };
+
+      // applyMoveToState
+      applyMoveToState(visitId, '__UNASSIGNED__', best.staffId, dateStr);
+
+      // Set time on the moved visit
+      var movedVisit = findVisitById(visitId);
+      if (movedVisit) {
+        movedVisit.startMin = best.startMin;
+        movedVisit.endMin   = best.endMin;
+      }
+
+      _state.pendingChanges.push(change);
+
+      renderGrid();
+      renderSidePanel();
+      updateStatusBar();
+      showToast('挿入完了: ' + pName + ' → ' + best.staffName, 'success');
+    }
+
+    function onReinsertAll() {
+      if (!_state || !_state.unassigned || _state.unassigned.length === 0) {
+        showToast('未割当はありません', 'info');
+        return;
+      }
+      if (typeof ConstraintEngine === 'undefined' || !ConstraintEngine.suggestTimeSlotsForAll) {
+        showToast('ConstraintEngine が利用できません', 'error');
+        return;
+      }
+
+      var snapshot = _state.unassigned.slice(); // splice対策コピー
+      var inserted = 0;
+      var failedNames = [];
+
+      for (var i = 0; i < snapshot.length; i++) {
+        var ua = snapshot[i];
+        var pid = ua.pid;
+        var dateStr = ua.dateStr;
+
+        var result = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 1 });
+        if (!result.suggestions || result.suggestions.length === 0) {
+          var patient = getPatient(pid);
+          failedNames.push((patient && patient.name) || ua.pname || pid);
+          continue;
+        }
+
+        var best = result.suggestions[0];
+        var visitId = ua.visitId || ('UA_' + pid + '_' + dateStr);
+        var patient = getPatient(pid);
+
+        var change = {
+          type:        'move',
+          visitId:     visitId,
+          pid:         pid,
+          fromStaffId: '__UNASSIGNED__',
+          toStaffId:   best.staffId,
+          dateStr:     dateStr,
+          startMin:    null,
+          endMin:      null,
+          svcMin:      (patient && patient.svcMin) || ua.svcMin || 30,
+          timeType:    (patient && patient.timeType) || '',
+          area:        (patient && patient.area) || '',
+          newStaffId:   best.staffId,
+          newStaffName: best.staffName,
+          newStartMin:  best.startMin,
+          newEndMin:    best.endMin,
+          timestamp:   new Date().toISOString()
+        };
+
+        applyMoveToState(visitId, '__UNASSIGNED__', best.staffId, dateStr);
+
+        var movedVisit = findVisitById(visitId);
+        if (movedVisit) {
+          movedVisit.startMin = best.startMin;
+          movedVisit.endMin   = best.endMin;
+        }
+
+        _state.pendingChanges.push(change);
+        inserted++;
+      }
+
+      renderGrid();
+      renderSidePanel();
+      updateStatusBar();
+
+      var msg = inserted + '件挿入';
+      if (failedNames.length > 0) {
+        msg += ' / ' + failedNames.length + '件は挿入不可: ' + failedNames.join(', ');
+      }
+      showToast(msg, inserted > 0 ? 'success' : 'error');
+    }
+    window.onReinsertAll = onReinsertAll;
 
     function renderConstraintDetail() {
       var container = document.getElementById('constraintDetail');
@@ -2552,6 +2735,30 @@
             ssBtn.title = '\u30b9\u30b3\u30a2: ' + ss.score + (ss.travelNote ? ' / ' + ss.travelNote : '');
             sugSlotList.appendChild(ssBtn);
           }
+        }
+      }
+
+      // --- Route detour warning ---
+      var detourSec = document.getElementById('detourWarningSection');
+      if (!detourSec) {
+        detourSec = document.createElement('div');
+        detourSec.id = 'detourWarningSection';
+        detourSec.style.cssText = 'margin-top:6px;padding:6px 8px;border-radius:6px;font-size:11px;font-weight:600;';
+        sugSec.parentNode.insertBefore(detourSec, sugSec.nextSibling);
+      }
+      detourSec.style.display = 'none';
+      detourSec.innerHTML = '';
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.calcRouteDetour) {
+        var detour = ConstraintEngine.calcRouteDetour(
+          targetStaffId, dateStr,
+          visitData.startMin, visitData.endMin,
+          visitData.pid, _state
+        );
+        if (detour.warningText) {
+          detourSec.style.display = '';
+          detourSec.style.background = detour.detourKm >= 5 ? '#FFCDD2' : '#FFF9C4';
+          detourSec.style.color = detour.detourKm >= 5 ? '#C62828' : '#F57F17';
+          detourSec.textContent = '\u26a0 \u30eb\u30fc\u30c8\u8fc2\u56de\u8b66\u544a: ' + detour.warningText; // ⚠ ルート迂回警告:
         }
       }
 
@@ -3299,6 +3506,10 @@
         var patient = getPatient(c.pid);
         out.pname   = (patient && patient.name) ? patient.name : (c.pid || '');
         out.dateStr = c.dateStr || '';
+        // INSERT行作成用フィールド
+        out.svcMin   = c.svcMin   || (patient && patient.svcMin) || 0;
+        out.timeType = c.timeType || (patient && patient.timeType) || '';
+        out.area     = c.area     || (patient && patient.area) || '';
         return out;
       });
 

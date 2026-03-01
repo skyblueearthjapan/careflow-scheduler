@@ -2119,6 +2119,14 @@
             score -= 50;
           }
 
+          // Route detour check
+          var detour = calcRouteDetour(staffId, dateStr, t, t + svcMin, pid, state);
+          if (detour.warningText) {
+            travelNote = travelNote ? travelNote + ' / ' + detour.warningText : detour.warningText;
+            if (detour.detourKm >= 5) score -= 80;
+            else if (detour.detourKm >= 2) score -= 30;
+          }
+
           allCandidates.push({
             startMin: t,
             endMin: t + svcMin,
@@ -2248,6 +2256,80 @@
   }
 
   // ===========================================================
+  // 9b. Route Detour Calculation
+  // ===========================================================
+
+  /**
+   * Calculate route detour distance when inserting a new visit for a staff on a date.
+   * Detour = dist(prev→new) + dist(new→next) - dist(prev→next)
+   *
+   * @param {string} staffId
+   * @param {string} dateStr
+   * @param {number} newStartMin
+   * @param {number} newEndMin
+   * @param {string} newPid - Patient ID of the new visit
+   * @param {object} state
+   * @return {{ detourKm: number|null, warningText: string }}
+   */
+  function calcRouteDetour(staffId, dateStr, newStartMin, newEndMin, newPid, state) {
+    var result = { detourKm: null, warningText: '' };
+
+    var newPatient = getPatient(newPid, state);
+    if (!newPatient || newPatient.lat == null || newPatient.lng == null) return result;
+
+    var assignments = getStaffAssignments(staffId, dateStr, state);
+    if (assignments.length === 0) return result;
+
+    // Sort by start time
+    var sorted = assignments.slice().sort(function(a, b) { return a.startMin - b.startMin; });
+
+    // Find insertion position: prev and next visits
+    var prevVisit = null, nextVisit = null;
+    for (var i = 0; i < sorted.length; i++) {
+      if (sorted[i].endMin <= newStartMin) {
+        prevVisit = sorted[i];
+      }
+      if (sorted[i].startMin >= newEndMin && !nextVisit) {
+        nextVisit = sorted[i];
+      }
+    }
+
+    // Need at least one neighbor to compute detour
+    if (!prevVisit && !nextVisit) return result;
+
+    var prevPatient = prevVisit ? getPatient(prevVisit.pid, state) : null;
+    var nextPatient = nextVisit ? getPatient(nextVisit.pid, state) : null;
+
+    var distPrevNew = 0, distNewNext = 0, distPrevNext = 0;
+
+    if (prevPatient && prevPatient.lat != null && prevPatient.lng != null) {
+      distPrevNew = calcDistanceKm(prevPatient.lat, prevPatient.lng, newPatient.lat, newPatient.lng) || 0;
+    }
+    if (nextPatient && nextPatient.lat != null && nextPatient.lng != null) {
+      distNewNext = calcDistanceKm(newPatient.lat, newPatient.lng, nextPatient.lat, nextPatient.lng) || 0;
+    }
+    if (prevPatient && prevPatient.lat != null && prevPatient.lng != null &&
+        nextPatient && nextPatient.lat != null && nextPatient.lng != null) {
+      distPrevNext = calcDistanceKm(prevPatient.lat, prevPatient.lng, nextPatient.lat, nextPatient.lng) || 0;
+    }
+
+    var detourKm = distPrevNew + distNewNext - distPrevNext;
+    // When only one neighbor exists, detourKm is simply the new leg distance
+    if (!prevVisit) detourKm = distNewNext;
+    if (!nextVisit) detourKm = distPrevNew;
+
+    result.detourKm = Math.round(detourKm * 10) / 10;
+
+    if (detourKm >= 5) {
+      result.warningText = '\u8fc2\u56de+' + result.detourKm + 'km(\u5927)'; // 迂回+X.Xkm(大)
+    } else if (detourKm >= 2) {
+      result.warningText = '\u8fc2\u56de+' + result.detourKm + 'km'; // 迂回+X.Xkm
+    }
+
+    return result;
+  }
+
+  // ===========================================================
   // 10. findPairedVisits (public wrapper)
   // ===========================================================
 
@@ -2274,6 +2356,7 @@
     // ---- Distance helpers ----
     calcDistanceKm: calcDistanceKm,
     estimateTravelMin: estimateTravelMin,
+    calcRouteDetour: calcRouteDetour,
 
     // ---- Paired visit helpers ----
     findPairedVisits: findPairedVisits,
