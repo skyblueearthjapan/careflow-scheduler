@@ -1064,11 +1064,12 @@
       <div class="time-dialog-header"><h3 id="timeDialogTitle">固定時間設定</h3></div>
       <div class="time-dialog-body">
         <div class="time-inputs">
-          <label>開始<select id="fixedStart"></select></label>
-          <label>終了<select id="fixedEnd"></select></label>
+          <label>\u958b\u59cb<select id="fixedStart"></select></label>
+          <span id="fixedEndDisplay" style="font-size:13px;color:#555;margin-left:8px;"></span>
+          <select id="fixedEnd" style="display:none"></select>
         </div>
         <div class="time-validation hidden" id="timeValidation"></div>
-        <p class="time-hint">この時間で固定し、他の訪問を再配置します</p>
+        <p class="time-hint">\u958b\u59cb\u6642\u9593\u3092\u9078\u629e\u3059\u308b\u3068\u3001\u7d42\u4e86\u6642\u9593\u306f\u63d0\u4f9b\u6642\u9593\u304b\u3089\u81ea\u52d5\u8a08\u7b97\u3055\u308c\u307e\u3059</p>
         <div class="time-actions">
           <button class="time-btn-cancel" onclick="cancelTimeSet()">キャンセル</button>
           <button class="time-btn-apply" id="btnTimeApply" onclick="applyTimeSet()">再計算して確認</button>
@@ -3198,18 +3199,35 @@
 
       var patient = getPatient(visit.pid);
       var pName = (patient && patient.name) ? patient.name : visit.pid;
+      var svcMin = (patient && patient.svcMin) ? patient.svcMin : (visit.svcMin || (visit.endMin - visit.startMin) || 30);
 
       document.getElementById('timeDialogTitle').textContent =
-        '\u56fa\u5b9a\u6642\u9593\u8a2d\u5b9a: ' + visit.pid + ' ' + pName;
+        '\u958b\u59cb\u6642\u9593\u8a2d\u5b9a: ' + visit.pid + ' ' + pName +
+        ' (\u63d0\u4f9b' + svcMin + '\u5206)';
       populateTimeSelect(document.getElementById('fixedStart'), fmtMinInput(visit.startMin));
-      populateTimeSelect(document.getElementById('fixedEnd'), fmtMinInput(visit.endMin));
+
+      // 終了時間を自動表示
+      var autoEnd = visit.startMin + svcMin;
+      document.getElementById('fixedEndDisplay').textContent =
+        '\u2192 ' + fmtMin(autoEnd) + '\uff08' + svcMin + '\u5206\uff09';
+      // hidden selectにも値をセット
+      populateTimeSelect(document.getElementById('fixedEnd'), fmtMinInput(autoEnd));
 
       document.getElementById('timeValidation').className = 'time-validation hidden';
       document.getElementById('timeOverlay').classList.add('show');
 
-      // Live validation on change
-      document.getElementById('fixedStart').onchange = liveTimeValidation;
-      document.getElementById('fixedEnd').onchange   = liveTimeValidation;
+      // 開始時間変更時に終了時間を自動更新
+      document.getElementById('fixedStart').onchange = function() {
+        var sv = document.getElementById('fixedStart').value;
+        if (sv) {
+          var sm = timeInputToMin(sv);
+          var em = sm + svcMin;
+          document.getElementById('fixedEndDisplay').textContent =
+            '\u2192 ' + fmtMin(em) + '\uff08' + svcMin + '\u5206\uff09';
+          populateTimeSelect(document.getElementById('fixedEnd'), fmtMinInput(em));
+        }
+        liveTimeValidation();
+      };
     }
 
     function liveTimeValidation() {
@@ -3218,20 +3236,15 @@
       if (!visit) return;
 
       var startVal = document.getElementById('fixedStart').value;
-      var endVal   = document.getElementById('fixedEnd').value;
-      if (!startVal || !endVal) return;
+      if (!startVal) return;
+
+      var patient = getPatient(visit.pid);
+      var svcMin = (patient && patient.svcMin) ? patient.svcMin : (visit.svcMin || (visit.endMin - visit.startMin) || 30);
 
       var newStart = timeInputToMin(startVal);
-      var newEnd   = timeInputToMin(endVal);
+      var newEnd   = newStart + svcMin;
       var valEl    = document.getElementById('timeValidation');
       var btnApply = document.getElementById('btnTimeApply');
-
-      if (newEnd <= newStart) {
-        valEl.className = 'time-validation ng';
-        valEl.textContent = '\u7d42\u4e86\u6642\u9593\u306f\u958b\u59cb\u6642\u9593\u3088\u308a\u5f8c\u306b\u8a2d\u5b9a\u3057\u3066\u304f\u3060\u3055\u3044';
-        btnApply.disabled = true;
-        return;
-      }
 
       btnApply.disabled = false;
 
@@ -3262,15 +3275,15 @@
     function applyTimeSet() {
       if (!_contextVisitId || !_state) return;
       var startVal = document.getElementById('fixedStart').value;
-      var endVal   = document.getElementById('fixedEnd').value;
-      if (!startVal || !endVal) { showToast('\u958b\u59cb\u6642\u9593\u3068\u7d42\u4e86\u6642\u9593\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', 'error'); return; }
-
-      var newStart = timeInputToMin(startVal);
-      var newEnd   = timeInputToMin(endVal);
-      if (newEnd <= newStart) { showToast('\u7d42\u4e86\u6642\u9593\u306f\u958b\u59cb\u6642\u9593\u3088\u308a\u5f8c\u306b\u8a2d\u5b9a\u3057\u3066\u304f\u3060\u3055\u3044', 'error'); return; }
+      if (!startVal) { showToast('\u958b\u59cb\u6642\u9593\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', 'error'); return; }
 
       var visit = findVisitById(_contextVisitId);
       if (!visit) return;
+
+      var patient = getPatient(visit.pid);
+      var svcMin = (patient && patient.svcMin) ? patient.svcMin : (visit.svcMin || (visit.endMin - visit.startMin) || 30);
+      var newStart = timeInputToMin(startVal);
+      var newEnd   = newStart + svcMin;
 
       var chg = {
         type: 'timeSet',

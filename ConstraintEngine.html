@@ -402,6 +402,10 @@
     var startMin = visitData.startMin;
     var paired = [];
 
+    // 2名体制の患者は pid+dateStr だけでペアを特定（時間マッチ不要）
+    var patient = getPatient(pid, state);
+    var is2Staff = patient && patient.needStaff >= 2;
+
     // Search both assignments and unassigned lists
     var sources = [state.assignments || []];
     if (state.unassigned) sources.push(state.unassigned);
@@ -411,9 +415,14 @@
       for (var i = 0; i < list.length; i++) {
         var a = list[i];
         if (a.pid === pid && a.dateStr === dateStr && a.visitId !== visitId) {
-          var aVisitId = a.visitId || ('UA_' + a.pid + '_' + a.dateStr);
-          if (isPairedVisitId(visitId, aVisitId) || a.startMin === startMin) {
+          if (is2Staff) {
+            // 2名体制: pid+dateStr が一致すればペア確定
             paired.push(a);
+          } else {
+            var aVisitId = a.visitId || ('UA_' + a.pid + '_' + a.dateStr);
+            if (isPairedVisitId(visitId, aVisitId) || a.startMin === startMin) {
+              paired.push(a);
+            }
           }
         }
       }
