@@ -396,18 +396,25 @@
    * @return {object[]}
    */
   function findPairedVisits(visitData, state) {
-    if (!state.assignments) return [];
     var pid = visitData.pid;
     var dateStr = visitData.dateStr;
     var visitId = visitData.visitId;
     var startMin = visitData.startMin;
     var paired = [];
 
-    for (var i = 0; i < state.assignments.length; i++) {
-      var a = state.assignments[i];
-      if (a.pid === pid && a.dateStr === dateStr && a.visitId !== visitId) {
-        if (isPairedVisitId(visitId, a.visitId) || a.startMin === startMin) {
-          paired.push(a);
+    // Search both assignments and unassigned lists
+    var sources = [state.assignments || []];
+    if (state.unassigned) sources.push(state.unassigned);
+
+    for (var si = 0; si < sources.length; si++) {
+      var list = sources[si];
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        if (a.pid === pid && a.dateStr === dateStr && a.visitId !== visitId) {
+          var aVisitId = a.visitId || ('UA_' + a.pid + '_' + a.dateStr);
+          if (isPairedVisitId(visitId, aVisitId) || a.startMin === startMin) {
+            paired.push(a);
+          }
         }
       }
     }
@@ -455,6 +462,24 @@
           'TWO_STAFF_DUPLICATE'
         ));
         break;
+      }
+    }
+
+    // ペア訪問の時間ズレチェック
+    for (var pi2 = 0; pi2 < pairedVisits.length; pi2++) {
+      var pv = pairedVisits[pi2];
+      if (visitData.startMin != null && pv.startMin != null &&
+          visitData.endMin != null && pv.endMin != null) {
+        var startDiff = Math.abs(visitData.startMin - pv.startMin);
+        var endDiff = Math.abs(visitData.endMin - pv.endMin);
+        if (startDiff > 0 || endDiff > 0) {
+          violations.push(violation(
+            'WARNING', 'TIME', 'C-1',
+            '2\u540d\u4f53\u5236\u6642\u9593\u30ba\u30ec',
+            '\u30da\u30a2\u8a2a\u554f\u3068\u6642\u9593\u304c\u4e00\u81f4\u3057\u307e\u305b\u3093\uff08\u958b\u59cb\u5dee:' + startDiff + '\u5206, \u7d42\u4e86\u5dee:' + endDiff + '\u5206\uff09',
+            'TWO_STAFF_TIME_MISMATCH'
+          ));
+        }
       }
     }
   }

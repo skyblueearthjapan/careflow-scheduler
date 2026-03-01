@@ -227,13 +227,11 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
         var startDiff = Math.abs(a0.startMin - a1.startMin);
         var endDiff = Math.abs(a0.endMin - a1.endMin);
         if (startDiff > bufferMin || endDiff > bufferMin) {
-          if (status !== AUDIT_STATUS.NG) {
-            status = AUDIT_STATUS.WARN;
-          }
+          status = AUDIT_STATUS.NG;
           tags.push(AUDIT_TAGS.TWO_STAFF_TIME_MISMATCH);
           checks.push({
             type: 'twoStaffTimeMismatch',
-            status: AUDIT_STATUS.WARN,
+            status: AUDIT_STATUS.NG,
             reason: '2人訪問の時間にズレがあります（開始差:' + startDiff + '分, 終了差:' + endDiff + '分）'
           });
         }

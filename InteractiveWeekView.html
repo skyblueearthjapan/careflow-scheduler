@@ -1935,6 +1935,70 @@
 
       _state.pendingChanges.push(change);
 
+      // --- 2名体制ペア連動 ---
+      if (patient && patient.needStaff >= 2) {
+        // 同じpid+dateStrの未割当ペアを検索
+        var peerUa = null;
+        for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
+          var u = _state.unassigned[ui];
+          if (u.pid === pid && u.dateStr === dateStr) {
+            peerUa = u;
+            break;
+          }
+        }
+        if (peerUa) {
+          // ペアは別スタッフに挿入（同じスタッフはC-1違反）
+          var peerResult = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 5 });
+          var peerSuggestions = (peerResult.suggestions || []).filter(function(s) {
+            return s.staffId !== best.staffId;
+          });
+
+          if (peerSuggestions.length > 0) {
+            var peerBest = peerSuggestions[0];
+            var peerVisitId = peerUa.visitId || ('UA_' + pid + '_' + dateStr + '_2');
+
+            var peerChange = {
+              type:        'move',
+              visitId:     peerVisitId,
+              pid:         pid,
+              fromStaffId: '__UNASSIGNED__',
+              toStaffId:   peerBest.staffId,
+              dateStr:     dateStr,
+              startMin:    null,
+              endMin:      null,
+              svcMin:      (patient && patient.svcMin) || peerUa.svcMin || 30,
+              timeType:    (patient && patient.timeType) || '',
+              area:        (patient && patient.area) || '',
+              newStaffId:   peerBest.staffId,
+              newStaffName: peerBest.staffName,
+              newStartMin:  best.startMin,
+              newEndMin:    best.endMin,
+              pairedWith:   visitId,
+              timestamp:   new Date().toISOString()
+            };
+
+            applyMoveToState(peerVisitId, '__UNASSIGNED__', peerBest.staffId, dateStr);
+            var movedPeer = findVisitById(peerVisitId);
+            if (movedPeer) {
+              movedPeer.startMin = best.startMin;  // 同じ時間
+              movedPeer.endMin   = best.endMin;
+            }
+            _state.pendingChanges.push(peerChange);
+          } else {
+            // ペアの挿入先が見つからない → 1件目も取り消し
+            applyMoveToState(visitId, best.staffId, '__UNASSIGNED__', dateStr);
+            var revert = findVisitById(visitId);
+            if (revert) { revert.startMin = null; revert.endMin = null; }
+            _state.pendingChanges.pop(); // 1件目のchangeを除去
+            renderGrid();
+            renderSidePanel();
+            updateStatusBar();
+            showToast('2\u540d\u4f53\u5236\u306e\u30da\u30a2\u3092\u914d\u7f6e\u3067\u304d\u306a\u3044\u305f\u3081\u3001\u633f\u5165\u3092\u53d6\u308a\u6d88\u3057\u307e\u3057\u305f', 'error');
+            return;
+          }
+        }
+      }
+
       renderGrid();
       renderSidePanel();
       updateStatusBar();
@@ -1943,72 +2007,162 @@
 
     function onReinsertAll() {
       if (!_state || !_state.unassigned || _state.unassigned.length === 0) {
-        showToast('未割当はありません', 'info');
+        showToast('\u672a\u5272\u5f53\u306f\u3042\u308a\u307e\u305b\u3093', 'info');
         return;
       }
       if (typeof ConstraintEngine === 'undefined' || !ConstraintEngine.suggestTimeSlotsForAll) {
-        showToast('ConstraintEngine が利用できません', 'error');
+        showToast('ConstraintEngine \u304c\u5229\u7528\u3067\u304d\u307e\u305b\u3093', 'error');
         return;
       }
 
       var snapshot = _state.unassigned.slice(); // splice対策コピー
+
+      // pid+dateStr でグループ化
+      var groups = {};
+      var groupOrder = [];
+      for (var i = 0; i < snapshot.length; i++) {
+        var key = snapshot[i].pid + '|' + snapshot[i].dateStr;
+        if (!groups[key]) {
+          groups[key] = [];
+          groupOrder.push(key);
+        }
+        groups[key].push(snapshot[i]);
+      }
+
       var inserted = 0;
       var failedNames = [];
 
-      for (var i = 0; i < snapshot.length; i++) {
-        var ua = snapshot[i];
-        var pid = ua.pid;
-        var dateStr = ua.dateStr;
-
-        var result = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 1 });
-        if (!result.suggestions || result.suggestions.length === 0) {
-          var patient = getPatient(pid);
-          failedNames.push((patient && patient.name) || ua.pname || pid);
-          continue;
-        }
-
-        var best = result.suggestions[0];
-        var visitId = ua.visitId || ('UA_' + pid + '_' + dateStr);
+      for (var gi = 0; gi < groupOrder.length; gi++) {
+        var gKey = groupOrder[gi];
+        var items = groups[gKey];
+        var pid = items[0].pid;
+        var dateStr = items[0].dateStr;
         var patient = getPatient(pid);
+        var needStaff = (patient && patient.needStaff) || 1;
 
-        var change = {
-          type:        'move',
-          visitId:     visitId,
-          pid:         pid,
-          fromStaffId: '__UNASSIGNED__',
-          toStaffId:   best.staffId,
-          dateStr:     dateStr,
-          startMin:    null,
-          endMin:      null,
-          svcMin:      (patient && patient.svcMin) || ua.svcMin || 30,
-          timeType:    (patient && patient.timeType) || '',
-          area:        (patient && patient.area) || '',
-          newStaffId:   best.staffId,
-          newStaffName: best.staffName,
-          newStartMin:  best.startMin,
-          newEndMin:    best.endMin,
-          timestamp:   new Date().toISOString()
-        };
+        if (needStaff >= 2 && items.length >= 2) {
+          // --- 2名体制: 2つの別スタッフに同じ時間で挿入 ---
+          var result1 = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 5 });
+          if (!result1.suggestions || result1.suggestions.length === 0) {
+            failedNames.push((patient && patient.name) || items[0].pname || pid);
+            continue;
+          }
+          var best1 = result1.suggestions[0];
 
-        applyMoveToState(visitId, '__UNASSIGNED__', best.staffId, dateStr);
+          // 1件目挿入
+          var visitId1 = items[0].visitId || ('UA_' + pid + '_' + dateStr);
+          var change1 = {
+            type:        'move',
+            visitId:     visitId1,
+            pid:         pid,
+            fromStaffId: '__UNASSIGNED__',
+            toStaffId:   best1.staffId,
+            dateStr:     dateStr,
+            startMin:    null,
+            endMin:      null,
+            svcMin:      (patient && patient.svcMin) || items[0].svcMin || 30,
+            timeType:    (patient && patient.timeType) || '',
+            area:        (patient && patient.area) || '',
+            newStaffId:   best1.staffId,
+            newStaffName: best1.staffName,
+            newStartMin:  best1.startMin,
+            newEndMin:    best1.endMin,
+            timestamp:   new Date().toISOString()
+          };
+          applyMoveToState(visitId1, '__UNASSIGNED__', best1.staffId, dateStr);
+          var moved1 = findVisitById(visitId1);
+          if (moved1) { moved1.startMin = best1.startMin; moved1.endMin = best1.endMin; }
+          _state.pendingChanges.push(change1);
 
-        var movedVisit = findVisitById(visitId);
-        if (movedVisit) {
-          movedVisit.startMin = best.startMin;
-          movedVisit.endMin   = best.endMin;
+          // 2件目: best1.staffIdを除外して検索
+          var result2 = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 5 });
+          var filtered = (result2.suggestions || []).filter(function(s) { return s.staffId !== best1.staffId; });
+          if (filtered.length === 0) {
+            // ペア不可 → 1件目もundo
+            applyMoveToState(visitId1, best1.staffId, '__UNASSIGNED__', dateStr);
+            var revert1 = findVisitById(visitId1);
+            if (revert1) { revert1.startMin = null; revert1.endMin = null; }
+            _state.pendingChanges.pop();
+            failedNames.push((patient && patient.name) || items[0].pname || pid);
+            continue;
+          }
+          var best2 = filtered[0];
+
+          // 2件目は同じ時間(best1.startMin, best1.endMin)で挿入
+          var visitId2 = items[1].visitId || ('UA_' + pid + '_' + dateStr + '_2');
+          var change2 = {
+            type:        'move',
+            visitId:     visitId2,
+            pid:         pid,
+            fromStaffId: '__UNASSIGNED__',
+            toStaffId:   best2.staffId,
+            dateStr:     dateStr,
+            startMin:    null,
+            endMin:      null,
+            svcMin:      (patient && patient.svcMin) || items[1].svcMin || 30,
+            timeType:    (patient && patient.timeType) || '',
+            area:        (patient && patient.area) || '',
+            newStaffId:   best2.staffId,
+            newStaffName: best2.staffName,
+            newStartMin:  best1.startMin,
+            newEndMin:    best1.endMin,
+            pairedWith:   visitId1,
+            timestamp:   new Date().toISOString()
+          };
+          applyMoveToState(visitId2, '__UNASSIGNED__', best2.staffId, dateStr);
+          var moved2 = findVisitById(visitId2);
+          if (moved2) { moved2.startMin = best1.startMin; moved2.endMin = best1.endMin; }
+          _state.pendingChanges.push(change2);
+          inserted += 2;
+
+        } else {
+          // --- 通常（1名体制）or 単独の未割当 ---
+          for (var ii = 0; ii < items.length; ii++) {
+            var ua = items[ii];
+            var result = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 1 });
+            if (!result.suggestions || result.suggestions.length === 0) {
+              failedNames.push((patient && patient.name) || ua.pname || pid);
+              continue;
+            }
+
+            var best = result.suggestions[0];
+            var visitId = ua.visitId || ('UA_' + pid + '_' + dateStr);
+
+            var change = {
+              type:        'move',
+              visitId:     visitId,
+              pid:         pid,
+              fromStaffId: '__UNASSIGNED__',
+              toStaffId:   best.staffId,
+              dateStr:     dateStr,
+              startMin:    null,
+              endMin:      null,
+              svcMin:      (patient && patient.svcMin) || ua.svcMin || 30,
+              timeType:    (patient && patient.timeType) || '',
+              area:        (patient && patient.area) || '',
+              newStaffId:   best.staffId,
+              newStaffName: best.staffName,
+              newStartMin:  best.startMin,
+              newEndMin:    best.endMin,
+              timestamp:   new Date().toISOString()
+            };
+
+            applyMoveToState(visitId, '__UNASSIGNED__', best.staffId, dateStr);
+            var movedVisit = findVisitById(visitId);
+            if (movedVisit) { movedVisit.startMin = best.startMin; movedVisit.endMin = best.endMin; }
+            _state.pendingChanges.push(change);
+            inserted++;
+          }
         }
-
-        _state.pendingChanges.push(change);
-        inserted++;
       }
 
       renderGrid();
       renderSidePanel();
       updateStatusBar();
 
-      var msg = inserted + '件挿入';
+      var msg = inserted + '\u4ef6\u633f\u5165';
       if (failedNames.length > 0) {
-        msg += ' / ' + failedNames.length + '件は挿入不可: ' + failedNames.join(', ');
+        msg += ' / ' + failedNames.length + '\u4ef6\u306f\u633f\u5165\u4e0d\u53ef: ' + failedNames.join(', ');
       }
       showToast(msg, inserted > 0 ? 'success' : 'error');
     }
@@ -3099,6 +3253,8 @@
       visit.startMin = newStart;
       visit.endMin   = newEnd;
 
+      var timeDelta = newStart - chg.origStartMin;
+
       // Repack if ConstraintEngine available
       if (typeof ConstraintEngine !== 'undefined') {
         var anchors = [{ visitId: visit.visitId, startMin: newStart, endMin: newEnd, isEvent: false }];
@@ -3106,11 +3262,48 @@
         if (repack.schedule) applyNewSchedule(visit.staffId, visit.dateStr, repack.schedule);
       }
 
+      // --- 2名体制: ペア訪問の時間も連動 ---
+      var paired = null;
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits && timeDelta !== 0) {
+        paired = ConstraintEngine.findPairedVisits(visit, _state);
+        for (var pi = 0; pi < paired.length; pi++) {
+          var pv = paired[pi];
+          var pvNewStart = pv.startMin + timeDelta;
+          var pvNewEnd = pv.endMin + timeDelta;
+          var pChg = {
+            type: 'timeSet',
+            visitId: pv.visitId,
+            pid: pv.pid,
+            staffId: pv.staffId,
+            dateStr: pv.dateStr,
+            origStartMin: pv.startMin,
+            origEndMin: pv.endMin,
+            newStartMin: pvNewStart,
+            newEndMin: pvNewEnd,
+            pairedWith: _contextVisitId,
+            timestamp: new Date().toISOString()
+          };
+          _state.pendingChanges.push(pChg);
+          pv.startMin = pvNewStart;
+          pv.endMin = pvNewEnd;
+          if (ConstraintEngine.repackStaffDay) {
+            var pAnchors = [{ visitId: pv.visitId, startMin: pvNewStart, endMin: pvNewEnd, isEvent: false }];
+            var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, pv.dateStr, pAnchors, _state);
+            if (pRepack.schedule) applyNewSchedule(pv.staffId, pv.dateStr, pRepack.schedule);
+          }
+        }
+      }
+
+      var pairedMsg = '';
+      if (paired && paired.length > 0) {
+        pairedMsg = '\uff08\u30da\u30a2\u8a2a\u554f' + paired.length + '\u4ef6\u3082\u9023\u52d5\uff09';
+      }
+
       cancelTimeSet();
       renderGrid();
       renderSidePanel();
       updateStatusBar();
-      showToast('\u6642\u9593\u3092\u8a2d\u5b9a\u3057\u307e\u3057\u305f: ' + fmtMin(newStart) + '\u301C' + fmtMin(newEnd), 'success');
+      showToast('\u6642\u9593\u3092\u8a2d\u5b9a\u3057\u307e\u3057\u305f: ' + fmtMin(newStart) + '\u301C' + fmtMin(newEnd) + pairedMsg, 'success');
     }
     window.applyTimeSet = applyTimeSet;
 
