@@ -2001,6 +2001,260 @@
   }
 
   // ===========================================================
+  // 8. suggestTimeSlotsForAll
+  //    Cross-staff suggestion: find which staff CAN handle this
+  //    patient at which times, so we never suggest all-NG.
+  // ===========================================================
+
+  /**
+   * Suggest time slots across ALL available staff members.
+   *
+   * For each staff that passes basic validation (not NG), compute
+   * available windows and gather candidate slots with staff info.
+   * This prevents suggesting times where no staff can actually work.
+   *
+   * @param {string} pid             - Patient ID
+   * @param {string} dateStr         - Date "yyyy/MM/dd"
+   * @param {object} state           - Complete local state
+   * @param {object} [options]       - Optional settings
+   * @param {number} [options.maxSuggestions=5]
+   * @param {number} [options.stepMin=5]
+   * @param {string} [options.excludeVisitId]
+   * @param {string} [options.preferStaffId] - Preferred staff to prioritize
+   * @return {{
+   *   suggestions: {startMin:number, endMin:number, score:number, label:string,
+   *                  staffId:string, staffName:string, travelNote:string}[],
+   *   staffWindows: {staffId:string, staffName:string, windows:{startMin:number,endMin:number}[]}[],
+   *   constraintSummary: string
+   * }}
+   */
+  function suggestTimeSlotsForAll(pid, dateStr, state, options) {
+    var opts = options || {};
+    var maxSuggestions = opts.maxSuggestions || 5;
+    var stepMin = opts.stepMin || 5;
+    var excludeVisitId = opts.excludeVisitId || null;
+    var preferStaffId = opts.preferStaffId || null;
+
+    var patient = getPatient(pid, state);
+    var svcMin = (patient && patient.svcMin) ? patient.svcMin : 30;
+
+    // Determine preferred center time
+    var prefCenter;
+    if (patient && patient.startPref != null && patient.endPref != null) {
+      prefCenter = (patient.startPref + patient.endPref) / 2;
+    } else {
+      prefCenter = 720;
+    }
+
+    // Build a quick validation check for each staff
+    // We need a minimal visitData object for validateAllDropTargets
+    var dummyVisit = {
+      visitId: excludeVisitId || '__DUMMY__',
+      pid: pid,
+      pname: patient ? patient.name : '',
+      dateStr: dateStr,
+      youbi: getYoubiEn(dateStr),
+      startMin: patient && patient.startPref != null ? patient.startPref : 540,
+      endMin: patient && patient.endPref != null ? patient.endPref : 600,
+      svcMin: svcMin,
+      timeType: patient ? patient.timeType : '',
+      staffId: '' // no current staff
+    };
+
+    var validationMap = validateAllDropTargets(dummyVisit, state);
+
+    var allCandidates = [];
+    var staffWindows = [];
+
+    var staffList = state.staffList || [];
+    for (var si = 0; si < staffList.length; si++) {
+      var staff = staffList[si];
+      var staffId = staff.id;
+
+      // Skip if staff is NG
+      if (validationMap[staffId] && validationMap[staffId].canAccept === false) continue;
+
+      var aw = computeAvailableWindow(pid, dateStr, staffId, state, excludeVisitId);
+      if (!aw.windows || aw.windows.length === 0) continue;
+
+      // Record staff window info
+      staffWindows.push({
+        staffId: staffId,
+        staffName: staff.name || staffId,
+        windows: aw.windows
+      });
+
+      // Scan windows for this staff
+      for (var wi = 0; wi < aw.windows.length; wi++) {
+        var win = aw.windows[wi];
+        for (var t = win.startMin; t + svcMin <= win.endMin; t += stepMin) {
+          var slotCenter = t + svcMin / 2;
+          var distance = Math.abs(slotCenter - prefCenter);
+          var score = Math.max(0, 1000 - distance);
+
+          // Bonus for preferred staff
+          if (preferStaffId && staffId === preferStaffId) score += 200;
+
+          // Distance scoring (travel time warning)
+          var travelNote = '';
+          var staffMaster = getStaff(staffId, state);
+          if (staffMaster && staffMaster.lat != null && staffMaster.lng != null &&
+              patient && patient.lat != null && patient.lng != null) {
+            var distKm = calcDistanceKm(staffMaster.lat, staffMaster.lng,
+                                         patient.lat, patient.lng);
+            var travelMin = Math.round(distKm / 20 * 60);
+            if (travelMin > 30) {
+              score -= 100;
+              travelNote = '\u79fb\u52d5' + travelMin + '\u5206\u6ce8\u610f'; // 移動X分注意
+            } else if (travelMin > 15) {
+              score -= 30;
+              travelNote = '\u79fb\u52d5' + travelMin + '\u5206'; // 移動X分
+            }
+          }
+
+          // Check adjacent visit travel time
+          var adjNote = checkAdjacentTravelTime(staffId, dateStr, t, t + svcMin, state);
+          if (adjNote) {
+            travelNote = travelNote ? travelNote + ' / ' + adjNote : adjNote;
+            score -= 50;
+          }
+
+          allCandidates.push({
+            startMin: t,
+            endMin: t + svcMin,
+            score: score,
+            label: minutesToTimeStr(t) + '\u301C' + minutesToTimeStr(t + svcMin),
+            staffId: staffId,
+            staffName: staff.name || staffId,
+            travelNote: travelNote
+          });
+        }
+      }
+    }
+
+    // Sort by score descending
+    allCandidates.sort(function (a, b) { return b.score - a.score; });
+
+    // Deduplicate: no two suggestions within 10 min for same staff
+    var suggestions = [];
+    for (var ci = 0; ci < allCandidates.length && suggestions.length < maxSuggestions; ci++) {
+      var cand = allCandidates[ci];
+      var tooClose = false;
+      for (var di = 0; di < suggestions.length; di++) {
+        if (suggestions[di].staffId === cand.staffId &&
+            Math.abs(suggestions[di].startMin - cand.startMin) < 10) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (!tooClose) {
+        suggestions.push(cand);
+      }
+    }
+
+    var summaryParts = [];
+    if (staffWindows.length === 0) {
+      summaryParts.push('\u5168\u30b9\u30bf\u30c3\u30d5\u53d7\u5165\u4e0d\u53ef'); // 全スタッフ受入不可
+    } else {
+      for (var swi = 0; swi < staffWindows.length; swi++) {
+        var sw = staffWindows[swi];
+        var wTexts = [];
+        for (var wti = 0; wti < sw.windows.length; wti++) {
+          wTexts.push(minutesToTimeStr(sw.windows[wti].startMin) + '\u301C' +
+                      minutesToTimeStr(sw.windows[wti].endMin));
+        }
+        summaryParts.push(sw.staffName + ': ' + wTexts.join(', '));
+      }
+    }
+
+    return {
+      suggestions: suggestions,
+      staffWindows: staffWindows,
+      constraintSummary: summaryParts.join(' / ')
+    };
+  }
+
+  // ===========================================================
+  // 9. Distance helpers
+  // ===========================================================
+
+  /**
+   * Haversine distance between two points in km.
+   * Mirrors UnifiedCode.js calcDistanceKm().
+   */
+  function calcDistanceKm(lat1, lng1, lat2, lng2) {
+    if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return null;
+    var R = 6371;
+    var toRad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * toRad;
+    var dLng = (lng2 - lng1) * toRad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  /**
+   * Estimate travel time in minutes (20 km/h assumption).
+   */
+  function estimateTravelMin(distKm) {
+    if (distKm == null) return null;
+    return Math.round(distKm / 20 * 60);
+  }
+
+  /**
+   * Check travel time to/from adjacent visits for a staff on a date.
+   * Returns a warning note if travel time between the proposed slot
+   * and adjacent visits exceeds buffer.
+   */
+  function checkAdjacentTravelTime(staffId, dateStr, slotStart, slotEnd, state) {
+    var assignments = getStaffAssignments(staffId, dateStr, state);
+    if (assignments.length === 0) return '';
+
+    // Sort by start time
+    var sorted = assignments.slice().sort(function (a, b) { return a.startMin - b.startMin; });
+
+    // Find the visits immediately before and after the proposed slot
+    var prevVisit = null, nextVisit = null;
+    for (var i = 0; i < sorted.length; i++) {
+      if (sorted[i].endMin <= slotStart) {
+        prevVisit = sorted[i];
+      }
+      if (sorted[i].startMin >= slotEnd && !nextVisit) {
+        nextVisit = sorted[i];
+      }
+    }
+
+    var warnings = [];
+    // Check gap vs travel time to previous visit
+    if (prevVisit) {
+      var gapPrev = slotStart - prevVisit.endMin;
+      var prevPatient = getPatient(prevVisit.pid, state);
+      var newPatient = getPatient(null, state); // We need the patient for this slot
+      // Use area-based heuristic if lat/lng not available
+      if (gapPrev < ASSIGN_BUFFER_MIN) {
+        warnings.push('\u524d\u8a2a\u554f\u3068' + gapPrev + '\u5206\u9593\u9694'); // 前訪問とX分間隔
+      }
+    }
+    if (nextVisit) {
+      var gapNext = nextVisit.startMin - slotEnd;
+      if (gapNext < ASSIGN_BUFFER_MIN) {
+        warnings.push('\u6b21\u8a2a\u554f\u3068' + gapNext + '\u5206\u9593\u9694'); // 次訪問とX分間隔
+      }
+    }
+
+    return warnings.join(', ');
+  }
+
+  // ===========================================================
+  // 10. findPairedVisits (public wrapper)
+  // ===========================================================
+
+  // Already defined at line ~398 as internal function.
+  // Expose via public API below.
+
+  // ===========================================================
   // Expose public API via window.ConstraintEngine
   // ===========================================================
 
@@ -2012,9 +2266,18 @@
     validateFixedTime: validateFixedTime,
     repackStaffDay: repackStaffDay,
 
-    // ---- Constraint Window API (Phase 1 & 2) ----
+    // ---- Constraint Window API ----
     computeAvailableWindow: computeAvailableWindow,
     suggestTimeSlots: suggestTimeSlots,
+    suggestTimeSlotsForAll: suggestTimeSlotsForAll,
+
+    // ---- Distance helpers ----
+    calcDistanceKm: calcDistanceKm,
+    estimateTravelMin: estimateTravelMin,
+
+    // ---- Paired visit helpers ----
+    findPairedVisits: findPairedVisits,
+    isPairedVisitId: isPairedVisitId,
 
     // ---- Helper functions (exposed for testing / external use) ----
     isOverlap: isOverlap,

@@ -2002,23 +2002,26 @@
           bar.appendChild(cEl);
         }
 
-        // Suggestion slots (yellow) - get from suggestTimeSlots
+        // Suggestion slots (yellow) - get from suggestTimeSlotsForAll (cross-staff)
         var suggestions = [];
-        if (ConstraintEngine.suggestTimeSlots) {
-          var sugResult = ConstraintEngine.suggestTimeSlots(
-            visit.pid, visit.dateStr, visit.staffId, _state,
-            { excludeVisitId: visit.visitId, maxSuggestions: 3 }
+        var allStaffResult = null;
+        if (ConstraintEngine.suggestTimeSlotsForAll) {
+          allStaffResult = ConstraintEngine.suggestTimeSlotsForAll(
+            visit.pid, visit.dateStr, _state,
+            { excludeVisitId: visit.visitId, maxSuggestions: 5, preferStaffId: visit.staffId }
           );
-          suggestions = sugResult.suggestions || [];
+          suggestions = allStaffResult.suggestions || [];
+          // Show current-staff suggestions on timeline bar
           for (var sgi = 0; sgi < suggestions.length; sgi++) {
             var sg = suggestions[sgi];
+            if (sg.staffId !== visit.staffId) continue; // only current staff on timeline
             var sgLeft = Math.max(0, (sg.startMin - tlStart) / tlRange * 100);
             var sgWidth = Math.min(100, (sg.endMin - tlStart) / tlRange * 100) - sgLeft;
             var sgEl = document.createElement('div');
             sgEl.className = 'tl-suggestion';
             sgEl.style.left = sgLeft + '%';
             sgEl.style.width = Math.max(sgWidth, 0.5) + '%';
-            sgEl.title = '\u63d0\u6848: ' + sg.label;
+            sgEl.title = '\u63d0\u6848: ' + sg.label + ' (' + sg.staffName + ')';
             sgEl.setAttribute('data-start', sg.startMin);
             sgEl.setAttribute('data-end', sg.endMin);
             sgEl.addEventListener('click', (function(startMin, endMin) {
@@ -2058,12 +2061,12 @@
 
         container.appendChild(tlCard);
 
-        // Suggestion slots card (clickable buttons)
+        // Suggestion slots card (clickable buttons) — cross-staff
         if (suggestions.length > 0) {
           var sgCard = document.createElement('div');
           sgCard.className = 'constraint-info-card';
           var sgH4 = document.createElement('h4');
-          sgH4.textContent = '\u63d0\u6848\u6642\u9593\u30b9\u30ed\u30c3\u30c8'; // 提案時間スロット
+          sgH4.textContent = '\u63d0\u6848\u6642\u9593\u30b9\u30ed\u30c3\u30c8\uff08\u5168\u30b9\u30bf\u30c3\u30d5\uff09'; // 提案時間スロット（全スタッフ）
           sgCard.appendChild(sgH4);
           var sgNote = document.createElement('div');
           sgNote.style.fontSize = '10px';
@@ -2071,14 +2074,52 @@
           sgNote.style.marginBottom = '6px';
           sgNote.textContent = '\u30af\u30ea\u30c3\u30af\u3067\u6642\u9593\u3092\u9069\u7528'; // クリックで時間を適用
           sgCard.appendChild(sgNote);
+
+          // Show staff windows summary
+          if (allStaffResult && allStaffResult.staffWindows) {
+            var swSummary = document.createElement('div');
+            swSummary.style.fontSize = '10px';
+            swSummary.style.marginBottom = '8px';
+            swSummary.style.padding = '4px 6px';
+            swSummary.style.background = '#F3E5F5';
+            swSummary.style.borderRadius = '4px';
+            for (var swi2 = 0; swi2 < allStaffResult.staffWindows.length; swi2++) {
+              var sw2 = allStaffResult.staffWindows[swi2];
+              var swLine = document.createElement('div');
+              var wTexts2 = [];
+              for (var wti = 0; wti < sw2.windows.length; wti++) {
+                wTexts2.push(ConstraintEngine.minutesToTimeStr(sw2.windows[wti].startMin) + '\u301C' +
+                             ConstraintEngine.minutesToTimeStr(sw2.windows[wti].endMin));
+              }
+              var isCurrent = sw2.staffId === visit.staffId;
+              swLine.innerHTML = '<span class="staff-window-tag">' +
+                (isCurrent ? '\u2605 ' : '') + sw2.staffName + '</span> ' + wTexts2.join(', ');
+              swSummary.appendChild(swLine);
+            }
+            if (allStaffResult.staffWindows.length === 0) {
+              swSummary.style.background = '#FFCDD2';
+              swSummary.textContent = '\u5168\u30b9\u30bf\u30c3\u30d5\u53d7\u5165\u4e0d\u53ef'; // 全スタッフ受入不可
+            }
+            sgCard.appendChild(swSummary);
+          }
+
           for (var sbi = 0; sbi < suggestions.length; sbi++) {
             var s = suggestions[sbi];
             var btn = document.createElement('span');
             btn.className = 'suggest-slot' + (sbi === 0 ? ' best' : '');
-            btn.textContent = s.label;
-            btn.addEventListener('click', (function(startMin, endMin) {
-              return function() { applySuggestedTime(visit.visitId, startMin, endMin); };
-            })(s.startMin, s.endMin));
+            var staffLabel = s.staffId === visit.staffId ? '' : ' [' + s.staffName + ']';
+            btn.textContent = s.label + staffLabel;
+            if (s.travelNote) btn.title = s.travelNote;
+            btn.addEventListener('click', (function(vid, startMin, endMin, staffId) {
+              return function() {
+                if (staffId) {
+                  // If different staff, need to move visit first then set time
+                  applySuggestedTimeWithStaff(vid, startMin, endMin, staffId);
+                } else {
+                  applySuggestedTime(vid, startMin, endMin);
+                }
+              };
+            })(visit.visitId, s.startMin, s.endMin, s.staffId !== visit.staffId ? s.staffId : null));
             sgCard.appendChild(btn);
           }
           container.appendChild(sgCard);
@@ -2471,7 +2512,7 @@
         disabledEl.style.display = 'none';
       }
 
-      // --- Suggest available time slots for target staff (Phase 4) ---
+      // --- Suggest available time slots - cross-staff (Phase 4 enhanced) ---
       var sugSec = document.getElementById('suggestSection');
       var sugWinText = document.getElementById('suggestWindowText');
       var sugSlotList = document.getElementById('suggestSlotList');
@@ -2479,30 +2520,67 @@
       sugWinText.textContent = '';
       sugSlotList.innerHTML = '';
 
-      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.suggestTimeSlots) {
-        var sugResult = ConstraintEngine.suggestTimeSlots(
-          visitData.pid, dateStr, targetStaffId, _state,
-          { excludeVisitId: visitData.visitId, maxSuggestions: 5 }
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.suggestTimeSlotsForAll) {
+        var sugAllResult = ConstraintEngine.suggestTimeSlotsForAll(
+          visitData.pid, dateStr, _state,
+          { excludeVisitId: visitData.visitId, maxSuggestions: 5, preferStaffId: targetStaffId }
         );
-        var sugAw = sugResult.availableWindow;
-        if (sugAw && sugAw.windows && sugAw.windows.length > 0) {
+        // Show all staff windows
+        if (sugAllResult.staffWindows && sugAllResult.staffWindows.length > 0) {
           sugSec.style.display = '';
-          var winTexts = [];
-          for (var swi = 0; swi < sugAw.windows.length; swi++) {
-            winTexts.push(ConstraintEngine.minutesToTimeStr(sugAw.windows[swi].startMin) + '\u301C' +
-                          ConstraintEngine.minutesToTimeStr(sugAw.windows[swi].endMin));
+          var swTexts = [];
+          for (var swi = 0; swi < sugAllResult.staffWindows.length; swi++) {
+            var sw = sugAllResult.staffWindows[swi];
+            var wTexts = [];
+            for (var wti = 0; wti < sw.windows.length; wti++) {
+              wTexts.push(ConstraintEngine.minutesToTimeStr(sw.windows[wti].startMin) + '\u301C' +
+                          ConstraintEngine.minutesToTimeStr(sw.windows[wti].endMin));
+            }
+            var isTarget = sw.staffId === targetStaffId;
+            swTexts.push((isTarget ? '\u2605' : '') + sw.staffName + ': ' + wTexts.join(', '));
           }
-          sugWinText.textContent = winTexts.join(', ');
+          sugWinText.textContent = swTexts.join(' / ');
         }
-        if (sugResult.suggestions && sugResult.suggestions.length > 0) {
+        if (sugAllResult.suggestions && sugAllResult.suggestions.length > 0) {
           sugSec.style.display = '';
-          for (var ssi = 0; ssi < sugResult.suggestions.length; ssi++) {
-            var ss = sugResult.suggestions[ssi];
+          for (var ssi = 0; ssi < sugAllResult.suggestions.length; ssi++) {
+            var ss = sugAllResult.suggestions[ssi];
             var ssBtn = document.createElement('span');
             ssBtn.className = 'suggest-slot' + (ssi === 0 ? ' best' : '');
-            ssBtn.textContent = ss.label;
-            ssBtn.title = '\u30b9\u30b3\u30a2: ' + ss.score;
+            var ssStaffLabel = ss.staffId === targetStaffId ? '' : ' [' + ss.staffName + ']';
+            ssBtn.textContent = ss.label + ssStaffLabel;
+            ssBtn.title = '\u30b9\u30b3\u30a2: ' + ss.score + (ss.travelNote ? ' / ' + ss.travelNote : '');
             sugSlotList.appendChild(ssBtn);
+          }
+        }
+      }
+
+      // --- Paired visit info (2名体制) ---
+      var pairedSec = document.getElementById('pairedVisitSection');
+      if (!pairedSec) {
+        // Create paired section if not in HTML yet
+        pairedSec = document.createElement('div');
+        pairedSec.id = 'pairedVisitSection';
+        pairedSec.style.cssText = 'margin-top:8px;padding:6px 8px;background:#E3F2FD;border-radius:6px;font-size:11px;';
+        sugSec.parentNode.insertBefore(pairedSec, sugSec.nextSibling);
+      }
+      pairedSec.style.display = 'none';
+      pairedSec.innerHTML = '';
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
+        var paired = ConstraintEngine.findPairedVisits(visitData, _state);
+        if (paired.length > 0) {
+          pairedSec.style.display = '';
+          var pTitle = document.createElement('div');
+          pTitle.style.fontWeight = 'bold';
+          pTitle.style.marginBottom = '4px';
+          pTitle.textContent = '\u26a0 2\u540d\u4f53\u5236: \u30da\u30a2\u8a2a\u554f\u3082\u9023\u52d5\u79fb\u52d5\u3057\u307e\u3059'; // ⚠ 2名体制: ペア訪問も連動移動します
+          pairedSec.appendChild(pTitle);
+          for (var pi = 0; pi < paired.length; pi++) {
+            var pv = paired[pi];
+            var pvLine = document.createElement('div');
+            pvLine.textContent = '\u30da\u30a2: ' + getStaffName(pv.staffId) + ' ' +
+              fmtMin(pv.startMin) + '\u301C' + fmtMin(pv.endMin); // ペア: スタッフ名 HH:MM〜HH:MM
+            pairedSec.appendChild(pvLine);
           }
         }
       }
@@ -2564,6 +2642,48 @@
       }
 
       _state.pendingChanges.push(change);
+
+      // --- 2名体制: ペア訪問も連動移動 ---
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
+        var paired = ConstraintEngine.findPairedVisits(vd, _state);
+        for (var pi = 0; pi < paired.length; pi++) {
+          var pv = paired[pi];
+          // Compute time offset applied to primary visit
+          var timeDelta = 0;
+          if (movedVisit) {
+            timeDelta = movedVisit.startMin - vd.startMin;
+          }
+          var pairedChange = {
+            type:        'move',
+            visitId:     pv.visitId,
+            pid:         pv.pid,
+            fromStaffId: pv.staffId,
+            toStaffId:   pv.staffId, // paired visit stays with its own staff
+            dateStr:     dateStr,
+            startMin:    pv.startMin,
+            endMin:      pv.endMin,
+            svcMin:      pv.svcMin || (pv.endMin - pv.startMin),
+            newStaffId:  pv.staffId,
+            newStaffName: getStaffName(pv.staffId),
+            pairedWith:  vd.visitId,
+            timestamp:   new Date().toISOString()
+          };
+          // Apply time shift to paired visit
+          var newPairedStart = pv.startMin + timeDelta;
+          var newPairedEnd = pv.endMin + timeDelta;
+          pv.startMin = newPairedStart;
+          pv.endMin = newPairedEnd;
+          pairedChange.newStartMin = newPairedStart;
+          pairedChange.newEndMin = newPairedEnd;
+          _state.pendingChanges.push(pairedChange);
+          // Repack the paired visit's staff day
+          if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.repackStaffDay) {
+            var pAnchors = [{ visitId: pv.visitId, startMin: newPairedStart, endMin: newPairedEnd, isEvent: false }];
+            var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, dateStr, pAnchors, _state);
+            if (pRepack.schedule) applyNewSchedule(pv.staffId, dateStr, pRepack.schedule);
+          }
+        }
+      }
 
       closeConfirmDialog();
       renderGrid();
@@ -2797,6 +2917,8 @@
       if (!visit) return;
       if (newEnd <= newStart) return;
 
+      var timeDelta = newStart - visit.startMin;
+
       var chg = {
         type: 'timeSet',
         visitId: visitId,
@@ -2821,10 +2943,128 @@
         if (repack.schedule) applyNewSchedule(visit.staffId, visit.dateStr, repack.schedule);
       }
 
+      // --- 2名体制: ペア訪問の時間も連動 ---
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits && timeDelta !== 0) {
+        var paired = ConstraintEngine.findPairedVisits(visit, _state);
+        for (var pi = 0; pi < paired.length; pi++) {
+          var pv = paired[pi];
+          var pvNewStart = pv.startMin + timeDelta;
+          var pvNewEnd = pv.endMin + timeDelta;
+          var pChg = {
+            type: 'timeSet',
+            visitId: pv.visitId,
+            pid: pv.pid,
+            staffId: pv.staffId,
+            dateStr: pv.dateStr,
+            origStartMin: pv.startMin,
+            origEndMin: pv.endMin,
+            newStartMin: pvNewStart,
+            newEndMin: pvNewEnd,
+            pairedWith: visitId,
+            timestamp: new Date().toISOString()
+          };
+          _state.pendingChanges.push(pChg);
+          pv.startMin = pvNewStart;
+          pv.endMin = pvNewEnd;
+          if (ConstraintEngine.repackStaffDay) {
+            var pAnchors = [{ visitId: pv.visitId, startMin: pvNewStart, endMin: pvNewEnd, isEvent: false }];
+            var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, pv.dateStr, pAnchors, _state);
+            if (pRepack.schedule) applyNewSchedule(pv.staffId, pv.dateStr, pRepack.schedule);
+          }
+        }
+      }
+
       renderGrid();
       renderSidePanel();
       updateStatusBar();
       showToast('\u63d0\u6848\u6642\u9593\u3092\u9069\u7528: ' + fmtMin(newStart) + '\u301C' + fmtMin(newEnd), 'success');
+    }
+
+    /**
+     * Apply a suggested time from a different staff (cross-staff suggestion).
+     * Moves the visit to the new staff and sets the time.
+     */
+    function applySuggestedTimeWithStaff(visitId, newStart, newEnd, newStaffId) {
+      if (!visitId || !_state || !newStaffId) return;
+      var visit = findVisitById(visitId);
+      if (!visit) return;
+      if (newEnd <= newStart) return;
+
+      var timeDelta = newStart - visit.startMin;
+      var oldStaffId = visit.staffId;
+
+      // 1) Record move change
+      var moveChg = {
+        type: 'move',
+        visitId: visitId,
+        pid: visit.pid,
+        fromStaffId: oldStaffId,
+        toStaffId: newStaffId,
+        dateStr: visit.dateStr,
+        startMin: visit.startMin,
+        endMin: visit.endMin,
+        svcMin: visit.svcMin || (visit.endMin - visit.startMin),
+        newStaffId: newStaffId,
+        newStaffName: getStaffName(newStaffId),
+        newStartMin: newStart,
+        newEndMin: newEnd,
+        timestamp: new Date().toISOString()
+      };
+
+      // 2) Apply move to state
+      applyMoveToState(visitId, oldStaffId, newStaffId, visit.dateStr);
+
+      // 3) Set time
+      visit = findVisitById(visitId); // re-fetch after move
+      if (visit) {
+        visit.startMin = newStart;
+        visit.endMin = newEnd;
+      }
+
+      _state.pendingChanges.push(moveChg);
+
+      // 4) Repack target staff day
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.repackStaffDay) {
+        var anchors = [{ visitId: visitId, startMin: newStart, endMin: newEnd, isEvent: false }];
+        var repack = ConstraintEngine.repackStaffDay(newStaffId, visit ? visit.dateStr : moveChg.dateStr, anchors, _state);
+        if (repack.schedule) applyNewSchedule(newStaffId, visit ? visit.dateStr : moveChg.dateStr, repack.schedule);
+      }
+
+      // 5) Paired visit coupling
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits && timeDelta !== 0) {
+        var paired = ConstraintEngine.findPairedVisits({ visitId: visitId, pid: moveChg.pid, dateStr: moveChg.dateStr, startMin: newStart }, _state);
+        for (var pi = 0; pi < paired.length; pi++) {
+          var pv = paired[pi];
+          var pvNewStart = pv.startMin + timeDelta;
+          var pvNewEnd = pv.endMin + timeDelta;
+          var pChg = {
+            type: 'timeSet',
+            visitId: pv.visitId,
+            pid: pv.pid,
+            staffId: pv.staffId,
+            dateStr: pv.dateStr,
+            origStartMin: pv.startMin,
+            origEndMin: pv.endMin,
+            newStartMin: pvNewStart,
+            newEndMin: pvNewEnd,
+            pairedWith: visitId,
+            timestamp: new Date().toISOString()
+          };
+          _state.pendingChanges.push(pChg);
+          pv.startMin = pvNewStart;
+          pv.endMin = pvNewEnd;
+          if (ConstraintEngine.repackStaffDay) {
+            var pAnchors = [{ visitId: pv.visitId, startMin: pvNewStart, endMin: pvNewEnd, isEvent: false }];
+            var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, pv.dateStr, pAnchors, _state);
+            if (pRepack.schedule) applyNewSchedule(pv.staffId, pv.dateStr, pRepack.schedule);
+          }
+        }
+      }
+
+      renderGrid();
+      renderSidePanel();
+      updateStatusBar();
+      showToast('\u30b9\u30bf\u30c3\u30d5\u5909\u66f4+\u6642\u9593\u9069\u7528: ' + getStaffName(newStaffId) + ' ' + fmtMin(newStart) + '\u301C' + fmtMin(newEnd), 'success');
     }
 
     // ================================================================
