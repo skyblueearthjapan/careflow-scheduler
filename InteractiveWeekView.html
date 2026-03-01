@@ -3014,6 +3014,12 @@
           var repack = ConstraintEngine.repackStaffDay(targetStaffId, dateStr, anchors, _state);
           if (repack.schedule) applyNewSchedule(targetStaffId, dateStr, repack.schedule);
         }
+        // repackStaffDay/applyNewSchedule が上書きする可能性があるため再確保
+        movedVisit = findVisitById(vd.visitId);
+        if (movedVisit) {
+          movedVisit.startMin = selectedTime.startMin;
+          movedVisit.endMin   = selectedTime.endMin;
+        }
       } else {
         // 提案未選択 → computeImpact でスケジュール再配置（従来動作）
         var impact = { displaced: [], newSchedule: [] };
@@ -3025,11 +3031,13 @@
         }
       }
 
-      // Update change record with final times
+      // 最終時間を取得
       movedVisit = findVisitById(vd.visitId);
+      var finalStartMin = movedVisit ? movedVisit.startMin : (selectedTime ? selectedTime.startMin : vd.startMin);
+      var finalEndMin   = movedVisit ? movedVisit.endMin   : (selectedTime ? selectedTime.endMin   : vd.endMin);
       if (movedVisit) {
-        change.newStartMin = movedVisit.startMin;
-        change.newEndMin   = movedVisit.endMin;
+        change.newStartMin = finalStartMin;
+        change.newEndMin   = finalEndMin;
         change.toStaffId   = targetStaffId;
         change.newStaffId  = targetStaffId;
         change.newStaffName = getStaffName(targetStaffId);
@@ -3037,18 +3045,18 @@
 
       _state.pendingChanges.push(change);
 
-      // --- 2名体制: ペア訪問も連動移動 ---
+      // --- 2名体制: ペア訪問も連動移動（絶対時間方式） ---
       if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
         var paired = ConstraintEngine.findPairedVisits(vd, _state);
         for (var pi = 0; pi < paired.length; pi++) {
           var pv = paired[pi];
-          // 移動後の時間差を計算
-          var timeDelta = 0;
-          if (movedVisit) {
-            timeDelta = movedVisit.startMin - vd.startMin;
-          }
-          var newPairedStart = pv.startMin + timeDelta;
-          var newPairedEnd = pv.endMin + timeDelta;
+          // ペアの開始時間を移動先と同じにする（duration は保持）
+          var pvDuration = (pv.endMin || 0) - (pv.startMin || 0);
+          if (pvDuration <= 0) pvDuration = vd.svcMin || 30;
+          var newPairedStart = finalStartMin;
+          var newPairedEnd   = finalStartMin + pvDuration;
+          // 既に同じ時間なら変更不要
+          if (pv.startMin === newPairedStart && pv.endMin === newPairedEnd) continue;
           var pairedChange = {
             type:        'timeSet',
             visitId:     pv.visitId,
@@ -3066,7 +3074,7 @@
           pv.endMin = newPairedEnd;
           _state.pendingChanges.push(pairedChange);
           // Repack the paired visit's staff day
-          if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.repackStaffDay) {
+          if (ConstraintEngine.repackStaffDay) {
             var pAnchors = [{ visitId: pv.visitId, startMin: newPairedStart, endMin: newPairedEnd, isEvent: false }];
             var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, dateStr, pAnchors, _state);
             if (pRepack.schedule) applyNewSchedule(pv.staffId, dateStr, pRepack.schedule);
@@ -3281,8 +3289,6 @@
       visit.startMin = newStart;
       visit.endMin   = newEnd;
 
-      var timeDelta = newStart - chg.origStartMin;
-
       // Repack if ConstraintEngine available
       if (typeof ConstraintEngine !== 'undefined') {
         var anchors = [{ visitId: visit.visitId, startMin: newStart, endMin: newEnd, isEvent: false }];
@@ -3290,14 +3296,17 @@
         if (repack.schedule) applyNewSchedule(visit.staffId, visit.dateStr, repack.schedule);
       }
 
-      // --- 2名体制: ペア訪問の時間も連動 ---
+      // --- 2名体制: ペア訪問の時間も連動（絶対時間方式） ---
       var paired = null;
-      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits && timeDelta !== 0) {
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
         paired = ConstraintEngine.findPairedVisits(visit, _state);
         for (var pi = 0; pi < paired.length; pi++) {
           var pv = paired[pi];
-          var pvNewStart = pv.startMin + timeDelta;
-          var pvNewEnd = pv.endMin + timeDelta;
+          var pvDuration = (pv.endMin || 0) - (pv.startMin || 0);
+          if (pvDuration <= 0) pvDuration = (newEnd - newStart) || 30;
+          var pvNewStart = newStart;
+          var pvNewEnd   = newStart + pvDuration;
+          if (pv.startMin === pvNewStart && pv.endMin === pvNewEnd) continue;
           var pChg = {
             type: 'timeSet',
             visitId: pv.visitId,
@@ -3345,8 +3354,6 @@
       if (!visit) return;
       if (newEnd <= newStart) return;
 
-      var timeDelta = newStart - visit.startMin;
-
       var chg = {
         type: 'timeSet',
         visitId: visitId,
@@ -3371,13 +3378,16 @@
         if (repack.schedule) applyNewSchedule(visit.staffId, visit.dateStr, repack.schedule);
       }
 
-      // --- 2名体制: ペア訪問の時間も連動 ---
-      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits && timeDelta !== 0) {
+      // --- 2名体制: ペア訪問の時間も連動（絶対時間方式） ---
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
         var paired = ConstraintEngine.findPairedVisits(visit, _state);
         for (var pi = 0; pi < paired.length; pi++) {
           var pv = paired[pi];
-          var pvNewStart = pv.startMin + timeDelta;
-          var pvNewEnd = pv.endMin + timeDelta;
+          var pvDuration = (pv.endMin || 0) - (pv.startMin || 0);
+          if (pvDuration <= 0) pvDuration = (newEnd - newStart) || 30;
+          var pvNewStart = newStart;
+          var pvNewEnd   = newStart + pvDuration;
+          if (pv.startMin === pvNewStart && pv.endMin === pvNewEnd) continue;
           var pChg = {
             type: 'timeSet',
             visitId: pv.visitId,
@@ -3418,7 +3428,6 @@
       if (!visit) return;
       if (newEnd <= newStart) return;
 
-      var timeDelta = newStart - visit.startMin;
       var oldStaffId = visit.staffId;
 
       // 1) Record move change
@@ -3458,13 +3467,16 @@
         if (repack.schedule) applyNewSchedule(newStaffId, visit ? visit.dateStr : moveChg.dateStr, repack.schedule);
       }
 
-      // 5) Paired visit coupling
-      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits && timeDelta !== 0) {
+      // 5) Paired visit coupling（絶対時間方式）
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
         var paired = ConstraintEngine.findPairedVisits({ visitId: visitId, pid: moveChg.pid, dateStr: moveChg.dateStr, startMin: newStart }, _state);
         for (var pi = 0; pi < paired.length; pi++) {
           var pv = paired[pi];
-          var pvNewStart = pv.startMin + timeDelta;
-          var pvNewEnd = pv.endMin + timeDelta;
+          var pvDuration = (pv.endMin || 0) - (pv.startMin || 0);
+          if (pvDuration <= 0) pvDuration = (newEnd - newStart) || 30;
+          var pvNewStart = newStart;
+          var pvNewEnd   = newStart + pvDuration;
+          if (pv.startMin === pvNewStart && pv.endMin === pvNewEnd) continue;
           var pChg = {
             type: 'timeSet',
             visitId: pv.visitId,
