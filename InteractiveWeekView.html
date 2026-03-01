@@ -641,6 +641,7 @@
     }
     .suggest-slot:hover { background: #FFE082; }
     .suggest-slot.best { border: 2px solid #F57F17; font-weight: 600; }
+    .suggest-slot.selected { background: #FFB300; color: #fff; }
 
     /* Staff window tag in drop targets */
     .staff-window-tag {
@@ -2887,8 +2888,20 @@
             var ssStaffLabel = ss.staffId === targetStaffId ? '' : ' [' + ss.staffName + ']';
             ssBtn.textContent = ss.label + ssStaffLabel;
             ssBtn.title = '\u30b9\u30b3\u30a2: ' + ss.score + (ss.travelNote ? ' / ' + ss.travelNote : '');
+            // クリックで時間を選択
+            ssBtn.addEventListener('click', (function(suggestion, btnEl) {
+              return function() {
+                _pendingMove.selectedTime = suggestion;
+                var allSlots = sugSlotList.querySelectorAll('.suggest-slot');
+                for (var idx = 0; idx < allSlots.length; idx++) allSlots[idx].classList.remove('selected');
+                btnEl.classList.add('selected');
+              };
+            })(ss, ssBtn));
             sugSlotList.appendChild(ssBtn);
           }
+          // 最良提案（先頭）を自動選択
+          _pendingMove.selectedTime = sugAllResult.suggestions[0];
+          sugSlotList.querySelector('.suggest-slot').classList.add('selected');
         }
       }
 
@@ -2963,6 +2976,12 @@
       var vd = _pendingMove.visitData;
       var targetStaffId = _pendingMove.targetStaffId;
       var dateStr = _pendingMove.dateStr;
+      var selectedTime = _pendingMove.selectedTime || null;
+
+      // 提案が別スタッフの場合、移動先を切り替え
+      if (selectedTime && selectedTime.staffId && selectedTime.staffId !== targetStaffId) {
+        targetStaffId = selectedTime.staffId;
+      }
 
       // Record change
       var change = {
@@ -2981,25 +3000,39 @@
         timestamp:   new Date().toISOString()
       };
 
-      // Compute impact for schedule repacking
-      var impact = { displaced: [], newSchedule: [] };
-      if (typeof ConstraintEngine !== 'undefined') {
-        impact = ConstraintEngine.computeImpact(vd, targetStaffId, _state);
-      }
-
       // Apply to local state
       applyMoveToState(vd.visitId, vd.staffId, targetStaffId, dateStr);
 
-      // Apply displaced schedule if available
-      if (impact.newSchedule && impact.newSchedule.length > 0) {
-        applyNewSchedule(targetStaffId, dateStr, impact.newSchedule);
+      var movedVisit = findVisitById(vd.visitId);
+
+      if (selectedTime && movedVisit) {
+        // 提案時間が選択されている → その時間をアンカーとして使用
+        movedVisit.startMin = selectedTime.startMin;
+        movedVisit.endMin   = selectedTime.endMin;
+        if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.repackStaffDay) {
+          var anchors = [{ visitId: vd.visitId, startMin: selectedTime.startMin, endMin: selectedTime.endMin, isEvent: false }];
+          var repack = ConstraintEngine.repackStaffDay(targetStaffId, dateStr, anchors, _state);
+          if (repack.schedule) applyNewSchedule(targetStaffId, dateStr, repack.schedule);
+        }
+      } else {
+        // 提案未選択 → computeImpact でスケジュール再配置（従来動作）
+        var impact = { displaced: [], newSchedule: [] };
+        if (typeof ConstraintEngine !== 'undefined') {
+          impact = ConstraintEngine.computeImpact(vd, targetStaffId, _state);
+        }
+        if (impact.newSchedule && impact.newSchedule.length > 0) {
+          applyNewSchedule(targetStaffId, dateStr, impact.newSchedule);
+        }
       }
 
-      // Update change record with new times from the repacked schedule
-      var movedVisit = findVisitById(vd.visitId);
+      // Update change record with final times
+      movedVisit = findVisitById(vd.visitId);
       if (movedVisit) {
         change.newStartMin = movedVisit.startMin;
         change.newEndMin   = movedVisit.endMin;
+        change.toStaffId   = targetStaffId;
+        change.newStaffId  = targetStaffId;
+        change.newStaffName = getStaffName(targetStaffId);
       }
 
       _state.pendingChanges.push(change);
@@ -3009,33 +3042,28 @@
         var paired = ConstraintEngine.findPairedVisits(vd, _state);
         for (var pi = 0; pi < paired.length; pi++) {
           var pv = paired[pi];
-          // Compute time offset applied to primary visit
+          // 移動後の時間差を計算
           var timeDelta = 0;
           if (movedVisit) {
             timeDelta = movedVisit.startMin - vd.startMin;
           }
+          var newPairedStart = pv.startMin + timeDelta;
+          var newPairedEnd = pv.endMin + timeDelta;
           var pairedChange = {
-            type:        'move',
+            type:        'timeSet',
             visitId:     pv.visitId,
             pid:         pv.pid,
-            fromStaffId: pv.staffId,
-            toStaffId:   pv.staffId, // paired visit stays with its own staff
+            staffId:     pv.staffId,
             dateStr:     dateStr,
-            startMin:    pv.startMin,
-            endMin:      pv.endMin,
-            svcMin:      pv.svcMin || (pv.endMin - pv.startMin),
-            newStaffId:  pv.staffId,
-            newStaffName: getStaffName(pv.staffId),
+            origStartMin: pv.startMin,
+            origEndMin:   pv.endMin,
+            newStartMin:  newPairedStart,
+            newEndMin:    newPairedEnd,
             pairedWith:  vd.visitId,
             timestamp:   new Date().toISOString()
           };
-          // Apply time shift to paired visit
-          var newPairedStart = pv.startMin + timeDelta;
-          var newPairedEnd = pv.endMin + timeDelta;
           pv.startMin = newPairedStart;
           pv.endMin = newPairedEnd;
-          pairedChange.newStartMin = newPairedStart;
-          pairedChange.newEndMin = newPairedEnd;
           _state.pendingChanges.push(pairedChange);
           // Repack the paired visit's staff day
           if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.repackStaffDay) {
