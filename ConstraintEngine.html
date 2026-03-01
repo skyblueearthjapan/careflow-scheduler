@@ -2088,6 +2088,35 @@
 
     var validationMap = validateAllDropTargets(dummyVisit, state);
 
+    // --- 2名体制: ペアスタッフの空き時間を事前計算 ---
+    var needStaff = (patient && patient.needStaff) || 1;
+    var pairedStaffId = null;
+    var pairedStaffWindows = null;
+    var pairedVisitId = null;
+
+    if (needStaff >= 2) {
+      // ペア訪問を検索してペアスタッフを特定
+      var sources = [state.assignments || []];
+      if (state.unassigned) sources.push(state.unassigned);
+      for (var psIdx = 0; psIdx < sources.length; psIdx++) {
+        for (var paIdx = 0; paIdx < sources[psIdx].length; paIdx++) {
+          var pa = sources[psIdx][paIdx];
+          if (pa.pid === pid && pa.dateStr === dateStr &&
+              pa.visitId !== excludeVisitId && pa.staffId && pa.staffId !== '__UNASSIGNED__') {
+            pairedStaffId = pa.staffId;
+            pairedVisitId = pa.visitId;
+            break;
+          }
+        }
+        if (pairedStaffId) break;
+      }
+      // ペアスタッフの空き時間を計算（ペア訪問自体は除外=時間が移動するため）
+      if (pairedStaffId) {
+        var pairedAw = computeAvailableWindow(pid, dateStr, pairedStaffId, state, pairedVisitId);
+        pairedStaffWindows = pairedAw.windows || [];
+      }
+    }
+
     var allCandidates = [];
     var staffWindows = [];
 
@@ -2098,6 +2127,9 @@
 
       // Skip if staff is NG
       if (validationMap[staffId] && validationMap[staffId].canAccept === false) continue;
+
+      // 2名体制: 提案先がペアスタッフと同一ならスキップ（C-1違反）
+      if (needStaff >= 2 && pairedStaffId && staffId === pairedStaffId) continue;
 
       var aw = computeAvailableWindow(pid, dateStr, staffId, state, excludeVisitId);
       if (!aw.windows || aw.windows.length === 0) continue;
@@ -2120,8 +2152,28 @@
           // Bonus for preferred staff
           if (preferStaffId && staffId === preferStaffId) score += 200;
 
+          // --- 2名体制: ペアスタッフの空き時間チェック ---
+          var pairOk = true;
+          if (needStaff >= 2 && pairedStaffId && pairedStaffWindows) {
+            var pairedAvailable = false;
+            for (var pwi = 0; pwi < pairedStaffWindows.length; pwi++) {
+              var pw = pairedStaffWindows[pwi];
+              if (t >= pw.startMin && t + svcMin <= pw.endMin) {
+                pairedAvailable = true;
+                break;
+              }
+            }
+            if (!pairedAvailable) {
+              pairOk = false;
+              score -= 500;
+            }
+          }
+
           // Distance scoring (travel time warning)
           var travelNote = '';
+          if (!pairOk) {
+            travelNote = '\u30da\u30a2\u5bfe\u5fdc\u4e0d\u53ef';
+          }
           var staffMaster = getStaff(staffId, state);
           if (staffMaster && staffMaster.lat != null && staffMaster.lng != null &&
               patient && patient.lat != null && patient.lng != null) {
@@ -2130,10 +2182,10 @@
             var travelMin = Math.round(distKm / 20 * 60);
             if (travelMin > 30) {
               score -= 100;
-              travelNote = '\u79fb\u52d5' + travelMin + '\u5206\u6ce8\u610f'; // 移動X分注意
+              travelNote = (travelNote ? travelNote + ' / ' : '') + '\u79fb\u52d5' + travelMin + '\u5206\u6ce8\u610f';
             } else if (travelMin > 15) {
               score -= 30;
-              travelNote = '\u79fb\u52d5' + travelMin + '\u5206'; // 移動X分
+              travelNote = (travelNote ? travelNote + ' / ' : '') + '\u79fb\u52d5' + travelMin + '\u5206';
             }
           }
 
@@ -2159,7 +2211,8 @@
             label: minutesToTimeStr(t) + '\u301C' + minutesToTimeStr(t + svcMin),
             staffId: staffId,
             staffName: staff.name || staffId,
-            travelNote: travelNote
+            travelNote: travelNote,
+            pairOk: pairOk
           });
         }
       }
