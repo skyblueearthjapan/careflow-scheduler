@@ -107,9 +107,36 @@ function runPythonAllocate(weekStartStr) {
     var unassigned = result.result.unassigned || [];
     pyb_writeUnassigned_(ss, tz, unassigned);
 
+    var allocMsg = summary.message || ('割当完了: ' + assignmentResults.length + '件');
+    console.log(allocMsg);
+
+    // ============================================================
+    // 4. 週ビューを更新
+    // ============================================================
+    console.log('週ビューを更新中...');
+    try {
+      var weekViewResult = 週ビューを更新_(ss, weekStartStr);
+      var weekViewMsg = (weekViewResult && weekViewResult.message) || '週ビュー更新完了';
+      console.log(weekViewMsg);
+    } catch (e) {
+      console.error('週ビュー更新エラー（割当自体は成功）: ' + e.message);
+    }
+
+    // ============================================================
+    // 5. ルートサマリを作成
+    // ============================================================
+    console.log('ルートサマリを作成中...');
+    try {
+      var routeResult = ルートサマリを作成_(ss, weekStartStr);
+      var routeMsg = (routeResult && routeResult.message) || 'ルートサマリ作成完了';
+      console.log(routeMsg);
+    } catch (e) {
+      console.error('ルートサマリ作成エラー（割当自体は成功）: ' + e.message);
+    }
+
     return {
       success: true,
-      message: summary.message || ('割当完了: ' + assignmentResults.length + '件'),
+      message: allocMsg + ' → 週ビュー・ルートサマリも更新済み',
       assigned: summary.assigned || 0,
       unassigned: summary.unassigned || 0
     };
@@ -118,6 +145,37 @@ function runPythonAllocate(weekStartStr) {
     console.error('runPythonAllocate error: ' + e.message);
     return { success: false, message: 'エラー: ' + e.message };
   }
+}
+
+/**
+ * スクリプトエディタから直接実行するテスト関数
+ * 実際のスプレッドシートデータでPython割当を実行し、結果をログ出力
+ */
+function testPythonAllocateFromSheet() {
+  var weekStartStr = '2026/03/23'; // ← テストしたい週をここで指定
+
+  console.log('=== Python割当テスト開始 ===');
+  console.log('対象週: ' + weekStartStr);
+
+  // Step 1: データ取得検証
+  console.log('\n--- Step 1: データ取得検証 ---');
+  var debugResult = debugPythonAllocateData(weekStartStr);
+  console.log('ローカル件数: ' + JSON.stringify(debugResult.local_counts, null, 2));
+  console.log('Python受信件数: ' + JSON.stringify(debugResult.remote_counts, null, 2));
+  console.log('ペイロードサイズ: ' + (debugResult.payload_size_bytes / 1024).toFixed(1) + ' KB');
+
+  // Step 2: 実際の割当実行
+  console.log('\n--- Step 2: 割当エンジン実行 ---');
+  var result = runPythonAllocate(weekStartStr);
+  console.log('結果: ' + JSON.stringify(result, null, 2));
+
+  if (result.success) {
+    console.log('\n✓ 割当成功! 割当: ' + result.assigned + '件, 未割当: ' + result.unassigned + '件');
+  } else {
+    console.log('\n✗ 割当失敗: ' + result.message);
+  }
+
+  return result;
 }
 
 /**
