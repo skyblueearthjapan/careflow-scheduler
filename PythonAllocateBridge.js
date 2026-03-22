@@ -4,6 +4,7 @@
  *
  * Public functions:
  *   - runPythonAllocate(weekStartStr) - メイン実行関数
+ *   - debugPythonAllocateData(weekStartStr) - データ取得検証
  */
 
 /**
@@ -46,6 +47,15 @@ function runPythonAllocate(weekStartStr) {
     // 1g. Confirmed history (for rotation)
     var confirmedHistory = pyb_loadConfirmedHistory_(ss, tz, weekStartStr);
 
+    // 1h. Patient changes (個別変更リクエスト)
+    var patientChanges = pyb_loadPatientChanges_(ss, tz, weekStartStr);
+
+    // 1i. Special week (特別訪問週間)
+    var specialWeek = pyb_loadSpecialWeek_(ss, tz, weekStartStr);
+
+    // 1j. Mentor pairs (スタッフ同行割付)
+    var mentorPairs = pyb_loadMentorPairs_(ss, tz, weekStartStr);
+
     // ============================================================
     // 2. Send to Python API
     // ============================================================
@@ -57,7 +67,10 @@ function runPythonAllocate(weekStartStr) {
       events: events,
       staff_changes: staffChanges,
       weekly_patterns: weeklyPatterns,
-      confirmed_history: confirmedHistory
+      confirmed_history: confirmedHistory,
+      patient_changes: patientChanges,
+      special_week: specialWeek,
+      mentor_pairs: mentorPairs
     };
 
     var url = API_BASE_URL + '/api/allocate';
@@ -102,6 +115,104 @@ function runPythonAllocate(weekStartStr) {
   } catch (e) {
     console.error('runPythonAllocate error: ' + e.message);
     return { success: false, message: 'エラー: ' + e.message };
+  }
+}
+
+/**
+ * デバッグ用: 全データを収集してPython /api/allocate/debug に送信し、
+ * 各シートの件数とサンプルデータを返す。
+ * GASスクリプトエディタのログで確認可能。
+ * @param {string} weekStartStr - 週開始日 "yyyy/MM/dd"
+ * @returns {Object} デバッグ結果
+ */
+function debugPythonAllocateData(weekStartStr) {
+  try {
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var tz = ss.getSpreadsheetTimeZone();
+
+    if (!weekStartStr) {
+      weekStartStr = '2026/04/06'; // デフォルト
+    }
+
+    var staffMasters = pyb_loadStaffMasters_(ss, tz);
+    var patientMasters = pyb_loadPatientMasters_(ss, tz);
+    var weeklyRequests = pyb_loadWeeklyRequests_(ss, tz, weekStartStr);
+    var events = pyb_loadEvents_(ss, tz, weekStartStr);
+    var staffChanges = pyb_loadStaffChanges_(ss, tz, weekStartStr);
+    var weeklyPatterns = pyb_loadWeeklyPatterns_(ss, tz);
+    var confirmedHistory = pyb_loadConfirmedHistory_(ss, tz, weekStartStr);
+    var patientChanges = pyb_loadPatientChanges_(ss, tz, weekStartStr);
+    var specialWeek = pyb_loadSpecialWeek_(ss, tz, weekStartStr);
+    var mentorPairs = pyb_loadMentorPairs_(ss, tz, weekStartStr);
+
+    // ローカル件数サマリ
+    var localCounts = {
+      staff_masters: staffMasters.length,
+      patient_masters: patientMasters.length,
+      weekly_requests: weeklyRequests.length,
+      events: events.length,
+      staff_changes: staffChanges.length,
+      weekly_patterns: weeklyPatterns.length,
+      confirmed_history: confirmedHistory.length,
+      patient_changes: patientChanges.length,
+      special_week_headers: specialWeek.headers.length,
+      special_week_details: specialWeek.details.length,
+      mentor_pairs: mentorPairs.length
+    };
+
+    console.log('=== ローカル件数 ===');
+    console.log(JSON.stringify(localCounts, null, 2));
+
+    // Python API に送信して検証
+    var payload = {
+      week_start: weekStartStr,
+      staff_masters: staffMasters,
+      patient_masters: patientMasters,
+      weekly_requests: weeklyRequests,
+      events: events,
+      staff_changes: staffChanges,
+      weekly_patterns: weeklyPatterns,
+      confirmed_history: confirmedHistory,
+      patient_changes: patientChanges,
+      special_week: specialWeek,
+      mentor_pairs: mentorPairs
+    };
+
+    var url = API_BASE_URL + '/api/allocate/debug';
+    var options = {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    console.log('Python API /api/allocate/debug 呼び出し...');
+    var response = UrlFetchApp.fetch(url, options);
+    var statusCode = response.getResponseCode();
+    var result = JSON.parse(response.getContentText());
+
+    console.log('HTTP ' + statusCode);
+    console.log('=== Python側受信件数 ===');
+    console.log(JSON.stringify(result.counts || {}, null, 2));
+
+    if (result.samples) {
+      console.log('=== サンプルデータ ===');
+      for (var key in result.samples) {
+        console.log(key + ': ' + JSON.stringify(result.samples[key]).substring(0, 200));
+      }
+    }
+
+    return {
+      success: true,
+      local_counts: localCounts,
+      remote_counts: result.counts || {},
+      samples: result.samples || {},
+      payload_size_bytes: JSON.stringify(payload).length
+    };
+
+  } catch (e) {
+    console.error('debugPythonAllocateData error: ' + e.message);
+    return { success: false, error: e.message };
   }
 }
 
@@ -428,6 +539,243 @@ function pyb_loadConfirmedHistory_(ss, tz, weekStartStr) {
       patient_id: ci.pid >= 0 ? String(r[ci.pid] || '') : '',
       staff_id: ci.sid >= 0 ? String(r[ci.sid] || '') : '',
       staff_name: ci.sname >= 0 ? String(r[ci.sname] || '') : ''
+    });
+  }
+  return results;
+}
+
+// ============================================================
+// NEW: Patient Changes Loader (個別変更リクエスト)
+// ============================================================
+
+function pyb_loadPatientChanges_(ss, tz, weekStartStr) {
+  var sheet = ss.getSheetByName('個別変更リクエスト');
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var h = data[0];
+
+  function fc(name) {
+    for (var i = 0; i < h.length; i++) {
+      var hv = String(h[i]).replace(/[\s\u3000]/g, '');
+      if (hv.indexOf(name.replace(/[\s\u3000]/g, '')) >= 0) return i;
+    }
+    return -1;
+  }
+
+  var ci = {
+    pid: fc('patient_id'), date: fc('日付'), op: fc('操作'),
+    timeType: fc('時間タイプ'),
+    newStart: fc('開始時刻'), newEnd: fc('終了時刻'),
+    earliest: fc('希望最早'), latest: fc('希望最遅'),
+    svc: fc('サービス時間'), need: fc('必要スタッフ数'),
+    specIds: fc('指定スタッフID'), specType: fc('指定タイプ'),
+    ngIds: fc('NGスタッフID'), note: fc('備考')
+  };
+  // 「開始時刻(固定)」列があればそちらを優先
+  var fixedStart = fc('開始時刻(固定)');
+  var fixedEnd = fc('終了時刻(固定)');
+  if (fixedStart >= 0) ci.newStart = fixedStart;
+  if (fixedEnd >= 0) ci.newEnd = fixedEnd;
+
+  // Week date range
+  var wsParts = weekStartStr.split('/');
+  var wsDate = new Date(parseInt(wsParts[0]), parseInt(wsParts[1]) - 1, parseInt(wsParts[2]));
+  var weekDates = {};
+  for (var d = 0; d < 7; d++) {
+    var dd = new Date(wsDate.getTime() + d * 86400000);
+    weekDates[Utilities.formatDate(dd, tz, 'yyyy/MM/dd')] = true;
+  }
+
+  var results = [];
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    var dateVal = ci.date >= 0 ? r[ci.date] : null;
+    if (!dateVal) continue;
+    var dateStr = (dateVal instanceof Date) ? Utilities.formatDate(dateVal, tz, 'yyyy/MM/dd') : String(dateVal);
+    if (!weekDates[dateStr]) continue;
+
+    var op = ci.op >= 0 ? String(r[ci.op] || '').trim() : '';
+    if (!op) continue;
+
+    results.push({
+      patient_id: ci.pid >= 0 ? String(r[ci.pid] || '') : '',
+      date: dateStr,
+      operation: op,
+      time_type: ci.timeType >= 0 ? String(r[ci.timeType] || '') : '',
+      start_time_minutes: ci.newStart >= 0 ? pyb_timeToMin_(r[ci.newStart], tz) : null,
+      end_time_minutes: ci.newEnd >= 0 ? pyb_timeToMin_(r[ci.newEnd], tz) : null,
+      earliest_time_minutes: ci.earliest >= 0 ? pyb_timeToMin_(r[ci.earliest], tz) : null,
+      latest_time_minutes: ci.latest >= 0 ? pyb_timeToMin_(r[ci.latest], tz) : null,
+      service_minutes: ci.svc >= 0 ? (Number(r[ci.svc]) || null) : null,
+      need_staff: ci.need >= 0 ? (Number(r[ci.need]) || null) : null,
+      specified_staff_ids: ci.specIds >= 0 ? pyb_parseList_(r[ci.specIds]) : [],
+      specified_type: ci.specType >= 0 ? String(r[ci.specType] || '') : '',
+      ng_staff_ids: ci.ngIds >= 0 ? pyb_parseList_(r[ci.ngIds]) : [],
+      note: ci.note >= 0 ? String(r[ci.note] || '') : ''
+    });
+  }
+  return results;
+}
+
+// ============================================================
+// NEW: Special Week Loader (特別訪問週間)
+// ============================================================
+
+function pyb_loadSpecialWeek_(ss, tz, weekStartStr) {
+  var shH = ss.getSheetByName('特別訪問週間_ヘッダ');
+  var shD = ss.getSheetByName('特別訪問週間_明細');
+  if (!shH || !shD) return { headers: [], details: [] };
+
+  var hValues = shH.getDataRange().getValues();
+  var dValues = shD.getDataRange().getValues();
+  if (hValues.length <= 1) return { headers: [], details: [] };
+
+  var hHeader = hValues[0];
+  var hData = hValues.slice(1);
+  var dHeader = dValues.length ? dValues[0] : [];
+  var dData = dValues.length > 1 ? dValues.slice(1) : [];
+
+  var idxH = {};
+  hHeader.forEach(function(k, i) { idxH[k] = i; });
+  var idxD = {};
+  dHeader.forEach(function(k, i) { idxD[k] = i; });
+
+  // Column name compatibility
+  var hIdCol = idxH['special_week_id'] != null ? 'special_week_id' : 'special_id';
+  var dIdCol = idxD['special_week_id'] != null ? 'special_week_id' : 'special_id';
+  var hModeCol = idxH['適用モード(ADD/REPLACE)'] != null ? '適用モード(ADD/REPLACE)' : 'モード';
+  var dTimeTypeCol = idxD['時間タイプ'] != null ? '時間タイプ' : 'timeType';
+  var dEarliestCol = idxD['希望最早'] != null ? '希望最早' : '希望最早時刻';
+  var dLatestCol = idxD['希望最遅'] != null ? '希望最遅' : '希望最遅時刻';
+
+  // Filter headers for this week
+  var headers = [];
+  hData.forEach(function(r) {
+    var id = r[idxH[hIdCol]];
+    if (!id) return;
+
+    var ws = r[idxH['週開始日']];
+    var wsObj = (ws instanceof Date) ? ws : pyb_parseDate_(ws);
+    if (!wsObj) return;
+    var wsStr = Utilities.formatDate(wsObj, tz, 'yyyy/MM/dd');
+    if (wsStr !== weekStartStr) return;
+
+    var status = idxH['状態'] != null ? String(r[idxH['状態']] || '').trim() : '有効';
+    if (status && status !== '有効') return;
+
+    var modeRaw = r[idxH[hModeCol]] || '';
+    var mode = String(modeRaw).trim().toUpperCase();
+    if (mode === '追加' || mode === 'ADD') mode = 'ADD';
+    else if (mode === '置換' || mode === 'REPLACE') mode = 'REPLACE';
+    else mode = 'ADD';
+
+    headers.push({
+      special_week_id: String(id),
+      patient_id: String(r[idxH['patient_id']] || ''),
+      patient_name: idxH['患者名'] != null ? String(r[idxH['患者名']] || '') : '',
+      week_start: wsStr,
+      mode: mode,
+      reason: idxH['理由'] != null ? String(r[idxH['理由']] || '') : ''
+    });
+  });
+
+  if (headers.length === 0) return { headers: [], details: [] };
+
+  var idSet = {};
+  headers.forEach(function(h) { idSet[h.special_week_id] = true; });
+
+  // Parse week date range for filtering details
+  var wsParts = weekStartStr.split('/');
+  var wsDate = new Date(parseInt(wsParts[0]), parseInt(wsParts[1]) - 1, parseInt(wsParts[2]));
+  var weDate = new Date(wsDate.getTime() + 6 * 86400000);
+
+  var details = [];
+  dData.forEach(function(r) {
+    var id = String(r[idxD[dIdCol]] || '');
+    if (!id || !idSet[id]) return;
+
+    var dateVal = r[idxD['日付']];
+    var dateObj = (dateVal instanceof Date) ? dateVal : pyb_parseDate_(dateVal);
+    if (!dateObj || dateObj < wsDate || dateObj > weDate) return;
+
+    var dateStr = Utilities.formatDate(dateObj, tz, 'yyyy/MM/dd');
+
+    details.push({
+      special_week_id: id,
+      patient_id: String(r[idxD['patient_id']] || ''),
+      date: dateStr,
+      time_type: idxD[dTimeTypeCol] != null ? String(r[idxD[dTimeTypeCol]] || '') : '',
+      start_time_minutes: idxD['開始時刻'] != null ? pyb_timeToMin_(r[idxD['開始時刻']], tz) : null,
+      end_time_minutes: idxD['終了時刻'] != null ? pyb_timeToMin_(r[idxD['終了時刻']], tz) : null,
+      earliest_time_minutes: idxD[dEarliestCol] != null ? pyb_timeToMin_(r[idxD[dEarliestCol]], tz) : null,
+      latest_time_minutes: idxD[dLatestCol] != null ? pyb_timeToMin_(r[idxD[dLatestCol]], tz) : null,
+      service_minutes: idxD['サービス時間'] != null ? (Number(r[idxD['サービス時間']]) || 60) : 60,
+      need_staff: idxD['必要スタッフ数'] != null ? (Number(r[idxD['必要スタッフ数']]) || 1) : 1,
+      note: idxD['備考'] != null ? String(r[idxD['備考']] || '') : '',
+      change_policy: idxD['個別変更の扱い'] != null ? String(r[idxD['個別変更の扱い']] || '') : ''
+    });
+  });
+
+  return { headers: headers, details: details };
+}
+
+// ============================================================
+// NEW: Mentor Pairs Loader (スタッフ同行割付)
+// ============================================================
+
+function pyb_loadMentorPairs_(ss, tz, weekStartStr) {
+  var sheet = ss.getSheetByName('スタッフ同行割付');
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var h = data[0];
+
+  function fc(name) {
+    for (var i = 0; i < h.length; i++) {
+      if (String(h[i]).indexOf(name) >= 0) return i;
+    }
+    return -1;
+  }
+
+  var ci = {
+    trainee: fc('trainee_staff_id'), mentor: fc('mentor_staff_id'),
+    startDate: fc('開始日'), endDate: fc('終了日'),
+    band: fc('時間帯'), startTime: fc('開始時刻'), endTime: fc('終了時刻'),
+    dayCondition: fc('曜日条件'), priority: fc('優先度')
+  };
+
+  // Week date range
+  var wsParts = weekStartStr.split('/');
+  var wsDate = new Date(parseInt(wsParts[0]), parseInt(wsParts[1]) - 1, parseInt(wsParts[2]));
+  var weDate = new Date(wsDate.getTime() + 6 * 86400000);
+
+  var results = [];
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    var traineeId = ci.trainee >= 0 ? String(r[ci.trainee] || '') : '';
+    if (!traineeId) continue;
+
+    // Check date range overlap with this week
+    var sd = ci.startDate >= 0 ? r[ci.startDate] : null;
+    var ed = ci.endDate >= 0 ? r[ci.endDate] : null;
+    var sdObj = sd ? ((sd instanceof Date) ? sd : pyb_parseDate_(sd)) : null;
+    var edObj = ed ? ((ed instanceof Date) ? ed : pyb_parseDate_(ed)) : null;
+
+    // Skip if pair date range does not overlap with this week
+    if (sdObj && sdObj > weDate) continue;
+    if (edObj && edObj < wsDate) continue;
+
+    results.push({
+      trainee_staff_id: traineeId,
+      mentor_staff_id: ci.mentor >= 0 ? String(r[ci.mentor] || '') : '',
+      start_date: sdObj ? Utilities.formatDate(sdObj, tz, 'yyyy/MM/dd') : '',
+      end_date: edObj ? Utilities.formatDate(edObj, tz, 'yyyy/MM/dd') : '',
+      band: ci.band >= 0 ? String(r[ci.band] || '') : '',
+      start_time_minutes: ci.startTime >= 0 ? pyb_timeToMin_(r[ci.startTime], tz) : null,
+      end_time_minutes: ci.endTime >= 0 ? pyb_timeToMin_(r[ci.endTime], tz) : null,
+      day_condition: ci.dayCondition >= 0 ? String(r[ci.dayCondition] || '') : '',
+      priority: ci.priority >= 0 ? String(r[ci.priority] || '') : ''
     });
   }
   return results;
