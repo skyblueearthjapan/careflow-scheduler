@@ -131,7 +131,7 @@ function debugPythonAllocateData(weekStartStr) {
     var tz = ss.getSpreadsheetTimeZone();
 
     if (!weekStartStr) {
-      weekStartStr = '2026/04/06'; // デフォルト
+      throw new Error('週開始日を指定してください（UI側から対象週を選択して実行）');
     }
 
     var staffMasters = pyb_loadStaffMasters_(ss, tz);

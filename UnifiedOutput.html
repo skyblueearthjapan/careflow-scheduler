@@ -1364,6 +1364,10 @@
           <span class="icon">🐍</span><span class="spinner"></span>
           Python割当（テスト）
         </button>
+        <button class="action-btn secondary" onclick="debugPythonAllocateUI(this)" style="font-size:11px">
+          <span class="icon">🔍</span><span class="spinner"></span>
+          データ取得検証
+        </button>
       </div>
 
       <div class="button-group">
@@ -2357,6 +2361,50 @@
           showToast('エラー: ' + (e.message || e), 'error');
         })
         .runPythonAllocate(weekStartStr);
+    }
+
+    function debugPythonAllocateUI(btn) {
+      var weekStartStr = getSelectedWeekStart();
+      if (!weekStartStr) {
+        showToast('対象週を選択してください', 'error');
+        return;
+      }
+
+      btn.classList.add('loading');
+      btn.disabled = true;
+      showToast('データ取得検証中... 対象週: ' + weekStartStr, 'info');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.classList.remove('loading');
+          btn.disabled = false;
+          if (result && result.success) {
+            var c = result.local_counts;
+            var msg = '【データ取得検証 OK】\\n'
+              + 'スタッフマスタ: ' + c.staff_masters + '件\\n'
+              + '患者マスタ: ' + c.patient_masters + '件\\n'
+              + '週間リクエスト: ' + c.weekly_requests + '件\\n'
+              + 'イベント: ' + c.events + '件\\n'
+              + 'スタッフ個別変更: ' + c.staff_changes + '件\\n'
+              + '週間訪問パターン: ' + c.weekly_patterns + '件\\n'
+              + '確定履歴: ' + c.confirmed_history + '件\\n'
+              + '個別変更リクエスト: ' + c.patient_changes + '件\\n'
+              + '特別訪問週間(H): ' + c.special_week_headers + '件\\n'
+              + '特別訪問週間(D): ' + c.special_week_details + '件\\n'
+              + 'スタッフ同行: ' + c.mentor_pairs + '件\\n'
+              + '\\nペイロード: ' + (result.payload_size_bytes / 1024).toFixed(1) + ' KB';
+            alert(msg);
+            showToast('データ取得検証完了', 'success');
+          } else {
+            showToast('検証エラー: ' + (result ? result.error : '不明'), 'error');
+          }
+        })
+        .withFailureHandler(function(e) {
+          btn.classList.remove('loading');
+          btn.disabled = false;
+          showToast('エラー: ' + (e.message || e), 'error');
+        })
+        .debugPythonAllocateData(weekStartStr);
     }
 
     function rebuildNgSheet(btn) {
