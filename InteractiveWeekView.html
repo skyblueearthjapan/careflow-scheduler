@@ -441,7 +441,7 @@
     .visit-name {
       font-size: 11px; color: var(--color-text); font-weight: 500;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      max-width: 80px;
+      width: 100%; order: 10;
     }
     .visit-two-staff-icon { font-size: 10px; margin-right: 2px; flex-shrink: 0; }
     .visit-svc-time {
@@ -1805,6 +1805,15 @@
       if (insType.indexOf('\u533b\u7642') >= 0) div.classList.add('medical');
       else if (insType.indexOf('\u4ecb\u8b77') >= 0) div.classList.add('nursing');
 
+      // Coupled icon (before time)
+      if (isCoupled) {
+        var icon = document.createElement('span');
+        icon.className = 'visit-two-staff-icon';
+        icon.textContent = '\uD83D\uDC65';
+        icon.title = '2\u540d\u4f53\u5236';
+        div.appendChild(icon);
+      }
+
       // Time span
       var timeSpan = document.createElement('span');
       timeSpan.className = 'visit-time';
@@ -1825,17 +1834,8 @@
         div.appendChild(gs);
       }
 
-      // Name
+      // Name (2nd row via CSS order:10 + width:100%)
       var nameSpan = document.createElement('span');
-      // Coupled icon (before name)
-      if (isCoupled) {
-        var icon = document.createElement('span');
-        icon.className = 'visit-two-staff-icon';
-        icon.textContent = '\uD83D\uDC65';
-        icon.title = '2\u540d\u4f53\u5236';
-        div.appendChild(icon);
-      }
-
       nameSpan.className = 'visit-name';
       var pName = (patient && patient.name) ? patient.name : (visit.pname || pid);
       nameSpan.textContent = pName;
