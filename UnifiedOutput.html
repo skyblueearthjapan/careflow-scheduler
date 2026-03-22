@@ -1441,15 +1441,17 @@
   <div class="toast" id="toast"></div>
 
   <!-- インタラクティブ週ビュー モーダル -->
-  <div class="interactive-modal" id="interactiveModal">
-    <div class="interactive-modal-content" style="border-radius:8px; overflow:hidden;">
+  <div class="interactive-modal" id="interactiveModal" onclick="if(event.target===this)closeInteractiveModal()">
+    <div class="interactive-modal-content" style="border-radius:8px; overflow:hidden; position:relative;">
+      <button onclick="closeInteractiveModal()" style="position:absolute;top:8px;right:12px;z-index:10;background:rgba(0,0,0,0.5);color:white;border:none;border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer;line-height:1;" title="閉じる">&times;</button>
       <iframe id="interactiveIframe" style="width:100%;height:100%;border:none;"></iframe>
     </div>
   </div>
 
   <!-- 週間パターン設定モーダル -->
-  <div class="interactive-modal" id="patternModal">
-    <div class="interactive-modal-content" style="border-radius:8px; overflow:hidden;">
+  <div class="interactive-modal" id="patternModal" onclick="if(event.target===this)closePatternModal()">
+    <div class="interactive-modal-content" style="border-radius:8px; overflow:hidden; position:relative;">
+      <button onclick="closePatternModal()" style="position:absolute;top:8px;right:12px;z-index:10;background:rgba(0,0,0,0.5);color:white;border:none;border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer;line-height:1;" title="閉じる">&times;</button>
       <iframe id="patternIframe" style="width:100%;height:100%;border:none;"></iframe>
     </div>
   </div>
@@ -4840,12 +4842,6 @@
       iframe.src = '';
     }
 
-    // iframe からの postMessage でモーダル閉じを受信
-    window.addEventListener('message', function(e) {
-      if (!e.data || e.data.type !== 'closeModal') return;
-      if (e.data.modal === 'interactive') closeInteractiveModal();
-      if (e.data.modal === 'pattern') closePatternModal();
-    });
 
     function saveWeekSnapshot() {
       var weekStartStr = window.weekViewAuditWeekStart || '';
