@@ -724,6 +724,7 @@
         <button class="operation-btn" onclick="openSpecialWeekWizard()"><span class="icon">📅</span>特別訪問週間</button>
         <button class="operation-btn" onclick="openPatientChangeGrid()"><span class="icon">📋</span>患者個別変更（週グリッド）</button>
         <button class="operation-btn" onclick="openStaffChangeGrid()"><span class="icon">📋</span>スタッフ個別変更（週グリッド）</button>
+        <button class="operation-btn" onclick="goToPattern()"><span class="icon">📅</span>週間訪問パターン設定</button>
       </div>
       <div class="operation-group">
         <div class="operation-group-title">行操作</div>
@@ -762,7 +763,7 @@
       <button class="tab-btn" data-sheet="スタッフ同行割付" onclick="showSheet('スタッフ同行割付', this)">同行割付</button>
       <button class="tab-btn" data-sheet="特別訪問週間" onclick="showSpecialWeekSheet(this)">特別訪問週間</button>
     </div>
-    <div class="tabs-right"><a class="nav-link" onclick="goToPattern()">📋 週間パターン設定</a> <a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
+    <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
   </div>
 
   <div class="toast-container" id="toastContainer"></div>
