@@ -2253,6 +2253,33 @@ function 週ビューを更新_(ss, weekStartStr) {
 
   // ※イベントは割当結果のEV行に含まれるため、staffMapには既に入っている
 
+  // スタッフ個別変更リクエスト（休み・午前休・午後休など）を読み込み
+  const scSheet = ss.getSheetByName('スタッフ個別変更リクエスト');
+  const wvStaffChangeMap = {};
+  if (scSheet) {
+    const scData = scSheet.getDataRange().getValues();
+    if (scData.length > 1) {
+      const scH = scData[0];
+      const scIdxStaff = scH.indexOf('staff_id');
+      const scIdxDate  = scH.indexOf('日付');
+      const scIdxType  = scH.indexOf('制限タイプ');
+      for (let si = 1; si < scData.length; si++) {
+        const scRow = scData[si];
+        const scStaffId = scIdxStaff >= 0 ? String(scRow[scIdxStaff] || '').trim() : '';
+        if (!scStaffId) continue;
+        const scDateRaw = scIdxDate >= 0 ? scRow[scIdxDate] : null;
+        if (!scDateRaw) continue;
+        const scDateStr = (scDateRaw instanceof Date)
+          ? Utilities.formatDate(scDateRaw, tz, 'yyyy/MM/dd') : String(scDateRaw);
+        const scType = scIdxType >= 0 ? String(scRow[scIdxType] || '').trim() : '';
+        if (!scType) continue;
+        const scKey = scStaffId + '|' + scDateStr;
+        if (!wvStaffChangeMap[scKey]) wvStaffChangeMap[scKey] = [];
+        wvStaffChangeMap[scKey].push(scType);
+      }
+    }
+  }
+
   let staffList = Array.from(staffMap.values());
   staffList.sort((a,b) => {
     if (a.name === '未割当' && b.name !== '未割当') return 1;
@@ -2396,11 +2423,45 @@ function 週ビューを更新_(ss, weekStartStr) {
       // 時刻でソート
       displayItems.sort((a, b) => a.sortKey - b.sortKey);
 
-      const cellText = displayItems.map(item => item.text).join('\n');
-      if (cellText) {
+      // スタッフ休み/制限マーカーを先頭に挿入
+      const scKey = (st.id || st.name) + '|' + targetDateStr;
+      const scTypes = wvStaffChangeMap[scKey] || [];
+      let leaveMarker = '';
+      let leaveBg = null;
+      if (scTypes.length > 0) {
+        const hasFullOff = scTypes.some(t => t === '休み' || t === '終日不可' || t === '終日');
+        const hasAmOff   = scTypes.indexOf('午前休') >= 0;
+        const hasPmOff   = scTypes.indexOf('午後休') >= 0;
+        if (hasFullOff) {
+          leaveMarker = '[LEAVE:FULL]🚫 休み';
+          leaveBg = '#e8e8e8';
+        } else if (hasAmOff) {
+          leaveMarker = '[LEAVE:AM]☀ 午前休';
+          leaveBg = '#fff8e1';
+        } else if (hasPmOff) {
+          leaveMarker = '[LEAVE:PM]🌙 午後休';
+          leaveBg = '#fff3e0';
+        } else {
+          const otherLabels = scTypes.filter(t => t !== '休み' && t !== '終日不可' && t !== '終日' && t !== '午前休' && t !== '午後休');
+          if (otherLabels.length > 0) {
+            leaveMarker = '[LEAVE:PARTIAL]⚠ ' + otherLabels.join(' / ');
+            leaveBg = '#fffde7';
+          }
+        }
+      }
+
+      const allLines = [];
+      if (leaveMarker) allLines.push(leaveMarker);
+      displayItems.forEach(item => allLines.push(item.text));
+
+      const cellText = allLines.join('\n');
+      if (cellText || leaveBg) {
         const cell = viewSheet.getRange(2 + rIndex, 2 + i);
-        cell.setValue(cellText);
-        cell.setWrap(true);
+        if (cellText) {
+          cell.setValue(cellText);
+          cell.setWrap(true);
+        }
+        if (leaveBg) cell.setBackground(leaveBg);
       }
     }
   });

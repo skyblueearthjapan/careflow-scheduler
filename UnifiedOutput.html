@@ -476,6 +476,12 @@
       font-weight: 700;
       margin-right: 2px;
     }
+    /* スタッフ休み/制限バッジ */
+    .leave-badge { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 3px; margin: 1px 0; display: inline-block; }
+    .leave-badge-full { background: rgba(180,180,180,0.22); color: #777; }
+    .leave-badge-am { background: rgba(255,193,7,0.18); color: #b38f00; }
+    .leave-badge-pm { background: rgba(255,152,0,0.18); color: #c66900; }
+    .leave-badge-partial { background: rgba(255,193,7,0.12); color: #b38f00; }
 
     /* 週ビュー 監査ポップアップ */
     .audit-week-popup-overlay {
@@ -1738,6 +1744,15 @@
           lines.forEach(function(line) {
             var trimmed = line.trim();
             if (!trimmed) return;
+            // [LEAVE:*] マーカー検出（スタッフ休み/制限）
+            var leaveMatch = trimmed.match(/^\[LEAVE:(FULL|AM|PM|PARTIAL)\](.*)$/);
+            if (leaveMatch) {
+              var leaveType = leaveMatch[1];
+              var leaveText = leaveMatch[2];
+              var leaveCls = 'leave-badge-' + leaveType.toLowerCase();
+              cellHtml += '<div class="leave-badge ' + leaveCls + '">' + escapeHtml(leaveText) + '</div>';
+              return;
+            }
             // ⇄マーカー検出（インタラクティブ手動変更）
             var isManual = trimmed.charAt(0) === '\u21C4';
             if (isManual) trimmed = trimmed.substring(1);
