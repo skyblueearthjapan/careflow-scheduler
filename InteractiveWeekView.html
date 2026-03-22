@@ -319,6 +319,48 @@
     }
 
     /* ============================================================
+       Staff Leave / Absence Indicators
+       ============================================================ */
+    .day-cell.staff-off-full {
+      background: repeating-linear-gradient(
+        135deg, rgba(180,180,180,0.08), rgba(180,180,180,0.08) 4px,
+        rgba(200,200,200,0.04) 4px, rgba(200,200,200,0.04) 8px
+      );
+    }
+    .day-cell.staff-off-am {
+      background: linear-gradient(to bottom,
+        rgba(180,180,180,0.10) 0%, rgba(180,180,180,0.10) 50%,
+        transparent 50%, transparent 100%);
+    }
+    .day-cell.staff-off-pm {
+      background: linear-gradient(to bottom,
+        transparent 0%, transparent 50%,
+        rgba(180,180,180,0.10) 50%, rgba(180,180,180,0.10) 100%);
+    }
+    .day-cell.staff-off-partial {
+      background: rgba(255,193,7,0.06);
+    }
+    .staff-leave-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; line-height: 1; padding: 2px 5px;
+      border-radius: 3px; font-weight: 600;
+      pointer-events: none; white-space: nowrap;
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    }
+    .staff-leave-badge.leave-full {
+      background: rgba(180,180,180,0.18); color: #888;
+    }
+    .staff-leave-badge.leave-am {
+      background: rgba(255,193,7,0.15); color: #b38f00;
+    }
+    .staff-leave-badge.leave-pm {
+      background: rgba(255,152,0,0.15); color: #c66900;
+    }
+    .staff-leave-badge.leave-partial {
+      background: rgba(255,193,7,0.12); color: #b38f00;
+    }
+
+    /* ============================================================
        Visit Card (draggable)
        ============================================================ */
     .visit-card {
@@ -1557,6 +1599,17 @@
       var td = document.createElement('td');
       var cell = createDayCellDiv(staffId, dateStr, dayIdx);
 
+      // --- Staff leave/absence indicator ---
+      var leaveInfo = getStaffLeaveInfo(staffId, dateStr);
+      if (leaveInfo) {
+        cell.classList.add(leaveInfo.cellClass);
+        var badge = document.createElement('div');
+        badge.className = 'staff-leave-badge ' + leaveInfo.badgeClass;
+        badge.textContent = leaveInfo.label;
+        if (leaveInfo.tooltip) badge.title = leaveInfo.tooltip;
+        cell.appendChild(badge);
+      }
+
       // Events
       var evKey = staffId + '|' + dateStr;
       var events = (_state.eventMap && _state.eventMap[evKey]) ? _state.eventMap[evKey] : [];
@@ -1568,16 +1621,93 @@
       var visits = getVisitsForCell(staffId, dateStr);
       visits.sort(function(a, b) { return (a.startMin || 0) - (b.startMin || 0); });
 
-      if (visits.length === 0 && events.length === 0) {
+      var hasContent = visits.length > 0 || events.length > 0 || leaveInfo;
+      if (!hasContent) {
         cell.appendChild(createEmptyPlaceholder());
-      } else {
-        for (var vi = 0; vi < visits.length; vi++) {
-          cell.appendChild(renderVisitCard(visits[vi]));
-        }
+      }
+      for (var vi = 0; vi < visits.length; vi++) {
+        cell.appendChild(renderVisitCard(visits[vi]));
       }
 
       td.appendChild(cell);
       return td;
+    }
+
+    // ================================================================
+    // Staff leave/absence info helper
+    // ================================================================
+    function getStaffLeaveInfo(staffId, dateStr) {
+      if (!_state || !_state.staffChangeMap) return null;
+      var key = staffId + '|' + dateStr;
+      var changes = _state.staffChangeMap[key];
+      if (!changes || changes.length === 0) return null;
+
+      // Check for full-day off first
+      for (var i = 0; i < changes.length; i++) {
+        var rt = changes[i].restrictionType;
+        if (rt === '休み' || rt === '終日不可' || rt === '終日') {
+          return {
+            cellClass: 'staff-off-full',
+            badgeClass: 'leave-full',
+            label: '\uD83D\uDEAB ' + rt,
+            tooltip: rt
+          };
+        }
+      }
+
+      // Check for half-day
+      for (var j = 0; j < changes.length; j++) {
+        var rt2 = changes[j].restrictionType;
+        if (rt2 === '午前休') {
+          return {
+            cellClass: 'staff-off-am',
+            badgeClass: 'leave-am',
+            label: '\u2600 午前休',
+            tooltip: '午前休（〜12:00）'
+          };
+        }
+        if (rt2 === '午後休') {
+          return {
+            cellClass: 'staff-off-pm',
+            badgeClass: 'leave-pm',
+            label: '\uD83C\uDF19 午後休',
+            tooltip: '午後休（12:00〜）'
+          };
+        }
+      }
+
+      // Other restrictions (遅刻, 早退, 時間指定)
+      var labels = [];
+      var tooltips = [];
+      for (var k = 0; k < changes.length; k++) {
+        var c = changes[k];
+        var rt3 = c.restrictionType;
+        var timeStr = '';
+        if (c.startTime != null && c.endTime != null) {
+          timeStr = fmtMin(c.startTime) + '\u301C' + fmtMin(c.endTime);
+        }
+        if (rt3 === '遅刻') {
+          labels.push('遅刻');
+          tooltips.push('遅刻' + (timeStr ? '（' + timeStr + '）' : ''));
+        } else if (rt3 === '早退') {
+          labels.push('早退');
+          tooltips.push('早退' + (timeStr ? '（' + timeStr + '）' : ''));
+        } else if (rt3 === '時間指定' || rt3 === '時間指定制限') {
+          labels.push(timeStr || '時間制限');
+          tooltips.push('時間指定制限' + (timeStr ? '（' + timeStr + '）' : ''));
+        } else {
+          var safe = rt3 || '(不明)';
+          labels.push(safe);
+          tooltips.push(safe + (timeStr ? '（' + timeStr + '）' : ''));
+        }
+      }
+      if (labels.length === 0) return null;
+      return {
+        cellClass: 'staff-off-partial',
+        badgeClass: 'leave-partial',
+        label: '\u26A0 ' + labels.join(' / '),
+        tooltip: tooltips.join('\n')
+      };
     }
 
     function createDayCellDiv(staffId, dateStr, dayIdx) {
