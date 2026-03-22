@@ -21,6 +21,8 @@ function runPythonAllocate(weekStartStr) {
     if (!weekStartStr) {
       throw new Error('週開始日を指定してください');
     }
+    // UIセレクタは yyyy-MM-dd 形式、ローダーは yyyy/MM/dd を期待
+    weekStartStr = weekStartStr.replace(/-/g, '/');
 
     // ============================================================
     // 1. Collect data from sheets
@@ -133,6 +135,8 @@ function debugPythonAllocateData(weekStartStr) {
     if (!weekStartStr) {
       throw new Error('週開始日を指定してください（UI側から対象週を選択して実行）');
     }
+    // UIセレクタは yyyy-MM-dd 形式、ローダーは yyyy/MM/dd を期待
+    weekStartStr = weekStartStr.replace(/-/g, '/');
 
     var staffMasters = pyb_loadStaffMasters_(ss, tz);
     var patientMasters = pyb_loadPatientMasters_(ss, tz);
