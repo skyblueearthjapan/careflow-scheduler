@@ -638,7 +638,6 @@
     <div class="header-left">
       <h1>&#x1F4CB; &#x9031;&#x9593;&#x8A2A;&#x554F;&#x30D1;&#x30BF;&#x30FC;&#x30F3;&#x8A2D;&#x5B9A;</h1>
     </div>
-    <button class="header-back" id="backLink" style="background:none;border:none;cursor:pointer;font-size:20px;color:white;padding:4px 10px;" title="閉じる">&times;</button>
   </div>
 
   <!-- ============================================================
@@ -917,19 +916,6 @@
         elToast.classList.remove('show');
       }, 3000);
     }
-
-    /* ==============================================================
-       Back link (モーダル閉じ or 直接アクセス時はページ遷移)
-       ============================================================== */
-    document.getElementById('backLink').addEventListener('click', function() {
-      // iframe → 親へ postMessage でモーダル閉じを依頼
-      try { window.parent.postMessage({type:'closeModal', modal:'pattern'}, '*'); } catch(e) {}
-      // 直接アクセス時のフォールバック
-      google.script.run
-        .withSuccessHandler(function(url) { window.open(url + '?page=output', '_top'); })
-        .withFailureHandler(function() { window.history.back(); })
-        .getBaseUrl();
-    });
 
     /* ==============================================================
        Populate start-time dropdown (07:00 - 19:00 in 15-min steps)
