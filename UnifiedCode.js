@@ -251,6 +251,82 @@ function getWeekViewData() {
       weekStartStr = sheet.getRange(1, 9).getDisplayValue() || '';
     } catch (ignore) {}
 
+    // スタッフ休み情報をリアルタイムで付加
+    var scSheet = ss.getSheetByName('スタッフ個別変更リクエスト');
+    var leaveMap = {}; // key: staffId|dateStr => leaveMarker string
+    if (scSheet && weekStartStr) {
+      try {
+        var tz = ss.getSpreadsheetTimeZone();
+        // 週の7日分の日付を算出
+        var wsParts = weekStartStr.split('/');
+        var wsDate = new Date(parseInt(wsParts[0],10), parseInt(wsParts[1],10)-1, parseInt(wsParts[2],10));
+        var weekDateStrs = [];
+        for (var wi = 0; wi < 7; wi++) {
+          var wd = new Date(wsDate.getTime() + wi * 86400000);
+          weekDateStrs.push(Utilities.formatDate(wd, tz, 'yyyy/MM/dd'));
+        }
+        var scData = scSheet.getDataRange().getValues();
+        if (scData.length > 1) {
+          var scH = scData[0];
+          var scIdxS = scH.indexOf('staff_id');
+          var scIdxD = scH.indexOf('日付');
+          var scIdxT = scH.indexOf('制限タイプ');
+          var tempMap = {}; // staffId|dateStr => [types]
+          for (var si = 1; si < scData.length; si++) {
+            var scRow = scData[si];
+            var scSid = scIdxS >= 0 ? String(scRow[scIdxS] || '').trim() : '';
+            if (!scSid) continue;
+            var scDRaw = scIdxD >= 0 ? scRow[scIdxD] : null;
+            if (!scDRaw) continue;
+            var scDS = (scDRaw instanceof Date) ? Utilities.formatDate(scDRaw, tz, 'yyyy/MM/dd') : String(scDRaw);
+            if (weekDateStrs.indexOf(scDS) < 0) continue;
+            var scTp = scIdxT >= 0 ? String(scRow[scIdxT] || '').trim() : '';
+            if (!scTp) continue;
+            var tk = scSid + '|' + scDS;
+            if (!tempMap[tk]) tempMap[tk] = [];
+            tempMap[tk].push(scTp);
+          }
+          // マーカー文字列を生成
+          for (var tk2 in tempMap) {
+            var types = tempMap[tk2];
+            var hasF = types.some(function(t){ return t==='休み'||t==='終日不可'||t==='終日'; });
+            var hasA = types.indexOf('午前休') >= 0;
+            var hasP = types.indexOf('午後休') >= 0;
+            if (hasF) leaveMap[tk2] = '[LEAVE:FULL]\uD83D\uDEAB 休み';
+            else if (hasA) leaveMap[tk2] = '[LEAVE:AM]\u2600 午前休';
+            else if (hasP) leaveMap[tk2] = '[LEAVE:PM]\uD83C\uDF19 午後休';
+            else {
+              var others = types.filter(function(t){ return t!=='休み'&&t!=='終日不可'&&t!=='終日'&&t!=='午前休'&&t!=='午後休'; });
+              if (others.length > 0) leaveMap[tk2] = '[LEAVE:PARTIAL]\u26A0 ' + others.join(' / ');
+            }
+          }
+        }
+      } catch (ignore) { console.log('getWeekViewData leave overlay skipped: ' + ignore); }
+    }
+
+    // bodyRows の各セルに休みマーカーを差し込み
+    if (Object.keys(leaveMap).length > 0) {
+      bodyRows.forEach(function(row) {
+        // A列(row[0])からstaff_idを抽出（"S001 山田太郎（男）" → "S001"）
+        var staffLabel = String(row[0] || '');
+        var sidMatch = staffLabel.match(/^(S\d+)\s/);
+        var sid = sidMatch ? sidMatch[1] : '';
+        if (!sid) return;
+        for (var ci = 1; ci <= 7; ci++) {
+          var dateStr = weekDateStrs ? weekDateStrs[ci - 1] : '';
+          if (!dateStr) continue;
+          var lk = sid + '|' + dateStr;
+          var marker = leaveMap[lk];
+          if (marker) {
+            var existing = row[ci] ? String(row[ci]) : '';
+            // 既にマーカーがある場合はスキップ（週ビューを更新_で書き込み済み）
+            if (existing.indexOf('[LEAVE:') === 0) continue;
+            row[ci] = existing ? marker + '\n' + existing : marker;
+          }
+        }
+      });
+    }
+
     return {
       headerRow: headerRow,
       bodyRows: bodyRows,
