@@ -808,6 +808,7 @@
     var currentSlots = {};       // { dayCode: {dayCode, startMin, endMin, svcMin, needStaff, note} }
     var _patientLoadSeq = 0;
     var modalEditingDay = null;  // dayCode being edited in modal
+    var _baseUrl = '';           // GAS app base URL (from server)
 
     /* ==============================================================
        Helpers
@@ -918,17 +919,19 @@
     }
 
     /* ==============================================================
-       Back link
+       Back link + Base URL取得
        ============================================================== */
+    // サーバーから正しいGAS WebApp URLを取得
+    google.script.run
+      .withSuccessHandler(function(url) { _baseUrl = url; })
+      .getBaseUrl();
+
     document.getElementById('backLink').addEventListener('click', function() {
-      try {
-        // GAS iframe内ではgoogle.script.historyが使えないため、
-        // window.openでトップレベルナビゲーションを行う
-        var url = window.location.href.split('?')[0] + '?page=output';
-        window.open(url, '_top');
-      } catch (e) {
-        // フォールバック: 同一フレーム内で遷移
-        window.location.href = window.location.href.split('?')[0] + '?page=output';
+      if (_baseUrl) {
+        window.open(_baseUrl + '?page=output', '_top');
+      } else {
+        // フォールバック
+        window.open(window.location.href.split('?')[0] + '?page=output', '_top');
       }
     });
 
