@@ -1360,6 +1360,10 @@
           <span class="icon">📅</span><span class="spinner"></span>
           割当結果を作成
         </button>
+        <button class="action-btn secondary" id="btnPythonAllocate" onclick="runPythonAllocateUI(this)">
+          <span class="icon">🐍</span><span class="spinner"></span>
+          Python割当（テスト）
+        </button>
       </div>
 
       <div class="button-group">
@@ -2322,6 +2326,37 @@
           loadLogs();
         })
         .runJob(jobKey, weekStart);
+    }
+
+    function runPythonAllocateUI(btn) {
+      var weekStartStr = getSelectedWeekStart();
+      if (!weekStartStr) {
+        showToast('対象週を選択してください', 'error');
+        return;
+      }
+      if (!confirm('Python割当エンジンで割当を実行しますか？\n\n対象週: ' + weekStartStr + '\n\n※既存の割当結果が上書きされます')) return;
+
+      btn.classList.add('loading');
+      btn.disabled = true;
+      showToast('Python割当エンジン実行中...', 'info');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.classList.remove('loading');
+          btn.disabled = false;
+          if (result && result.success) {
+            showToast(result.message, 'success');
+            showTab('assignResult', document.querySelector('[data-tab="assignResult"]'));
+          } else {
+            showToast(result ? result.message : 'エラーが発生しました', 'error');
+          }
+        })
+        .withFailureHandler(function(e) {
+          btn.classList.remove('loading');
+          btn.disabled = false;
+          showToast('エラー: ' + (e.message || e), 'error');
+        })
+        .runPythonAllocate(weekStartStr);
     }
 
     function rebuildNgSheet(btn) {
