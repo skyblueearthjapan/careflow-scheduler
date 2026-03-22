@@ -922,14 +922,9 @@
        Back link (モーダル閉じ or 直接アクセス時はページ遷移)
        ============================================================== */
     document.getElementById('backLink').addEventListener('click', function() {
-      try {
-        // モーダルiframe内の場合: 親のclosePatternModal()を呼ぶ
-        if (window.parent && window.parent !== window && window.parent.closePatternModal) {
-          window.parent.closePatternModal();
-          return;
-        }
-      } catch (e) { /* cross-origin, fall through */ }
-      // 直接アクセス（?page=pattern）の場合: サーバーからURL取得して遷移
+      // iframe → 親へ postMessage でモーダル閉じを依頼
+      try { window.parent.postMessage({type:'closeModal', modal:'pattern'}, '*'); } catch(e) {}
+      // 直接アクセス時のフォールバック
       google.script.run
         .withSuccessHandler(function(url) { window.open(url + '?page=output', '_top'); })
         .withFailureHandler(function() { window.history.back(); })

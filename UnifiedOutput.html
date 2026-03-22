@@ -4840,6 +4840,13 @@
       iframe.src = '';
     }
 
+    // iframe からの postMessage でモーダル閉じを受信
+    window.addEventListener('message', function(e) {
+      if (!e.data || e.data.type !== 'closeModal') return;
+      if (e.data.modal === 'interactive') closeInteractiveModal();
+      if (e.data.modal === 'pattern') closePatternModal();
+    });
+
     function saveWeekSnapshot() {
       var weekStartStr = window.weekViewAuditWeekStart || '';
       if (!weekStartStr) {
