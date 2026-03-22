@@ -443,7 +443,7 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       max-width: 80px;
     }
-    .visit-two-staff-icon { font-size: 10px; margin-left: auto; }
+    .visit-two-staff-icon { font-size: 10px; margin-right: 2px; flex-shrink: 0; }
     .visit-svc-time {
       font-size: 9px; color: var(--color-text-light); margin-left: auto;
     }
@@ -471,7 +471,7 @@
       background: rgba(245,127,23,0.06);
     }
     .visit-audit-badge {
-      position: absolute; top: 1px; left: 1px;
+      position: absolute; top: 1px; right: 1px;
       font-size: 8px; font-weight: 700; padding: 0 3px; border-radius: 3px;
       line-height: 1.4;
     }
@@ -1827,13 +1827,7 @@
 
       // Name
       var nameSpan = document.createElement('span');
-      nameSpan.className = 'visit-name';
-      var pName = (patient && patient.name) ? patient.name : (visit.pname || pid);
-      nameSpan.textContent = pName;
-      nameSpan.title = pName;
-      div.appendChild(nameSpan);
-
-      // Coupled icon
+      // Coupled icon (before name)
       if (isCoupled) {
         var icon = document.createElement('span');
         icon.className = 'visit-two-staff-icon';
@@ -1841,6 +1835,12 @@
         icon.title = '2\u540d\u4f53\u5236';
         div.appendChild(icon);
       }
+
+      nameSpan.className = 'visit-name';
+      var pName = (patient && patient.name) ? patient.name : (visit.pname || pid);
+      nameSpan.textContent = pName;
+      nameSpan.title = pName;
+      div.appendChild(nameSpan);
 
       // Svc time
       if (svcMin > 0) {
