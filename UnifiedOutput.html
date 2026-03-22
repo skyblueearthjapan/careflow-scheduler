@@ -1890,13 +1890,20 @@
       var cellSummary = auditData.cellSummary || {};
       var weekDates = auditData.weekDates || [];
 
-      // 未割当チェック
+      // 未割当チェック（週ビューの未割当行から実際の表示行数をカウント）
       var unassignedTotal = 0;
-      weekDates.forEach(function(wd) {
-        var uKey = '_UNASSIGNED_|' + wd.dateStr;
-        var uItems = cellSummary[uKey] || [];
-        unassignedTotal += uItems.length;
-      });
+      var allTrs = tbody.querySelectorAll('tr');
+      for (var ui = 0; ui < allTrs.length; ui++) {
+        var uCells = allTrs[ui].querySelectorAll('td');
+        if (uCells.length < 2) continue;
+        var uLabel = uCells[0].textContent.trim();
+        if (uLabel.indexOf('未割当') < 0) continue;
+        // 未割当行のday cellsから visit-line（休みバッジを除く）をカウント
+        for (var uc = 1; uc < uCells.length; uc++) {
+          var vLines = uCells[uc].querySelectorAll('.visit-line');
+          unassignedTotal += vLines.length;
+        }
+      }
       var banner = document.getElementById('auditUnassignedBanner');
       if (banner && unassignedTotal > 0) {
         banner.className = 'audit-unassigned-banner';
