@@ -2371,15 +2371,10 @@
     // 画面遷移
     // ============================================================
     function goToPattern() {
-      var targetUrl;
-      if (baseUrl) {
-        targetUrl = baseUrl + '?page=pattern';
-      } else {
-        var currentUrl = window.location.href;
-        targetUrl = currentUrl.split('?')[0] + '?page=pattern';
-      }
+      var targetUrl = baseUrl ? baseUrl + '?page=pattern'
+        : window.location.href.split('?')[0] + '?page=pattern';
       try {
-        window.top.location.href = targetUrl;
+        window.open(targetUrl, '_top');
       } catch (e) {
         window.location.href = targetUrl;
       }

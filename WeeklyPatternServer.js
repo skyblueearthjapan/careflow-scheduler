@@ -34,35 +34,66 @@ function wp_getPatientList() {
     }
 
     var headers = data[0];
-    var col = {};
-    var colNames = [
-      'patient_id', '患者名', '週訪問回数', '希望曜日（複数可）', '曜日NG',
-      '必要スタッフ数', '性別制限', '継続希望', '指定スタッフID', '指定タイプ',
-      'NGスタッフID', '時間タイプ', '希望時間帯（開始）', '希望時間帯（終了）',
-      'サービス時間', '保険区分'
-    ];
-    for (var ci = 0; ci < colNames.length; ci++) {
-      col[colNames[ci]] = headers.indexOf(colNames[ci]);
+    // ヘッダー名の正規化（全角/半角スペース除去、小文字化）でマッチング
+    var normalizedHeaders = [];
+    for (var hi = 0; hi < headers.length; hi++) {
+      normalizedHeaders.push(String(headers[hi] || '').replace(/[\s\u3000]/g, '').toLowerCase());
+    }
+
+    function findCol_(keyword) {
+      // まず完全一致
+      var exact = headers.indexOf(keyword);
+      if (exact >= 0) return exact;
+      // 正規化後の部分一致
+      var kw = keyword.replace(/[\s\u3000]/g, '').toLowerCase();
+      for (var fi = 0; fi < normalizedHeaders.length; fi++) {
+        if (normalizedHeaders[fi].indexOf(kw) >= 0) return fi;
+      }
+      return -1;
+    }
+
+    var col = {
+      pid:        findCol_('patient_id'),
+      name:       findCol_('患者名'),
+      weekly:     findCol_('週訪問回数'),
+      prefDays:   findCol_('希望曜日'),
+      ngDays:     findCol_('曜日NG'),
+      needStaff:  findCol_('必要スタッフ数'),
+      sexLimit:   findCol_('性別制限'),
+      contPref:   findCol_('継続希望'),
+      fixedStaff: findCol_('指定スタッフID'),
+      fixedType:  findCol_('指定タイプ'),
+      ngStaff:    findCol_('NGスタッフID'),
+      timeType:   findCol_('時間タイプ'),
+      startPref:  findCol_('希望時間帯（開始）'),
+      endPref:    findCol_('希望時間帯（終了）'),
+      svcMin:     findCol_('サービス時間'),
+      insurance:  findCol_('保険区分')
+    };
+
+    // デバッグ: 見つからなかった列をログ出力
+    for (var ck in col) {
+      if (col[ck] < 0) console.log('wp_getPatientList: column not found for key=' + ck);
     }
 
     var patients = [];
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
-      var pid = col['patient_id'] >= 0 ? String(row[col['patient_id']]) : '';
+      var pid = col.pid >= 0 ? String(row[col.pid] || '') : '';
       if (!pid) continue;
 
-      var name = col['患者名'] >= 0 ? String(row[col['患者名']]) : '';
-      var weeklyCount = col['週訪問回数'] >= 0 ? Number(row[col['週訪問回数']]) || 0 : 0;
-      var needStaff = col['必要スタッフ数'] >= 0 ? Number(row[col['必要スタッフ数']]) || 1 : 1;
-      var prefDays = col['希望曜日（複数可）'] >= 0 ? wp_parseDays_(row[col['希望曜日（複数可）']]) : [];
-      var ngDays = col['曜日NG'] >= 0 ? wp_parseDays_(row[col['曜日NG']]) : [];
-      var timeType = col['時間タイプ'] >= 0 ? String(row[col['時間タイプ']] || '') : '';
-      var startPref = col['希望時間帯（開始）'] >= 0 ? wp_serialToMinutes_(row[col['希望時間帯（開始）']]) : null;
-      var endPref = col['希望時間帯（終了）'] >= 0 ? wp_serialToMinutes_(row[col['希望時間帯（終了）']]) : null;
-      var svcMin = col['サービス時間'] >= 0 ? Number(row[col['サービス時間']]) || 0 : 0;
-      var sexLimit = col['性別制限'] >= 0 ? String(row[col['性別制限']] || '') : '';
-      var fixedStaff = col['指定スタッフID'] >= 0 ? String(row[col['指定スタッフID']] || '') : '';
-      var contPref = col['継続希望'] >= 0 ? String(row[col['継続希望']] || '') : '';
+      var name = col.name >= 0 ? String(row[col.name] || '') : '';
+      var weeklyCount = col.weekly >= 0 ? Number(row[col.weekly]) || 0 : 0;
+      var needStaff = col.needStaff >= 0 ? Number(row[col.needStaff]) || 1 : 1;
+      var prefDays = col.prefDays >= 0 ? wp_parseDays_(row[col.prefDays]) : [];
+      var ngDays = col.ngDays >= 0 ? wp_parseDays_(row[col.ngDays]) : [];
+      var timeType = col.timeType >= 0 ? String(row[col.timeType] || '') : '';
+      var startPref = col.startPref >= 0 ? wp_serialToMinutes_(row[col.startPref]) : null;
+      var endPref = col.endPref >= 0 ? wp_serialToMinutes_(row[col.endPref]) : null;
+      var svcMin = col.svcMin >= 0 ? Number(row[col.svcMin]) || 0 : 0;
+      var sexLimit = col.sexLimit >= 0 ? String(row[col.sexLimit] || '') : '';
+      var fixedStaff = col.fixedStaff >= 0 ? String(row[col.fixedStaff] || '') : '';
+      var contPref = col.contPref >= 0 ? String(row[col.contPref] || '') : '';
 
       patients.push({
         pid: pid,

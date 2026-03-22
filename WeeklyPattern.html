@@ -921,8 +921,15 @@
        Back link
        ============================================================== */
     document.getElementById('backLink').addEventListener('click', function() {
-      var baseUrl = window.top.location.href.split('?')[0];
-      window.top.location.href = baseUrl + '?page=output';
+      try {
+        // GAS iframe内ではgoogle.script.historyが使えないため、
+        // window.openでトップレベルナビゲーションを行う
+        var url = window.location.href.split('?')[0] + '?page=output';
+        window.open(url, '_top');
+      } catch (e) {
+        // フォールバック: 同一フレーム内で遷移
+        window.location.href = window.location.href.split('?')[0] + '?page=output';
+      }
     });
 
     /* ==============================================================
