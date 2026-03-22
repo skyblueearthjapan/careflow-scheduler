@@ -332,12 +332,12 @@ function saveSnapshot(weekStartStr) {
     weekCopy.setName(weekName);
   }
 
-  // 確定スケジュール履歴に保存
+  // 確定スケジュール履歴に保存（スナップショットコピーから読む）
   var historySaved = 0;
   try {
-    var histResult = iwv_saveConfirmedHistory_(weekStartStr);
+    var histResult = iwv_saveConfirmedHistory_(weekStartStr, resultName);
     historySaved = histResult.saved;
-    Logger.log('確定スケジュール履歴: ' + historySaved + '件保存');
+    Logger.log('確定スケジュール履歴: ' + historySaved + '件保存 (from ' + resultName + ')');
   } catch (e) {
     Logger.log('確定スケジュール履歴エラー: ' + e.message);
   }
@@ -1018,9 +1018,23 @@ function iwv_appendChangeLog_(ss, logEntries) {
  * @param {string} weekStartStr - "yyyy/MM/dd" 形式の週開始日
  * @returns {Object} { success: boolean, saved: number }
  */
-function iwv_saveConfirmedHistory_(weekStartStr) {
+/**
+ * 確定スケジュール履歴に保存する。
+ * スナップショットコピーから読むことで、割当結果シートが別の週に
+ * 上書きされていても正しい週のデータを保存できる。
+ * @param {string} weekStartStr - 週開始日
+ * @param {string} [snapshotSheetName] - スナップショットシート名（省略時は割当結果から読む）
+ */
+function iwv_saveConfirmedHistory_(weekStartStr, snapshotSheetName) {
   var ss = iwv_getSpreadsheet_();
-  var resultSheet = ss.getSheetByName('割当結果');
+  // スナップショットシートがあればそちらから読む（確実）
+  var resultSheet = null;
+  if (snapshotSheetName) {
+    resultSheet = ss.getSheetByName(snapshotSheetName);
+  }
+  if (!resultSheet) {
+    resultSheet = ss.getSheetByName('割当結果');
+  }
   if (!resultSheet) throw new Error('割当結果シートが見つかりません');
 
   // 確定スケジュール履歴シートを取得 or 作成
@@ -1061,6 +1075,18 @@ function iwv_saveConfirmedHistory_(weekStartStr) {
   var now = new Date();
   var rows = [];
 
+  // 週の日付範囲を算出（weekStartStr から7日間）
+  var tz = ss.getSpreadsheetTimeZone();
+  var weekStartDate = iwv_parseDate_(weekStartStr);
+  var weekDateSet = {};
+  if (weekStartDate) {
+    for (var wi = 0; wi < 7; wi++) {
+      var wd = new Date(weekStartDate.getTime() + wi * 86400000);
+      weekDateSet[Utilities.formatDate(wd, tz, 'yyyy/MM/dd')] = true;
+    }
+  }
+
+  var skippedOutOfRange = 0;
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
     // visit_id が空 or イベント行 (EV_) はスキップ
@@ -1069,6 +1095,15 @@ function iwv_saveConfirmedHistory_(weekStartStr) {
     // 未割当（staff_id が空）はスキップ
     var sid = col.staffId >= 0 ? String(r[col.staffId] || '') : '';
     if (!sid) continue;
+    // 日付が対象週の範囲内か確認
+    if (weekStartDate && col.date >= 0) {
+      var rowDate = r[col.date];
+      var rowDateStr = (rowDate instanceof Date) ? Utilities.formatDate(rowDate, tz, 'yyyy/MM/dd') : String(rowDate || '');
+      if (rowDateStr && !weekDateSet[rowDateStr]) {
+        skippedOutOfRange++;
+        continue; // この週に含まれない日付はスキップ
+      }
+    }
 
     rows.push([
       now,
@@ -1085,6 +1120,10 @@ function iwv_saveConfirmedHistory_(weekStartStr) {
       col.svcMin >= 0 ? r[col.svcMin] : '',
       col.note >= 0 ? String(r[col.note] || '') : ''
     ]);
+  }
+
+  if (skippedOutOfRange > 0) {
+    Logger.log('確定スケジュール履歴: ' + skippedOutOfRange + '件を週範囲外としてスキップ');
   }
 
   if (rows.length > 0) {
