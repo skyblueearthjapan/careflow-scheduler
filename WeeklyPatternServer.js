@@ -3,6 +3,7 @@
  * GAS サーバー側ロジック: 週間訪問パターン管理
  *
  * Public functions (callable via google.script.run):
+ *   - openWeeklyPattern()
  *   - wp_getPatientList()
  *   - wp_getPattern(patientId)
  *   - wp_savePattern(patientId, patientName, slotsJson)
@@ -14,6 +15,14 @@
 // ============================================================
 // Public Functions
 // ============================================================
+
+/**
+ * 週間訪問パターン画面のURLを返す（iframeモーダル用）
+ * @returns {string} URL
+ */
+function openWeeklyPattern() {
+  return ScriptApp.getService().getUrl() + '?page=pattern';
+}
 
 /**
  * 患者マスタから患者一覧を取得（ドロップダウン用）

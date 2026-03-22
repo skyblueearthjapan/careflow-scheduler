@@ -1453,6 +1453,19 @@
     </div>
   </div>
 
+  <!-- 週間パターン設定モーダル -->
+  <div class="interactive-modal" id="patternModal">
+    <div class="interactive-modal-content">
+      <div class="interactive-modal-header" style="background: var(--color-blue);">
+        <span>📋 週間訪問パターン設定</span>
+        <button class="audit-close-btn" onclick="closePatternModal()">×</button>
+      </div>
+      <div class="interactive-modal-body">
+        <iframe id="patternIframe"></iframe>
+      </div>
+    </div>
+  </div>
+
   <!-- カイポケ自動化モーダル -->
   <div class="kaipoke-modal" id="kaipokeModal">
     <div class="kaipoke-modal-content">
@@ -2371,13 +2384,26 @@
     // 画面遷移
     // ============================================================
     function goToPattern() {
-      var targetUrl = baseUrl ? baseUrl + '?page=pattern'
-        : window.location.href.split('?')[0] + '?page=pattern';
-      try {
-        window.open(targetUrl, '_top');
-      } catch (e) {
-        window.location.href = targetUrl;
-      }
+      var btn = document.querySelector('[onclick="goToPattern()"]');
+      if (btn) { btn.disabled = true; btn.textContent = '読み込み中...'; }
+      google.script.run
+        .withSuccessHandler(function(url) {
+          if (btn) { btn.disabled = false; btn.textContent = '📋 週間パターン設定'; }
+          var iframe = document.getElementById('patternIframe');
+          iframe.src = url;
+          document.getElementById('patternModal').classList.add('show');
+        })
+        .withFailureHandler(function(e) {
+          showToast('エラー: ' + e.message, 'error');
+          if (btn) { btn.disabled = false; btn.textContent = '📋 週間パターン設定'; }
+        })
+        .openWeeklyPattern();
+    }
+
+    function closePatternModal() {
+      document.getElementById('patternModal').classList.remove('show');
+      var iframe = document.getElementById('patternIframe');
+      iframe.src = '';
     }
 
     function goToInput() {

@@ -919,20 +919,21 @@
     }
 
     /* ==============================================================
-       Back link + Base URL取得
+       Back link (モーダル閉じ or 直接アクセス時はページ遷移)
        ============================================================== */
-    // サーバーから正しいGAS WebApp URLを取得
-    google.script.run
-      .withSuccessHandler(function(url) { _baseUrl = url; })
-      .getBaseUrl();
-
     document.getElementById('backLink').addEventListener('click', function() {
-      if (_baseUrl) {
-        window.open(_baseUrl + '?page=output', '_top');
-      } else {
-        // フォールバック
-        window.open(window.location.href.split('?')[0] + '?page=output', '_top');
-      }
+      try {
+        // モーダルiframe内の場合: 親のclosePatternModal()を呼ぶ
+        if (window.parent && window.parent !== window && window.parent.closePatternModal) {
+          window.parent.closePatternModal();
+          return;
+        }
+      } catch (e) { /* cross-origin, fall through */ }
+      // 直接アクセス（?page=pattern）の場合: サーバーからURL取得して遷移
+      google.script.run
+        .withSuccessHandler(function(url) { window.open(url + '?page=output', '_top'); })
+        .withFailureHandler(function() { window.history.back(); })
+        .getBaseUrl();
     });
 
     /* ==============================================================
