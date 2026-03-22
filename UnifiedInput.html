@@ -762,7 +762,7 @@
       <button class="tab-btn" data-sheet="スタッフ同行割付" onclick="showSheet('スタッフ同行割付', this)">同行割付</button>
       <button class="tab-btn" data-sheet="特別訪問週間" onclick="showSpecialWeekSheet(this)">特別訪問週間</button>
     </div>
-    <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
+    <div class="tabs-right"><a class="nav-link" onclick="goToPattern()">📋 週間パターン設定</a> <a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
   </div>
 
   <div class="toast-container" id="toastContainer"></div>
@@ -2114,6 +2114,12 @@
     function goToOutput() {
       if (isDirty && !confirm('未保存の変更があります。破棄して移動しますか？')) return;
       var targetUrl = baseUrl ? baseUrl + '?page=output' : window.location.href.split('?')[0] + '?page=output';
+      try { window.top.location.href = targetUrl; } catch (e) { window.location.href = targetUrl; }
+    }
+
+    function goToPattern() {
+      if (isDirty && !confirm('未保存の変更があります。破棄して移動しますか？')) return;
+      var targetUrl = baseUrl ? baseUrl + '?page=pattern' : window.location.href.split('?')[0] + '?page=pattern';
       try { window.top.location.href = targetUrl; } catch (e) { window.location.href = targetUrl; }
     }
 

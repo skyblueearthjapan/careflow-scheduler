@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base target="_top">
+  <style>
+    /* ============================================================
+       Design System Variables (matching existing app)
+       ============================================================ */
+    :root {
+      --color-green: #B7D38A;
+      --color-green-light: #D4E8B8;
+      --color-green-dark: #8FB65A;
+      --color-blue: #7DA7D9;
+      --color-blue-light: #B8D4F0;
+      --color-blue-dark: #5A8ABF;
+      --color-orange: #E8A87C;
+      --color-orange-dark: #D4895A;
+      --color-yellow-light: #FDF5E6;
+      --color-white: #FFFFFF;
+      --color-text: #333333;
+      --color-text-light: #888888;
+      --color-border: #E0E0E0;
+      --color-bg: #FAFAFA;
+      --color-error: #E88B8B;
+      --color-error-dark: #C75050;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Hiragino Sans', 'Meiryo', 'Segoe UI', sans-serif;
+      background: var(--color-bg);
+      color: var(--color-text);
+      min-height: 100vh;
+    }
+
+    /* ============================================================
+       Header
+       ============================================================ */
+    .header {
+      background: linear-gradient(135deg, var(--color-blue) 0%, var(--color-blue-dark) 100%);
+      color: var(--color-white);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .header-back {
+      color: var(--color-white);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 6px 14px;
+      border: 1px solid rgba(255,255,255,0.4);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.15);
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .header-back:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    /* ============================================================
+       Main Container
+       ============================================================ */
+    .main-container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    /* ============================================================
+       Patient Selector
+       ============================================================ */
+    .selector-card {
+      background: var(--color-white);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border: 1px solid var(--color-border);
+    }
+
+    .selector-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .selector-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-text);
+      white-space: nowrap;
+    }
+
+    .selector-dropdown {
+      flex: 1;
+      min-width: 180px;
+      padding: 8px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      background: var(--color-white);
+      color: var(--color-text);
+      appearance: auto;
+    }
+    .selector-dropdown:focus {
+      outline: none;
+      border-color: var(--color-blue);
+      box-shadow: 0 0 0 2px var(--color-blue-light);
+    }
+
+    .search-input {
+      width: 120px;
+      padding: 8px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .search-input:focus {
+      outline: none;
+      border-color: var(--color-blue);
+      box-shadow: 0 0 0 2px var(--color-blue-light);
+    }
+
+    .nav-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .nav-btn {
+      padding: 6px 14px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: var(--color-white);
+      color: var(--color-text);
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .nav-btn:hover:not(:disabled) {
+      background: var(--color-blue-light);
+      border-color: var(--color-blue);
+    }
+    .nav-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ============================================================
+       Info Card
+       ============================================================ */
+    .info-card {
+      background: var(--color-white);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border: 1px solid var(--color-border);
+    }
+
+    .info-card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-blue-dark);
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--color-blue-light);
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 16px;
+      font-size: 12px;
+    }
+
+    .info-item {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .info-label {
+      color: var(--color-text-light);
+      white-space: nowrap;
+      min-width: 80px;
+    }
+
+    .info-value {
+      font-weight: 600;
+      color: var(--color-text);
+    }
+
+    .info-value-red {
+      font-weight: 600;
+      color: var(--color-error-dark);
+    }
+
+    .pattern-status {
+      grid-column: 1 / -1;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--color-border);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .status-ok {
+      color: var(--color-green-dark);
+    }
+
+    .status-warn {
+      color: var(--color-orange-dark);
+    }
+
+    /* ============================================================
+       Week Grid
+       ============================================================ */
+    .week-grid-card {
+      background: var(--color-white);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border: 1px solid var(--color-border);
+      overflow-x: auto;
+    }
+
+    .week-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 0;
+      min-width: 560px;
+    }
+
+    .day-header {
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 4px;
+      border-bottom: 2px solid var(--color-blue);
+      color: var(--color-text);
+    }
+    .day-header-sat {
+      color: var(--color-blue-dark);
+    }
+    .day-header-sun {
+      color: var(--color-error-dark);
+    }
+
+    .day-cell {
+      min-height: 130px;
+      border: 1px solid var(--color-border);
+      border-top: none;
+      padding: 8px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: background 0.15s;
+    }
+
+    .day-cell-filled {
+      border-left: 3px solid var(--color-green-dark);
+      background: var(--color-green-light);
+      cursor: pointer;
+    }
+    .day-cell-filled:hover {
+      background: var(--color-green);
+    }
+
+    .day-cell-empty {
+      background: var(--color-white);
+    }
+
+    .day-cell-ng {
+      background: repeating-linear-gradient(
+        -45deg,
+        #F0F0F0,
+        #F0F0F0 4px,
+        #E8E8E8 4px,
+        #E8E8E8 8px
+      );
+      cursor: default;
+    }
+
+    .ng-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #AAAAAA;
+    }
+
+    .slot-time {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-text);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .slot-duration {
+      font-size: 11px;
+      color: var(--color-text-light);
+      margin-top: 2px;
+    }
+
+    .slot-staff {
+      font-size: 10px;
+      color: var(--color-blue-dark);
+      margin-top: 1px;
+    }
+
+    .slot-note {
+      font-size: 10px;
+      color: var(--color-text-light);
+      margin-top: 1px;
+      max-width: 80px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .btn-delete-slot {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 20px;
+      height: 20px;
+      border: none;
+      border-radius: 50%;
+      background: var(--color-error);
+      color: var(--color-white);
+      font-size: 12px;
+      line-height: 20px;
+      text-align: center;
+      cursor: pointer;
+      padding: 0;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+    .btn-delete-slot:hover {
+      opacity: 1;
+    }
+
+    .btn-add-slot {
+      width: 40px;
+      height: 40px;
+      border: 2px dashed var(--color-border);
+      border-radius: 50%;
+      background: var(--color-white);
+      color: var(--color-blue);
+      font-size: 22px;
+      line-height: 36px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      padding: 0;
+    }
+    .btn-add-slot:hover {
+      border-color: var(--color-blue);
+      background: var(--color-blue-light);
+      color: var(--color-blue-dark);
+    }
+
+    /* ============================================================
+       Warning on NG day
+       ============================================================ */
+    .ng-warning {
+      position: absolute;
+      bottom: 4px;
+      left: 4px;
+      right: 4px;
+      font-size: 9px;
+      color: var(--color-error-dark);
+      background: rgba(232,139,139,0.15);
+      padding: 2px 4px;
+      border-radius: 3px;
+      text-align: center;
+    }
+
+    /* ============================================================
+       Save Area
+       ============================================================ */
+    .save-area {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .btn-save {
+      padding: 12px 48px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--color-blue) 0%, var(--color-blue-dark) 100%);
+      color: var(--color-white);
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 8px rgba(90,138,191,0.3);
+    }
+    .btn-save:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(90,138,191,0.4);
+    }
+    .btn-save:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ============================================================
+       Modal Overlay
+       ============================================================ */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-box {
+      background: var(--color-white);
+      border-radius: 12px;
+      padding: 24px;
+      width: 340px;
+      max-width: 90vw;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    .modal-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--color-text);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--color-blue-light);
+    }
+
+    .modal-field {
+      margin-bottom: 12px;
+    }
+
+    .modal-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-text-light);
+      margin-bottom: 4px;
+    }
+
+    .modal-field select,
+    .modal-field input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--color-text);
+      background: var(--color-white);
+    }
+    .modal-field select:focus,
+    .modal-field input[type="text"]:focus {
+      outline: none;
+      border-color: var(--color-blue);
+      box-shadow: 0 0 0 2px var(--color-blue-light);
+    }
+
+    .modal-field .readonly-display {
+      padding: 8px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-size: 13px;
+      background: var(--color-bg);
+      color: var(--color-text-light);
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 18px;
+      justify-content: flex-end;
+    }
+
+    .modal-btn {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .modal-btn-primary {
+      background: var(--color-blue);
+      color: var(--color-white);
+    }
+    .modal-btn-primary:hover {
+      background: var(--color-blue-dark);
+    }
+
+    .modal-btn-cancel {
+      background: var(--color-bg);
+      color: var(--color-text);
+      border: 1px solid var(--color-border);
+    }
+    .modal-btn-cancel:hover {
+      background: var(--color-border);
+    }
+
+    /* ============================================================
+       Toast
+       ============================================================ */
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2000;
+      pointer-events: none;
+    }
+
+    .toast {
+      padding: 10px 24px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-white);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: auto;
+      white-space: nowrap;
+    }
+    .toast.show {
+      opacity: 1;
+    }
+    .toast-success {
+      background: var(--color-green-dark);
+    }
+    .toast-error {
+      background: var(--color-error-dark);
+    }
+    .toast-warn {
+      background: var(--color-orange-dark);
+    }
+
+    /* ============================================================
+       Loading Spinner
+       ============================================================ */
+    .loading-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.7);
+      z-index: 900;
+      align-items: center;
+      justify-content: center;
+    }
+    .loading-overlay.active {
+      display: flex;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid var(--color-border);
+      border-top-color: var(--color-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ============================================================
+       Responsive tweaks
+       ============================================================ */
+    @media (max-width: 600px) {
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+      .search-input {
+        width: 90px;
+      }
+      .selector-dropdown {
+        min-width: 120px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       Header
+       ============================================================ -->
+  <div class="header">
+    <div class="header-left">
+      <h1>&#x1F4CB; &#x9031;&#x9593;&#x8A2A;&#x554F;&#x30D1;&#x30BF;&#x30FC;&#x30F3;&#x8A2D;&#x5B9A;</h1>
+    </div>
+    <a class="header-back" href="javascript:void(0)" id="backLink">&larr; &#x51FA;&#x529B;&#x306B;&#x623B;&#x308B;</a>
+  </div>
+
+  <!-- ============================================================
+       Main Container
+       ============================================================ -->
+  <div class="main-container">
+
+    <!-- Patient Selector -->
+    <div class="selector-card">
+      <div class="selector-row">
+        <span class="selector-label">&#x5229;&#x7528;&#x8005;:</span>
+        <select id="patientSelect" class="selector-dropdown" disabled>
+          <option value="">&#x8AAD;&#x307F;&#x8FBC;&#x307F;&#x4E2D;...</option>
+        </select>
+        <input type="text" id="searchInput" class="search-input" placeholder="&#x691C;&#x7D22;" disabled>
+      </div>
+      <div class="nav-row">
+        <button id="btnPrev" class="nav-btn" disabled>&#x25C0; &#x524D;&#x306E;&#x5229;&#x7528;&#x8005;</button>
+        <button id="btnNext" class="nav-btn" disabled>&#x6B21;&#x306E;&#x5229;&#x7528;&#x8005; &#x25B6;</button>
+      </div>
+    </div>
+
+    <!-- Basic Info Card -->
+    <div class="info-card" id="infoCard" style="display:none;">
+      <div class="info-card-title">&#x57FA;&#x672C;&#x60C5;&#x5831;</div>
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="info-label">&#x9031;&#x8A2A;&#x554F;&#x56DE;&#x6570;:</span>
+          <span class="info-value" id="infoWeeklyCount">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">&#x5FC5;&#x8981;&#x30B9;&#x30BF;&#x30C3;&#x30D5;:</span>
+          <span class="info-value" id="infoNeedStaff">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">&#x5E0C;&#x671B;&#x66DC;&#x65E5;:</span>
+          <span class="info-value" id="infoPrefDays">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">NG&#x66DC;&#x65E5;:</span>
+          <span class="info-value-red" id="infoNgDays">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">&#x5E0C;&#x671B;&#x6642;&#x9593;&#x5E2F;:</span>
+          <span class="info-value" id="infoTimePref">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">&#x30B5;&#x30FC;&#x30D3;&#x30B9;&#x6642;&#x9593;:</span>
+          <span class="info-value" id="infoSvcMin">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">&#x6027;&#x5225;&#x5236;&#x9650;:</span>
+          <span class="info-value" id="infoSexLimit">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">&#x7D99;&#x7D9A;&#x5E0C;&#x671B;:</span>
+          <span class="info-value" id="infoContPref">-</span>
+        </div>
+        <div class="pattern-status" id="patternStatus"></div>
+      </div>
+    </div>
+
+    <!-- Week Grid -->
+    <div class="week-grid-card" id="weekGridCard" style="display:none;">
+      <div class="week-grid" id="weekGrid">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+    <!-- Save Button -->
+    <div class="save-area" id="saveArea" style="display:none;">
+      <button id="btnSave" class="btn-save" disabled>&#x1F4BE; &#x4FDD;&#x5B58;</button>
+    </div>
+
+  </div>
+
+  <!-- ============================================================
+       Modal: Add/Edit Slot
+       ============================================================ -->
+  <div class="modal-overlay" id="slotModal">
+    <div class="modal-box">
+      <div class="modal-title" id="modalTitle">&#x8A2A;&#x554F;&#x67A0;&#x3092;&#x8A2D;&#x5B9A;</div>
+
+      <div class="modal-field">
+        <label>&#x958B;&#x59CB;&#x6642;&#x523B;</label>
+        <select id="modalStart"></select>
+      </div>
+
+      <div class="modal-field">
+        <label>&#x30B5;&#x30FC;&#x30D3;&#x30B9;&#x6642;&#x9593;</label>
+        <select id="modalSvcMin">
+          <option value="15">15&#x5206;</option>
+          <option value="20">20&#x5206;</option>
+          <option value="30">30&#x5206;</option>
+          <option value="45">45&#x5206;</option>
+          <option value="60">60&#x5206;</option>
+          <option value="90">90&#x5206;</option>
+          <option value="120">120&#x5206;</option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label>&#x7D42;&#x4E86;&#x6642;&#x523B;</label>
+        <div class="readonly-display" id="modalEndDisplay">--:--</div>
+      </div>
+
+      <div class="modal-field">
+        <label>&#x5FC5;&#x8981;&#x30B9;&#x30BF;&#x30C3;&#x30D5;&#x6570;</label>
+        <select id="modalNeedStaff">
+          <option value="1">1&#x540D;</option>
+          <option value="2">2&#x540D;</option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label>&#x5099;&#x8003;</label>
+        <input type="text" id="modalNote" placeholder="&#x4EFB;&#x610F;">
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" id="modalCancel">&#x30AD;&#x30E3;&#x30F3;&#x30BB;&#x30EB;</button>
+        <button class="modal-btn modal-btn-primary" id="modalConfirm">&#x8A2D;&#x5B9A;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Loading Overlay
+       ============================================================ -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- ============================================================
+       Toast Container
+       ============================================================ -->
+  <div class="toast-container" id="toastContainer">
+    <div class="toast" id="toastEl"></div>
+  </div>
+
+
+  <!-- ============================================================
+       JavaScript
+       ============================================================ -->
+  <script>
+    /* ==============================================================
+       Constants
+       ============================================================== */
+    var DAY_CODES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    var DAY_LABELS = ['\u6708','\u706B','\u6C34','\u6728','\u91D1','\u571F','\u65E5'];
+
+    var DAY_CODE_TO_LABEL = {};
+    var DAY_LABEL_TO_CODE = {};
+    (function() {
+      for (var i = 0; i < DAY_CODES.length; i++) {
+        DAY_CODE_TO_LABEL[DAY_CODES[i]] = DAY_LABELS[i];
+        DAY_LABEL_TO_CODE[DAY_LABELS[i]] = DAY_CODES[i];
+      }
+    })();
+
+    /* ==============================================================
+       State
+       ============================================================== */
+    var allPatients = [];        // full list from server
+    var filteredPatients = [];   // after search filter
+    var currentPatient = null;   // selected patient object
+    var currentSlots = {};       // { dayCode: {dayCode, startMin, endMin, svcMin, needStaff, note} }
+    var _patientLoadSeq = 0;
+    var modalEditingDay = null;  // dayCode being edited in modal
+
+    /* ==============================================================
+       Helpers
+       ============================================================== */
+    function fmtMin(min) {
+      if (min == null || min === '' || isNaN(min)) return '--:--';
+      var h = Math.floor(min / 60);
+      var m = min % 60;
+      return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
+    }
+
+    function dayCodeToLabel(code) {
+      return DAY_CODE_TO_LABEL[code] || code;
+    }
+
+    function parseDayCodes(val) {
+      if (!val) return [];
+      if (typeof val === 'string') {
+        // Could be comma separated codes or Japanese labels
+        var parts = val.split(/[,\s\u3001\u30FB]+/);
+        var result = [];
+        for (var i = 0; i < parts.length; i++) {
+          var p = parts[i].replace(/\s/g, '');
+          if (!p) continue;
+          // Check if it's a code
+          if (DAY_CODE_TO_LABEL[p]) {
+            result.push(p);
+          } else if (DAY_LABEL_TO_CODE[p]) {
+            result.push(DAY_LABEL_TO_CODE[p]);
+          } else {
+            result.push(p);
+          }
+        }
+        return result;
+      }
+      if (Array.isArray(val)) return val;
+      return [];
+    }
+
+    function dayCodesToJapanese(codes) {
+      if (!codes || codes.length === 0) return '\u306A\u3057';
+      var labels = [];
+      for (var i = 0; i < codes.length; i++) {
+        labels.push(dayCodeToLabel(codes[i]));
+      }
+      return labels.join('\u30FB');
+    }
+
+    function isNgDay(dayCode) {
+      if (!currentPatient || !currentPatient.ngDays) return false;
+      var ngCodes = parseDayCodes(currentPatient.ngDays);
+      for (var i = 0; i < ngCodes.length; i++) {
+        if (ngCodes[i] === dayCode) return true;
+      }
+      return false;
+    }
+
+    /* ==============================================================
+       DOM references
+       ============================================================== */
+    var elPatientSelect = document.getElementById('patientSelect');
+    var elSearchInput = document.getElementById('searchInput');
+    var elBtnPrev = document.getElementById('btnPrev');
+    var elBtnNext = document.getElementById('btnNext');
+    var elInfoCard = document.getElementById('infoCard');
+    var elWeekGridCard = document.getElementById('weekGridCard');
+    var elWeekGrid = document.getElementById('weekGrid');
+    var elSaveArea = document.getElementById('saveArea');
+    var elBtnSave = document.getElementById('btnSave');
+    var elSlotModal = document.getElementById('slotModal');
+    var elModalTitle = document.getElementById('modalTitle');
+    var elModalStart = document.getElementById('modalStart');
+    var elModalSvcMin = document.getElementById('modalSvcMin');
+    var elModalEndDisplay = document.getElementById('modalEndDisplay');
+    var elModalNeedStaff = document.getElementById('modalNeedStaff');
+    var elModalNote = document.getElementById('modalNote');
+    var elModalCancel = document.getElementById('modalCancel');
+    var elModalConfirm = document.getElementById('modalConfirm');
+    var elLoading = document.getElementById('loadingOverlay');
+    var elToastContainer = document.getElementById('toastContainer');
+    var elToast = document.getElementById('toastEl');
+
+    /* ==============================================================
+       Loading
+       ============================================================== */
+    function showLoading() {
+      elLoading.classList.add('active');
+    }
+    function hideLoading() {
+      elLoading.classList.remove('active');
+    }
+
+    /* ==============================================================
+       Toast
+       ============================================================== */
+    var toastTimer = null;
+    function showToast(msg, type) {
+      type = type || 'success';
+      elToast.textContent = msg;
+      elToast.className = 'toast toast-' + type;
+      // Force reflow
+      void elToast.offsetWidth;
+      elToast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function() {
+        elToast.classList.remove('show');
+      }, 3000);
+    }
+
+    /* ==============================================================
+       Back link
+       ============================================================== */
+    document.getElementById('backLink').addEventListener('click', function() {
+      var baseUrl = window.top.location.href.split('?')[0];
+      window.top.location.href = baseUrl + '?page=output';
+    });
+
+    /* ==============================================================
+       Populate start-time dropdown (07:00 - 19:00 in 15-min steps)
+       ============================================================== */
+    (function() {
+      var startMinutes = 7 * 60;  // 07:00
+      var endMinutes = 19 * 60;   // 19:00
+      for (var m = startMinutes; m <= endMinutes; m += 15) {
+        var opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = fmtMin(m);
+        elModalStart.appendChild(opt);
+      }
+    })();
+
+    /* ==============================================================
+       Modal: auto-calculate end time
+       ============================================================== */
+    function updateModalEnd() {
+      var startVal = parseInt(elModalStart.value, 10);
+      var svcVal = parseInt(elModalSvcMin.value, 10);
+      if (!isNaN(startVal) && !isNaN(svcVal)) {
+        elModalEndDisplay.textContent = fmtMin(startVal + svcVal);
+      } else {
+        elModalEndDisplay.textContent = '--:--';
+      }
+    }
+    elModalStart.addEventListener('change', updateModalEnd);
+    elModalSvcMin.addEventListener('change', updateModalEnd);
+
+    /* ==============================================================
+       Initialize: Load patient list
+       ============================================================== */
+    function init() {
+      showLoading();
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          if (!result || !result.patients) {
+            showToast('\u5229\u7528\u8005\u30C7\u30FC\u30BF\u304C\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F', 'error');
+            return;
+          }
+          allPatients = result.patients;
+          filteredPatients = allPatients.slice();
+          populateDropdown(filteredPatients);
+          elPatientSelect.disabled = false;
+          elSearchInput.disabled = false;
+          if (filteredPatients.length > 0) {
+            elPatientSelect.value = filteredPatients[0].pid;
+            selectPatient(filteredPatients[0].pid);
+          }
+          updateNavButtons();
+        })
+        .withFailureHandler(function(err) {
+          hideLoading();
+          showToast('\u8AAD\u307F\u8FBC\u307F\u30A8\u30E9\u30FC: ' + (err.message || err), 'error');
+        })
+        .wp_getPatientList();
+    }
+
+    function populateDropdown(patients) {
+      elPatientSelect.innerHTML = '';
+      for (var i = 0; i < patients.length; i++) {
+        var p = patients[i];
+        var opt = document.createElement('option');
+        opt.value = p.pid;
+        opt.textContent = p.pid + ' ' + p.name;
+        elPatientSelect.appendChild(opt);
+      }
+    }
+
+    /* ==============================================================
+       Search filter
+       ============================================================== */
+    elSearchInput.addEventListener('input', function() {
+      var q = this.value.toLowerCase().replace(/\s/g, '');
+      if (!q) {
+        filteredPatients = allPatients.slice();
+      } else {
+        filteredPatients = [];
+        for (var i = 0; i < allPatients.length; i++) {
+          var p = allPatients[i];
+          var target = (p.pid + p.name).toLowerCase();
+          if (target.indexOf(q) !== -1) {
+            filteredPatients.push(p);
+          }
+        }
+      }
+      populateDropdown(filteredPatients);
+      if (filteredPatients.length > 0) {
+        elPatientSelect.value = filteredPatients[0].pid;
+        selectPatient(filteredPatients[0].pid);
+      } else {
+        currentPatient = null;
+        currentSlots = {};
+        elInfoCard.style.display = 'none';
+        elWeekGridCard.style.display = 'none';
+        elSaveArea.style.display = 'none';
+      }
+      updateNavButtons();
+    });
+
+    /* ==============================================================
+       Dropdown change
+       ============================================================== */
+    elPatientSelect.addEventListener('change', function() {
+      selectPatient(this.value);
+      updateNavButtons();
+    });
+
+    /* ==============================================================
+       Prev / Next navigation
+       ============================================================== */
+    elBtnPrev.addEventListener('click', function() {
+      var idx = getSelectedIndex();
+      if (idx > 0) {
+        elPatientSelect.value = filteredPatients[idx - 1].pid;
+        selectPatient(filteredPatients[idx - 1].pid);
+        updateNavButtons();
+      }
+    });
+
+    elBtnNext.addEventListener('click', function() {
+      var idx = getSelectedIndex();
+      if (idx < filteredPatients.length - 1) {
+        elPatientSelect.value = filteredPatients[idx + 1].pid;
+        selectPatient(filteredPatients[idx + 1].pid);
+        updateNavButtons();
+      }
+    });
+
+    function getSelectedIndex() {
+      var val = elPatientSelect.value;
+      for (var i = 0; i < filteredPatients.length; i++) {
+        if (String(filteredPatients[i].pid) === String(val)) return i;
+      }
+      return -1;
+    }
+
+    function updateNavButtons() {
+      var idx = getSelectedIndex();
+      elBtnPrev.disabled = (idx <= 0);
+      elBtnNext.disabled = (idx < 0 || idx >= filteredPatients.length - 1);
+    }
+
+    /* ==============================================================
+       Select a patient and load pattern
+       ============================================================== */
+    function selectPatient(pid) {
+      var seq = ++_patientLoadSeq;
+      currentPatient = null;
+      for (var i = 0; i < allPatients.length; i++) {
+        if (String(allPatients[i].pid) === String(pid)) {
+          currentPatient = allPatients[i];
+          break;
+        }
+      }
+      if (!currentPatient) {
+        elInfoCard.style.display = 'none';
+        elWeekGridCard.style.display = 'none';
+        elSaveArea.style.display = 'none';
+        return;
+      }
+
+      renderInfoCard();
+      elInfoCard.style.display = '';
+
+      // Load pattern from server
+      showLoading();
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (seq !== _patientLoadSeq) return; // stale response, discard
+          hideLoading();
+          currentSlots = {};
+          if (result && result.slots) {
+            for (var i = 0; i < result.slots.length; i++) {
+              var s = result.slots[i];
+              currentSlots[s.dayCode] = {
+                dayCode: s.dayCode,
+                startMin: s.startMin,
+                endMin: s.endMin,
+                svcMin: s.svcMin,
+                needStaff: s.needStaff,
+                note: s.note || ''
+              };
+            }
+          }
+          renderWeekGrid();
+          renderPatternStatus();
+          elWeekGridCard.style.display = '';
+          elSaveArea.style.display = '';
+          elBtnSave.disabled = false;
+        })
+        .withFailureHandler(function(err) {
+          if (seq !== _patientLoadSeq) return; // stale response, discard
+          hideLoading();
+          currentSlots = {};
+          renderWeekGrid();
+          renderPatternStatus();
+          elWeekGridCard.style.display = '';
+          elSaveArea.style.display = '';
+          elBtnSave.disabled = false;
+          showToast('\u30D1\u30BF\u30FC\u30F3\u8AAD\u307F\u8FBC\u307F\u30A8\u30E9\u30FC: ' + (err.message || err), 'error');
+        })
+        .wp_getPattern(pid);
+    }
+
+    /* ==============================================================
+       Render Info Card
+       ============================================================== */
+    function renderInfoCard() {
+      var p = currentPatient;
+      if (!p) return;
+
+      document.getElementById('infoWeeklyCount').textContent =
+        (p.weeklyCount || '-') + '\u56DE/\u9031';
+      document.getElementById('infoNeedStaff').textContent =
+        (p.needStaff || '-') + '\u540D\u4F53\u5236';
+
+      var prefDays = parseDayCodes(p.prefDays);
+      document.getElementById('infoPrefDays').textContent = dayCodesToJapanese(prefDays);
+
+      var ngDays = parseDayCodes(p.ngDays);
+      document.getElementById('infoNgDays').textContent = dayCodesToJapanese(ngDays);
+
+      var timePref = '';
+      if (p.timeType) {
+        timePref = p.timeType + ' ';
+      }
+      timePref += fmtMin(p.startPref) + '\u301C' + fmtMin(p.endPref);
+      document.getElementById('infoTimePref').textContent = timePref;
+
+      document.getElementById('infoSvcMin').textContent =
+        (p.svcMin ? p.svcMin + '\u5206' : '-');
+      document.getElementById('infoSexLimit').textContent =
+        p.sexLimit || '\u306A\u3057';
+      document.getElementById('infoContPref').textContent =
+        p.contPref || '-';
+    }
+
+    /* ==============================================================
+       Render Pattern Status
+       ============================================================== */
+    function renderPatternStatus() {
+      var el = document.getElementById('patternStatus');
+      if (!currentPatient) {
+        el.textContent = '';
+        return;
+      }
+      var slotCount = 0;
+      for (var key in currentSlots) {
+        if (currentSlots.hasOwnProperty(key)) slotCount++;
+      }
+      var target = currentPatient.weeklyCount || 0;
+      var text = '\u73FE\u5728\u306E\u30D1\u30BF\u30FC\u30F3: ' + slotCount + '\u679A / ' + target + '\u56DE';
+
+      if (slotCount === target) {
+        text += ' \u2713';
+        el.className = 'pattern-status status-ok';
+      } else {
+        var diff = target - slotCount;
+        if (diff > 0) {
+          text += ' \u26A0 \u4E0D\u8DB3';
+        } else {
+          text += ' \u26A0 \u8D85\u904E';
+        }
+        el.className = 'pattern-status status-warn';
+      }
+      el.textContent = text;
+    }
+
+    /* ==============================================================
+       Render Week Grid
+       ============================================================== */
+    function renderWeekGrid() {
+      var html = '';
+
+      // Day headers
+      for (var dh = 0; dh < 7; dh++) {
+        var extraClass = '';
+        if (dh === 5) extraClass = ' day-header-sat';
+        if (dh === 6) extraClass = ' day-header-sun';
+        html += '<div class="day-header' + extraClass + '">' + DAY_LABELS[dh] + '</div>';
+      }
+
+      // Day cells
+      for (var dc = 0; dc < 7; dc++) {
+        var dayCode = DAY_CODES[dc];
+        var ng = isNgDay(dayCode);
+        var slot = currentSlots[dayCode] || null;
+
+        if (ng && !slot) {
+          // NG day, no slot
+          html += '<div class="day-cell day-cell-ng">';
+          html += '<span class="ng-label">NG</span>';
+          html += '</div>';
+        } else if (slot) {
+          // Filled cell
+          html += '<div class="day-cell day-cell-filled" data-action="edit" data-day="' + escHtml(dayCode) + '">';
+          html += '<button class="btn-delete-slot" data-action="delete" data-day="' + escHtml(dayCode) + '" title="\u524A\u9664">&times;</button>';
+          html += '<div class="slot-time">' + fmtMin(slot.startMin) + '</div>';
+          html += '<div class="slot-time">\u301C</div>';
+          html += '<div class="slot-time">' + fmtMin(slot.endMin) + '</div>';
+          html += '<div class="slot-duration">' + (slot.svcMin || '') + '\u5206</div>';
+          if (slot.needStaff && slot.needStaff > 1) {
+            html += '<div class="slot-staff">' + slot.needStaff + '\u540D\u4F53\u5236</div>';
+          }
+          if (slot.note) {
+            html += '<div class="slot-note" title="' + escHtml(slot.note) + '">' + escHtml(slot.note) + '</div>';
+          }
+          if (ng) {
+            html += '<div class="ng-warning">NG\u66DC\u65E5\u306B\u8A2D\u5B9A\u3055\u308C\u3066\u3044\u307E\u3059</div>';
+          }
+          html += '</div>';
+        } else {
+          // Empty cell
+          html += '<div class="day-cell day-cell-empty">';
+          html += '<button class="btn-add-slot" data-action="add" data-day="' + escHtml(dayCode) + '" title="\u8FFD\u52A0">+</button>';
+          html += '</div>';
+        }
+      }
+
+      elWeekGrid.innerHTML = html;
+    }
+
+    document.getElementById('weekGrid').addEventListener('click', function(e) {
+      var target = e.target;
+      // Walk up to find element with data-action
+      while (target && target !== this) {
+        var action = target.getAttribute('data-action');
+        var day = target.getAttribute('data-day');
+        if (action === 'edit' && day) {
+          openEditSlot(day);
+          return;
+        }
+        if (action === 'add' && day) {
+          openAddSlot(day);
+          return;
+        }
+        if (action === 'delete' && day) {
+          e.stopPropagation();
+          deleteSlot(day);
+          return;
+        }
+        target = target.parentElement;
+      }
+    });
+
+    function escHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    /* ==============================================================
+       Add Slot
+       ============================================================== */
+    function openAddSlot(dayCode) {
+      modalEditingDay = dayCode;
+      var dayLabel = dayCodeToLabel(dayCode);
+      elModalTitle.textContent = dayLabel + '\u66DC\u65E5\u306E\u8A2A\u554F\u67A0\u3092\u8A2D\u5B9A';
+
+      // Defaults from patient master
+      var defaultStart = 540; // 09:00
+      if (currentPatient && currentPatient.startPref != null && !isNaN(currentPatient.startPref)) {
+        defaultStart = parseInt(currentPatient.startPref, 10);
+        // Snap to nearest 15-min
+        defaultStart = Math.round(defaultStart / 15) * 15;
+      }
+      elModalStart.value = defaultStart;
+
+      var defaultSvc = 60;
+      if (currentPatient && currentPatient.svcMin) {
+        defaultSvc = parseInt(currentPatient.svcMin, 10);
+      }
+      elModalSvcMin.value = defaultSvc;
+
+      var defaultStaff = 1;
+      if (currentPatient && currentPatient.needStaff) {
+        defaultStaff = parseInt(currentPatient.needStaff, 10);
+      }
+      elModalNeedStaff.value = defaultStaff;
+
+      elModalNote.value = '';
+
+      updateModalEnd();
+      elSlotModal.classList.add('active');
+    }
+
+    /* ==============================================================
+       Edit Slot
+       ============================================================== */
+    function openEditSlot(dayCode) {
+      var slot = currentSlots[dayCode];
+      if (!slot) {
+        openAddSlot(dayCode);
+        return;
+      }
+
+      modalEditingDay = dayCode;
+      var dayLabel = dayCodeToLabel(dayCode);
+      elModalTitle.textContent = dayLabel + '\u66DC\u65E5\u306E\u8A2A\u554F\u67A0\u3092\u7DE8\u96C6';
+
+      var startSnapped = Math.round((slot.startMin || 540) / 15) * 15;
+      elModalStart.value = startSnapped;
+      elModalSvcMin.value = slot.svcMin || 60;
+      elModalNeedStaff.value = slot.needStaff || 1;
+      elModalNote.value = slot.note || '';
+
+      updateModalEnd();
+      elSlotModal.classList.add('active');
+    }
+
+    /* ==============================================================
+       Delete Slot
+       ============================================================== */
+    function deleteSlot(dayCode) {
+      if (currentSlots[dayCode]) {
+        delete currentSlots[dayCode];
+        renderWeekGrid();
+        renderPatternStatus();
+      }
+    }
+
+    /* ==============================================================
+       Modal: Confirm / Cancel
+       ============================================================== */
+    elModalConfirm.addEventListener('click', function() {
+      if (!modalEditingDay) return;
+
+      var startMin = parseInt(elModalStart.value, 10);
+      var svcMin = parseInt(elModalSvcMin.value, 10);
+      var needStaff = parseInt(elModalNeedStaff.value, 10);
+      var note = elModalNote.value || '';
+
+      if (isNaN(startMin) || isNaN(svcMin)) {
+        showToast('\u6642\u523B\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044', 'warn');
+        return;
+      }
+
+      var endMin = startMin + svcMin;
+
+      currentSlots[modalEditingDay] = {
+        dayCode: modalEditingDay,
+        startMin: startMin,
+        endMin: endMin,
+        svcMin: svcMin,
+        needStaff: needStaff,
+        note: note
+      };
+
+      // Check if slot is on NG day
+      if (isNgDay(modalEditingDay)) {
+        showToast('NG\u66DC\u65E5\u306B\u8A2D\u5B9A\u3055\u308C\u3066\u3044\u307E\u3059', 'warn');
+      }
+
+      renderWeekGrid();
+      renderPatternStatus();
+      closeModal();
+    });
+
+    elModalCancel.addEventListener('click', function() {
+      closeModal();
+    });
+
+    // Close modal on overlay click
+    elSlotModal.addEventListener('click', function(e) {
+      if (e.target === elSlotModal) {
+        closeModal();
+      }
+    });
+
+    function closeModal() {
+      elSlotModal.classList.remove('active');
+      modalEditingDay = null;
+    }
+
+    /* ==============================================================
+       Save
+       ============================================================== */
+    elBtnSave.addEventListener('click', function() {
+      if (!currentPatient) return;
+
+      var slotsArr = [];
+      for (var key in currentSlots) {
+        if (currentSlots.hasOwnProperty(key)) {
+          slotsArr.push(currentSlots[key]);
+        }
+      }
+
+      // Sort by dayCode order
+      slotsArr.sort(function(a, b) {
+        return DAY_CODES.indexOf(a.dayCode) - DAY_CODES.indexOf(b.dayCode);
+      });
+
+      var slotsJson = JSON.stringify(slotsArr);
+
+      elBtnSave.disabled = true;
+      elBtnSave.textContent = '\u4FDD\u5B58\u4E2D...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          elBtnSave.disabled = false;
+          elBtnSave.textContent = '\uD83D\uDCBE \u4FDD\u5B58';
+          if (result && result.success) {
+            showToast('\u4FDD\u5B58\u3057\u307E\u3057\u305F (' + (result.saved || 0) + '\u679A)', 'success');
+          } else {
+            showToast('\u4FDD\u5B58\u306B\u5931\u6557\u3057\u307E\u3057\u305F', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          elBtnSave.disabled = false;
+          elBtnSave.textContent = '\uD83D\uDCBE \u4FDD\u5B58';
+          showToast('\u4FDD\u5B58\u30A8\u30E9\u30FC: ' + (err.message || err), 'error');
+        })
+        .wp_savePattern(currentPatient.pid, currentPatient.name, slotsJson);
+    });
+
+    /* ==============================================================
+       Keyboard: Escape to close modal
+       ============================================================== */
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' || e.keyCode === 27) {
+        if (elSlotModal.classList.contains('active')) {
+          closeModal();
+        }
+      }
+    });
+
+    /* ==============================================================
+       Boot
+       ============================================================== */
+    init();
+  </script>
+</body>
+</html>

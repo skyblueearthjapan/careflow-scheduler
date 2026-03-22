@@ -87,6 +87,19 @@ function doGet(e) {
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
 
+    // 週間訪問パターン設定（管理者のみ）
+    if (page === 'pattern') {
+      const email = Session.getActiveUser().getEmail();
+      if (!email || !isAdmin_(email)) {
+        return HtmlService.createHtmlOutputFromFile('UnifiedNoAccess')
+          .setTitle('アクセス権限エラー')
+          .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      }
+      return HtmlService.createHtmlOutputFromFile('WeeklyPattern')
+        .setTitle('週間訪問パターン設定')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+
     // インタラクティブ週ビュー
     if (page === 'interactive') {
       var template = HtmlService.createTemplateFromFile('InteractiveWeekView');

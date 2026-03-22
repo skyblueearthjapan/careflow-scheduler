@@ -7,6 +7,8 @@
  *   - getInteractiveWeekData(weekStartStr)
  *   - commitChanges(weekStartStr, changesJson)
  *   - saveSnapshot(weekStartStr)
+ *   - iwv_saveConfirmedHistory_(weekStartStr)
+ *   - getPatientRotationHistory(patientId, weeksBack)
  */
 
 // ============================================================
@@ -330,11 +332,22 @@ function saveSnapshot(weekStartStr) {
     weekCopy.setName(weekName);
   }
 
+  // 確定スケジュール履歴に保存
+  var historySaved = 0;
+  try {
+    var histResult = iwv_saveConfirmedHistory_(weekStartStr);
+    historySaved = histResult.saved;
+    Logger.log('確定スケジュール履歴: ' + historySaved + '件保存');
+  } catch (e) {
+    Logger.log('確定スケジュール履歴エラー: ' + e.message);
+  }
+
   return {
     success: true,
     resultSheetName: resultName,
     weekSheetName: weekName,
-    label: label
+    label: label,
+    historySaved: historySaved
   };
 }
 
@@ -992,4 +1005,153 @@ function iwv_appendChangeLog_(ss, logEntries) {
   var lastRow = logSheet.getLastRow();
   logSheet.getRange(lastRow + 1, 1, logEntries.length, logEntries[0].length)
           .setValues(logEntries);
+}
+
+// ============================================================
+// 確定スケジュール履歴
+// ============================================================
+
+/**
+ * 割当結果の確定データを「確定スケジュール履歴」シートに保存する。
+ * saveSnapshot から自動的に呼び出される。
+ * 同じ weekStartStr の既存データは上書き（再確定対応）。
+ * @param {string} weekStartStr - "yyyy/MM/dd" 形式の週開始日
+ * @returns {Object} { success: boolean, saved: number }
+ */
+function iwv_saveConfirmedHistory_(weekStartStr) {
+  var ss = iwv_getSpreadsheet_();
+  var resultSheet = ss.getSheetByName('割当結果');
+  if (!resultSheet) throw new Error('割当結果シートが見つかりません');
+
+  // 確定スケジュール履歴シートを取得 or 作成
+  var HIST_SHEET_NAME = '確定スケジュール履歴';
+  var HIST_HEADERS = [
+    '確定日時', '週開始日', 'visit_id', '日付', '曜日',
+    'patient_id', '患者名', 'staff_id', 'スタッフ名',
+    '開始時刻', '終了時刻', 'サービス時間', '備考'
+  ];
+
+  var histSheet = ss.getSheetByName(HIST_SHEET_NAME);
+  if (!histSheet) {
+    histSheet = ss.insertSheet(HIST_SHEET_NAME);
+    histSheet.getRange(1, 1, 1, HIST_HEADERS.length).setValues([HIST_HEADERS]);
+    histSheet.getRange(1, 1, 1, HIST_HEADERS.length).setFontWeight('bold');
+    histSheet.setFrozenRows(1);
+  }
+
+  // 割当結果を読み込み
+  var data = resultSheet.getDataRange().getValues();
+  if (data.length <= 1) return { success: true, saved: 0 };
+
+  var headers = data[0];
+  var col = {
+    visitId:   iwv_findHeaderIndex_(headers, 'visit_id'),
+    date:      iwv_findHeaderIndex_(headers, '日付'),
+    youbi:     iwv_findHeaderIndex_(headers, '曜日'),
+    staffId:   iwv_findHeaderIndex_(headers, 'staff_id'),
+    staffName: iwv_findHeaderIndex_(headers, 'スタッフ名'),
+    pid:       iwv_findHeaderIndex_(headers, 'patient_id'),
+    pname:     iwv_findHeaderIndex_(headers, '患者名'),
+    start:     iwv_findHeaderIndex_(headers, '開始時刻'),
+    end:       iwv_findHeaderIndex_(headers, '終了時刻'),
+    svcMin:    iwv_findHeaderIndex_(headers, 'サービス時間'),
+    note:      iwv_findHeaderIndex_(headers, '備考')
+  };
+
+  var now = new Date();
+  var rows = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    // visit_id が空 or イベント行 (EV_) はスキップ
+    var vid = col.visitId >= 0 ? String(r[col.visitId] || '') : '';
+    if (!vid || vid.indexOf('EV_') === 0) continue;
+    // 未割当（staff_id が空）はスキップ
+    var sid = col.staffId >= 0 ? String(r[col.staffId] || '') : '';
+    if (!sid) continue;
+
+    rows.push([
+      now,
+      weekStartStr,
+      vid,
+      col.date >= 0 ? r[col.date] : '',
+      col.youbi >= 0 ? String(r[col.youbi] || '') : '',
+      col.pid >= 0 ? String(r[col.pid] || '') : '',
+      col.pname >= 0 ? String(r[col.pname] || '') : '',
+      sid,
+      col.staffName >= 0 ? String(r[col.staffName] || '') : '',
+      col.start >= 0 ? r[col.start] : '',
+      col.end >= 0 ? r[col.end] : '',
+      col.svcMin >= 0 ? r[col.svcMin] : '',
+      col.note >= 0 ? String(r[col.note] || '') : ''
+    ]);
+  }
+
+  if (rows.length > 0) {
+    // 同じ weekStartStr の既存行を削除（再確定時の上書き）
+    var existingData = histSheet.getDataRange().getValues();
+    var rowsToDelete = [];
+    for (var j = existingData.length - 1; j >= 1; j--) {
+      if (String(existingData[j][1]) === weekStartStr) {
+        rowsToDelete.push(j + 1); // 1-based row number
+      }
+    }
+    // 逆順で削除してインデックスのずれを防ぐ
+    for (var d = 0; d < rowsToDelete.length; d++) {
+      histSheet.deleteRow(rowsToDelete[d]);
+    }
+
+    // 新しい行を追記
+    histSheet.getRange(histSheet.getLastRow() + 1, 1, rows.length, HIST_HEADERS.length)
+             .setValues(rows);
+  }
+
+  return { success: true, saved: rows.length };
+}
+
+/**
+ * 患者のローテーション履歴を取得する（確定スケジュール履歴から）。
+ * 過去N週分のスタッフ割当情報を返す。
+ * @param {string} patientId - 患者ID
+ * @param {number} [weeksBack=4] - 遡る週数（デフォルト4）
+ * @returns {Object} { history: Array<{weekStart, date, staffId, staffName}> }
+ */
+function getPatientRotationHistory(patientId, weeksBack) {
+  var ss = iwv_getSpreadsheet_();
+  var sheet = ss.getSheetByName('確定スケジュール履歴');
+  if (!sheet) return { history: [] };
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return { history: [] };
+
+  weeksBack = weeksBack || 4;
+  var cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - (weeksBack * 7));
+
+  var headers = data[0];
+  var colPid = iwv_findHeaderIndex_(headers, 'patient_id');
+  var colConfirm = iwv_findHeaderIndex_(headers, '確定日時');
+  var colWeekStart = iwv_findHeaderIndex_(headers, '週開始日');
+  var colDate = iwv_findHeaderIndex_(headers, '日付');
+  var colStaffId = iwv_findHeaderIndex_(headers, 'staff_id');
+  var colStaffName = iwv_findHeaderIndex_(headers, 'スタッフ名');
+
+  var results = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var pid = colPid >= 0 ? String(row[colPid] || '') : '';
+    if (pid !== patientId) continue;
+
+    var confirmDate = colConfirm >= 0 ? row[colConfirm] : null;
+    if (confirmDate instanceof Date && confirmDate < cutoff) continue;
+
+    results.push({
+      weekStart: colWeekStart >= 0 ? String(row[colWeekStart] || '') : '',
+      date: colDate >= 0 ? row[colDate] : '',
+      staffId: colStaffId >= 0 ? String(row[colStaffId] || '') : '',
+      staffName: colStaffName >= 0 ? String(row[colStaffName] || '') : ''
+    });
+  }
+
+  return { history: results };
 }
