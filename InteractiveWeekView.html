@@ -403,6 +403,28 @@
       outline: 2px solid var(--color-orange);
       outline-offset: -1px;
     }
+    .visit-card.same-patient-highlight {
+      outline: 2px solid #1976D2;
+      outline-offset: -1px;
+      background: rgba(25, 118, 210, 0.08) !important;
+      animation: samePatientPulse 1.5s ease-in-out;
+    }
+    @keyframes samePatientPulse {
+      0% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.4); }
+      50% { box-shadow: 0 0 8px 2px rgba(25, 118, 210, 0.3); }
+      100% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0); }
+    }
+    .visit-card.same-patient-sameday {
+      outline: 2px solid #c62828;
+      outline-offset: -1px;
+      background: rgba(198, 40, 40, 0.12) !important;
+      animation: sameDayWarningPulse 1.5s ease-in-out;
+    }
+    @keyframes sameDayWarningPulse {
+      0% { box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.5); }
+      50% { box-shadow: 0 0 10px 3px rgba(198, 40, 40, 0.4); }
+      100% { box-shadow: 0 0 0 0 rgba(198, 40, 40, 0); }
+    }
 
     .visit-time {
       font-weight: 600; color: var(--color-text);
@@ -2358,6 +2380,116 @@
       }
       container.appendChild(card);
 
+      // -- Schedule Requirements Card --
+      if (patient) {
+        // Count current week assignments for this patient (visitId-based dedup)
+        var pid = visit.pid;
+        var currentWeekCount = 0;
+        var assignedDayStrs = [];
+        var seenVids = {};
+        (_state.assignments || []).forEach(function(a) {
+          if (a.pid === pid && !seenVids[a.visitId]) {
+            seenVids[a.visitId] = true;
+            currentWeekCount++;
+            if (assignedDayStrs.indexOf(a.dateStr) < 0) assignedDayStrs.push(a.dateStr);
+          }
+        });
+        (_state.unassigned || []).forEach(function(u) {
+          if (u.pid === pid && !seenVids[u.visitId]) {
+            seenVids[u.visitId] = true;
+            currentWeekCount++;
+            if (assignedDayStrs.indexOf(u.dateStr) < 0) assignedDayStrs.push(u.dateStr);
+          }
+        });
+
+        // Convert assigned dateStrs to Japanese day names (timezone-safe parsing)
+        var assignedDayNames = assignedDayStrs.sort().map(function(ds) {
+          var parts = ds.split(/[\/\-]/);
+          var localDate = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+          var dayNames = ['日','月','火','水','木','金','土'];
+          return dayNames[localDate.getDay()];
+        });
+
+        var weeklyCount = patient.weeklyCount || 0;
+        var countMatch = (currentWeekCount === weeklyCount);
+        var countColor = (weeklyCount === 0) ? '#888' : (countMatch ? '#27ae60' : '#e74c3c');
+
+        // Build schedule requirements card via DOM
+        var schedCard = document.createElement('div');
+        schedCard.className = 'constraint-info-card';
+        var schedTitle = document.createElement('h4');
+        schedTitle.textContent = '\uD83D\uDCCB スケジュール条件';
+        schedCard.appendChild(schedTitle);
+
+        function addSchedRow(label, value, style) {
+          var row = document.createElement('div');
+          row.className = 'ci-row';
+          var lbl = document.createElement('span');
+          lbl.className = 'ci-label';
+          lbl.textContent = label;
+          var val = document.createElement('span');
+          val.className = 'ci-value';
+          if (style) { for (var k in style) val.style[k] = style[k]; }
+          if (typeof value === 'string') val.textContent = value;
+          else val.appendChild(value);
+          row.appendChild(lbl);
+          row.appendChild(val);
+          schedCard.appendChild(row);
+        }
+
+        // 1. 週訪問回数
+        addSchedRow('週訪問回数', weeklyCount ? weeklyCount + '回/週' : '未設定');
+
+        // 2. 今週の割当数
+        var countFrag = document.createDocumentFragment();
+        var countSpan = document.createElement('span');
+        countSpan.style.color = countColor;
+        countSpan.style.fontWeight = 'bold';
+        var countText = currentWeekCount + '回 / ' + weeklyCount + '回';
+        if (!countMatch && weeklyCount > 0) {
+          countText += (currentWeekCount < weeklyCount ? ' (不足)' : ' (超過)');
+        }
+        countSpan.textContent = countText;
+        countFrag.appendChild(countSpan);
+        if (assignedDayNames.length > 0) {
+          var br = document.createElement('br');
+          countFrag.appendChild(br);
+          var daySpan = document.createElement('span');
+          daySpan.style.fontSize = '11px';
+          daySpan.style.color = '#666';
+          daySpan.textContent = assignedDayNames.join('\u30FB') + ' に割当済み';
+          countFrag.appendChild(daySpan);
+        }
+        addSchedRow('今週の割当数', countFrag);
+
+        // 3. 希望曜日
+        addSchedRow('希望曜日', enDaysToJa_(patient.prefDays));
+
+        // 4. NG曜日
+        var ngText = enDaysToJa_(patient.ngDays);
+        var ngStyle = (ngText !== 'なし' && ngText !== '指定なし') ? {color: '#e74c3c'} : null;
+        addSchedRow('NG曜日', (!patient.ngDays || patient.ngDays.length === 0) ? 'なし' : ngText, ngStyle);
+
+        // 5. 必要スタッフ数
+        var needStaff = patient.needStaff || 1;
+        var staffStyle = needStaff >= 2 ? {color: '#2980b9', fontWeight: 'bold'} : null;
+        addSchedRow('必要スタッフ数', needStaff >= 2 ? needStaff + '名体制' : needStaff + '名', staffStyle);
+
+        // 6. 希望時間帯
+        var timeText = '指定なし';
+        if (patient.startPref && patient.endPref) {
+          timeText = fmtMin(patient.startPref) + '\u301C' + fmtMin(patient.endPref);
+        } else if (patient.timeType) {
+          timeText = String(patient.timeType);
+        }
+        addSchedRow('希望時間帯', timeText);
+
+        // 7. 継続希望
+        addSchedRow('継続希望', patient.contPref ? String(patient.contPref) : 'なし');
+
+        container.appendChild(schedCard);
+      }
+
       // -- Available Window & Timeline (Phase 3) --
       if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.computeAvailableWindow) {
         // Compute available window for current staff
@@ -2664,13 +2796,35 @@
     // ================================================================
     function selectVisit(visitId) {
       _selectedVisitId = visitId;
-      // Remove old highlight
+      // Remove old highlight and same-patient highlights
       var prev = document.querySelectorAll('.visit-card.selected');
       for (var i = 0; i < prev.length; i++) prev[i].classList.remove('selected');
+      var prevHL = document.querySelectorAll('.visit-card.same-patient-highlight, .visit-card.same-patient-sameday');
+      for (var j = 0; j < prevHL.length; j++) {
+        prevHL[j].classList.remove('same-patient-highlight');
+        prevHL[j].classList.remove('same-patient-sameday');
+      }
       // Add new
       if (visitId) {
         var el = document.querySelector('.visit-card[data-visit-id="' + cssEscAttr(visitId) + '"]');
-        if (el) el.classList.add('selected');
+        if (el) {
+          el.classList.add('selected');
+          // Same-patient highlighting
+          var pid = el.getAttribute('data-pid');
+          var selectedDate = el.getAttribute('data-date');
+          if (pid) {
+            var sameCards = document.querySelectorAll('.visit-card[data-pid="' + cssEscAttr(pid) + '"]');
+            for (var k = 0; k < sameCards.length; k++) {
+              if (sameCards[k] === el) continue;
+              var cardDate = sameCards[k].getAttribute('data-date');
+              if (cardDate === selectedDate) {
+                sameCards[k].classList.add('same-patient-sameday');
+              } else {
+                sameCards[k].classList.add('same-patient-highlight');
+              }
+            }
+          }
+        }
       }
       switchSideTab('constraints');
       renderConstraintDetail();
@@ -4187,6 +4341,13 @@
     // ================================================================
     // Format Helpers
     // ================================================================
+    // English day codes to Japanese (module-scope helper)
+    function enDaysToJa_(days) {
+      var map = {Mon:'\u6708',Tue:'\u706b',Wed:'\u6c34',Thu:'\u6728',Fri:'\u91d1',Sat:'\u571f',Sun:'\u65e5'};
+      if (!days || days.length === 0) return '指定なし';
+      return days.map(function(d) { return map[d] || d; }).join('\u3001');
+    }
+
     function fmtMin(min) {
       if (min == null || isNaN(min)) return '--:--';
       var h = Math.floor(min / 60);
