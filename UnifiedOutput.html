@@ -403,36 +403,24 @@
       color: var(--color-white);
     }
 
-    .tabs-right { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-    .tabs-right .btn-group { display: flex; gap: 4px; }
-    .tabs-right .btn-divider { width: 1px; height: 24px; background: var(--color-green-light); margin: 0 4px; }
+    .tabs-right { display: flex; gap: 8px; }
 
     .nav-link {
-      padding: 6px 12px;
-      font-size: 11px;
-      font-weight: 600;
-      border: 1px solid #ccc;
-      background: var(--color-white);
-      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--color-orange);
+      background: var(--color-orange-light);
+      border-radius: 8px;
       color: var(--color-text);
       cursor: pointer;
       text-decoration: none;
-      transition: all 0.15s ease;
-      white-space: nowrap;
+      transition: all 0.2s ease;
     }
-    .nav-link:hover { filter: brightness(0.95); }
-    .nav-link.btn-primary {
-      background: var(--color-orange); color: var(--color-white); border-color: var(--color-orange);
+    .nav-link:hover {
+      background: var(--color-orange);
+      color: var(--color-white);
     }
-    .nav-link.btn-primary:hover { background: #d4905e; }
-    .nav-link.btn-secondary {
-      background: var(--color-blue); color: var(--color-white); border-color: var(--color-blue);
-    }
-    .nav-link.btn-secondary:hover { background: #6891b8; }
-    .nav-link.btn-accent {
-      background: var(--color-green); color: var(--color-white); border-color: var(--color-green);
-    }
-    .nav-link.btn-accent:hover { background: #7a9e4d; }
 
     /* トースト */
     .toast {
@@ -1426,16 +1414,16 @@
       <button class="tab-btn" data-tab="routeSummary" onclick="showTab('routeSummary', this)">ルートサマリ</button>
     </div>
     <div class="tabs-right">
-      <div class="btn-group">
-        <button class="nav-link btn-primary" id="btnInteractiveEdit" onclick="openInteractiveWeekView()">&#x270F; インタラクティブ編集</button>
-        <button class="nav-link btn-accent" onclick="goToPattern()">&#x1F4CB; 週間パターン</button>
-      </div>
-      <div class="btn-divider"></div>
-      <div class="btn-group">
-        <button class="nav-link btn-secondary" id="btnSaveSnapshot" onclick="saveWeekSnapshot()">&#x1F4BE; 記録保存</button>
-      </div>
-      <div class="btn-divider"></div>
-      <a class="nav-link" id="inputLink" onclick="goToInput()">管理画面 &rarr;</a>
+      <button class="nav-link" id="btnInteractiveEdit" onclick="openInteractiveWeekView()"
+        style="background: var(--color-orange); color: white; border-color: var(--color-orange);">
+        インタラクティブ編集
+      </button>
+      <button class="nav-link" id="btnSaveSnapshot" onclick="saveWeekSnapshot()"
+        style="background: var(--color-blue); color: white; border-color: var(--color-blue);">
+        記録保存
+      </button>
+      <a class="nav-link" onclick="goToPattern()">📋 週間パターン設定</a>
+      <a class="nav-link" id="inputLink" onclick="goToInput()">入力管理画面へ →</a>
     </div>
   </div>
 
