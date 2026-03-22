@@ -634,11 +634,11 @@
   <!-- ============================================================
        Header
        ============================================================ -->
-  <div class="header" id="pageHeader" style="display:none;">
+  <div class="header" id="pageHeader">
     <div class="header-left">
       <h1>&#x1F4CB; &#x9031;&#x9593;&#x8A2A;&#x554F;&#x30D1;&#x30BF;&#x30FC;&#x30F3;&#x8A2D;&#x5B9A;</h1>
     </div>
-    <a class="header-back" href="javascript:void(0)" id="backLink">&larr; &#x51FA;&#x529B;&#x306B;&#x623B;&#x308B;</a>
+    <button class="header-back" id="backLink" style="background:none;border:none;cursor:pointer;font-size:20px;color:white;padding:4px 10px;" title="閉じる">&times;</button>
   </div>
 
   <!-- ============================================================
@@ -917,17 +917,6 @@
         elToast.classList.remove('show');
       }, 3000);
     }
-
-    /* ==============================================================
-       Header: iframe内では非表示、直接アクセス時のみ表示
-       ============================================================== */
-    (function() {
-      var isInIframe = false;
-      try { isInIframe = window.parent && window.parent !== window; } catch(e) { isInIframe = true; }
-      if (!isInIframe) {
-        document.getElementById('pageHeader').style.display = '';
-      }
-    })();
 
     /* ==============================================================
        Back link (モーダル閉じ or 直接アクセス時はページ遷移)

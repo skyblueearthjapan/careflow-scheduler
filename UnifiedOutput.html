@@ -1442,27 +1442,15 @@
 
   <!-- インタラクティブ週ビュー モーダル -->
   <div class="interactive-modal" id="interactiveModal">
-    <div class="interactive-modal-content">
-      <div class="interactive-modal-header">
-        <span>週ビュー インタラクティブ編集</span>
-        <button class="audit-close-btn" onclick="closeInteractiveModal()">×</button>
-      </div>
-      <div class="interactive-modal-body">
-        <iframe id="interactiveIframe"></iframe>
-      </div>
+    <div class="interactive-modal-content" style="border-radius:8px; overflow:hidden;">
+      <iframe id="interactiveIframe" style="width:100%;height:100%;border:none;"></iframe>
     </div>
   </div>
 
   <!-- 週間パターン設定モーダル -->
   <div class="interactive-modal" id="patternModal">
-    <div class="interactive-modal-content">
-      <div class="interactive-modal-header" style="background: var(--color-blue);">
-        <span>📋 週間訪問パターン設定</span>
-        <button class="audit-close-btn" onclick="closePatternModal()">×</button>
-      </div>
-      <div class="interactive-modal-body">
-        <iframe id="patternIframe"></iframe>
-      </div>
+    <div class="interactive-modal-content" style="border-radius:8px; overflow:hidden;">
+      <iframe id="patternIframe" style="width:100%;height:100%;border:none;"></iframe>
     </div>
   </div>
 
