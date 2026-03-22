@@ -2004,6 +2004,18 @@ function runJob(jobKey, weekStartStr) {
         break;
       case 'assignResult':
         result = 割当結果を作成_(ss);
+        // 割当後に週ビュー・ルートサマリも一括更新
+        try {
+          console.log('週ビューを更新中...');
+          週ビューを更新_(ss, weekStartStr);
+        } catch (e2) { console.error('週ビュー更新エラー（割当自体は成功）: ' + e2.message); }
+        try {
+          console.log('ルートサマリを作成中...');
+          ルートサマリを作成_(ss, weekStartStr);
+        } catch (e3) { console.error('ルートサマリ作成エラー（割当自体は成功）: ' + e3.message); }
+        if (result && result.message) {
+          result.message += ' → 週ビュー・ルートサマリも更新済み';
+        }
         break;
       case 'updateWeekView':
         result = 週ビューを更新_(ss, weekStartStr);
