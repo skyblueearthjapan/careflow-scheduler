@@ -2382,25 +2382,25 @@
 
       // -- Schedule Requirements Card --
       if (patient) {
-        // Count current week assignments for this patient (visitId-based dedup)
+        // Count current week assignments for this patient
+        // 2名体制ペア（V001-1, V001-2）は baseId+dateStr で1回としてカウント
         var pid = visit.pid;
         var currentWeekCount = 0;
         var assignedDayStrs = [];
-        var seenVids = {};
-        (_state.assignments || []).forEach(function(a) {
-          if (a.pid === pid && !seenVids[a.visitId]) {
-            seenVids[a.visitId] = true;
-            currentWeekCount++;
-            if (assignedDayStrs.indexOf(a.dateStr) < 0) assignedDayStrs.push(a.dateStr);
-          }
-        });
-        (_state.unassigned || []).forEach(function(u) {
-          if (u.pid === pid && !seenVids[u.visitId]) {
-            seenVids[u.visitId] = true;
-            currentWeekCount++;
-            if (assignedDayStrs.indexOf(u.dateStr) < 0) assignedDayStrs.push(u.dateStr);
-          }
-        });
+        var seenVisitKeys = {};
+        function countVisit_(v) {
+          if (v.pid !== pid) return;
+          // ペアの baseId を抽出（V001-1 → V001）、ペアでなければ visitId そのまま
+          var vid = v.visitId || '';
+          var pairMatch = vid.match(/^(V\d+)-\d+$/);
+          var baseKey = (pairMatch ? pairMatch[1] : vid) + '|' + v.dateStr;
+          if (seenVisitKeys[baseKey]) return;
+          seenVisitKeys[baseKey] = true;
+          currentWeekCount++;
+          if (assignedDayStrs.indexOf(v.dateStr) < 0) assignedDayStrs.push(v.dateStr);
+        }
+        (_state.assignments || []).forEach(countVisit_);
+        (_state.unassigned || []).forEach(countVisit_);
 
         // Convert assigned dateStrs to Japanese day names (timezone-safe parsing)
         var assignedDayNames = assignedDayStrs.sort().map(function(ds) {
