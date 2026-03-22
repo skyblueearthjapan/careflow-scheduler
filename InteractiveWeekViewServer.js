@@ -147,6 +147,16 @@ function commitChanges(weekStartStr, changesJson) {
           data[r][col.startTime] = iwv_minutesToSerial_(change.newStartMin);
           data[r][col.endTime] = iwv_minutesToSerial_(change.newEndMin);
         }
+        // 日付変更
+        if (change.newDateStr) {
+          var newDate = iwv_parseDate_(change.newDateStr);
+          if (colDate >= 0) {
+            data[r][colDate] = newDate || change.newDateStr;
+          }
+          if (colYoubi >= 0 && newDate) {
+            data[r][colYoubi] = iwv_getYoubiJa_(newDate);
+          }
+        }
         // 備考に手動変更マーク追加
         var note = String(data[r][col.note] || '');
         if (note.indexOf('[手動変更]') === -1) {
@@ -160,11 +170,17 @@ function commitChanges(weekStartStr, changesJson) {
                             && String(change.newStaffId) !== beforeStaffId);
         var timeChanged  = (change.newStartMin != null && change.newEndMin != null
                             && (change.newStartMin !== beforeStartMin || change.newEndMin !== beforeEndMin));
+        // Bug5 fix: compare newDateStr against origDateStr (original date), falling back to dateStr
+        var dateChanged  = (change.newDateStr && change.newDateStr !== (change.origDateStr || change.dateStr));
         var changeType = '';
-        if (staffChanged && timeChanged)  changeType = 'スタッフ+時間変更';
-        else if (staffChanged)            changeType = 'スタッフ変更';
-        else if (timeChanged)             changeType = '時間変更';
-        else                              changeType = '更新（差分なし）';
+        if (dateChanged && staffChanged && timeChanged) changeType = 'スタッフ+時間+曜日変更';
+        else if (dateChanged && staffChanged)           changeType = 'スタッフ+曜日変更';
+        else if (dateChanged && timeChanged)            changeType = '時間+曜日変更';
+        else if (dateChanged)                           changeType = '曜日変更';
+        else if (staffChanged && timeChanged)           changeType = 'スタッフ+時間変更';
+        else if (staffChanged)                          changeType = 'スタッフ変更';
+        else if (timeChanged)                           changeType = '時間変更';
+        else                                            changeType = '更新（差分なし）';
 
         // --- ログ用の患者情報 ---
         var pid   = change.pid   || (colPid >= 0 ? String(data[r][colPid] || '') : '');

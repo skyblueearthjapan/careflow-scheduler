@@ -1015,7 +1015,7 @@
   <div class="footer">
     <div class="footer-hint">
       <span class="footer-hint-icon">&#128161;</span>
-      <span>ヒント: 患者カードをドラッグして別のスタッフへ移動できます（同じ曜日内のみ）。右クリックで時間設定。</span>
+      <span>ヒント: 患者カードをドラッグして別のスタッフ・曜日へ移動できます。右クリックで時間設定。</span>
     </div>
     <div class="footer-stats" id="footerStats"></div>
   </div>
@@ -1100,6 +1100,8 @@
     <div class="context-menu-sep"></div>
     <div class="context-menu-label">&#8596; スタッフに移動</div>
     <div class="context-staff-list" id="contextStaffList"></div>
+    <div class="context-menu-sep" id="contextDecoupleSection" style="display:none"></div>
+    <div class="context-menu-item" id="contextDecoupleItem" style="display:none" onclick="onContextDecouple()">&#128100; 1名体制に変更（ペア解除）</div>
     <div class="context-menu-sep"></div>
     <div class="context-menu-item" onclick="onContextMoveToUnassigned()">&#8599; 未割当に移動</div>
     <div class="context-menu-sep"></div>
@@ -1642,7 +1644,7 @@
       }
 
       // Coupled / 2-staff
-      var isCoupled = (visit.kind === 'coupled') || (visitId.indexOf('-') > 0 && visitId.indexOf('EV_') !== 0);
+      var isCoupled = (visit.kind === 'coupled');
       if (isCoupled) div.classList.add('two-staff');
 
       // Insurance type
@@ -2668,13 +2670,8 @@
         var cellDate = this.getAttribute('data-date');
         var cellStaff = this.getAttribute('data-staff-id');
 
-        // Same-day restriction
-        if (cellDate !== _dragData.dateStr) {
-          e.dataTransfer.dropEffect = 'none';
-          return;
-        }
-        // Same staff -- no-op
-        if (cellStaff === _dragData.staffId) {
+        // Same staff AND same day -- no-op
+        if (cellStaff === _dragData.staffId && cellDate === _dragData.dateStr) {
           e.dataTransfer.dropEffect = 'none';
           return;
         }
@@ -2708,8 +2705,7 @@
 
         var cellDate  = this.getAttribute('data-date');
         var cellStaff = this.getAttribute('data-staff-id');
-        if (cellDate !== _dragData.dateStr) return;
-        if (cellStaff === _dragData.staffId) return;
+        if (cellStaff === _dragData.staffId && cellDate === _dragData.dateStr) return;
 
         showConfirmDialog(_dragData, cellStaff, cellDate);
       });
@@ -2722,19 +2718,40 @@
       if (!_state) return;
       var dateStr = visitData.dateStr;
 
-      var validationMap = null;
+      // Bug1 fix: per-date constraint validation for cross-day support
+      var validationByDateStaff = {};
       if (typeof ConstraintEngine !== 'undefined') {
-        validationMap = ConstraintEngine.validateAllDropTargets(visitData, _state);
+        var allCells = document.querySelectorAll('.day-cell');
+        var dateSet = {};
+        var uniqueDates = [];
+        for (var di = 0; di < allCells.length; di++) {
+          var cd = allCells[di].getAttribute('data-date');
+          if (!dateSet[cd]) { dateSet[cd] = true; uniqueDates.push(cd); }
+        }
+        for (var dj = 0; dj < uniqueDates.length; dj++) {
+          var d = uniqueDates[dj];
+          var vdCopy = {};
+          for (var k in visitData) vdCopy[k] = visitData[k];
+          vdCopy.dateStr = d;
+          delete vdCopy.youbi; // force recomputation
+          var vMap = ConstraintEngine.validateAllDropTargets(vdCopy, _state);
+          for (var sid in vMap) {
+            validationByDateStaff[d + '|' + sid] = vMap[sid];
+          }
+        }
       }
 
-      var cells = document.querySelectorAll('.day-cell[data-date="' + cssEscAttr(dateStr) + '"]');
+      var cells = document.querySelectorAll('.day-cell');
       for (var i = 0; i < cells.length; i++) {
         var c = cells[i];
         var cStaff = c.getAttribute('data-staff-id');
-        if (cStaff === visitData.staffId) continue;
+        var cDate  = c.getAttribute('data-date');
+        // Skip the source cell (same staff AND same date)
+        if (cStaff === visitData.staffId && cDate === dateStr) continue;
 
-        if (validationMap && validationMap[cStaff]) {
-          var r = validationMap[cStaff];
+        var valResult = validationByDateStaff[cDate + '|' + cStaff];
+        if (valResult) {
+          var r = valResult;
           if (r.status === 'NG' || r.canAccept === false) {
             c.classList.add('highlight-invalid');
             c.title = r.quickReason || 'NG';
@@ -2742,8 +2759,9 @@
             c.classList.add('highlight-valid');
             // Add available window tooltip
             if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.computeAvailableWindow) {
+              // Bug4 fix: use target cell's date (cDate) instead of source dateStr
               var aw = ConstraintEngine.computeAvailableWindow(
-                visitData.pid, dateStr, cStaff, _state, visitData.visitId
+                visitData.pid, cDate, cStaff, _state, visitData.visitId
               );
               if (aw.windows && aw.windows.length > 0) {
                 var wTexts = [];
@@ -2780,8 +2798,11 @@
       var pName = (patient && patient.name) ? patient.name : (visitData.pname || visitData.pid);
       var toName = getStaffName(targetStaffId);
 
-      document.getElementById('confirmTitle').textContent =
-        '\u79fb\u52d5\u78ba\u8a8d: ' + visitData.pid + ' ' + pName + ' \u2192 ' + toName;
+      var titleText = '\u79fb\u52d5\u78ba\u8a8d: ' + visitData.pid + ' ' + pName + ' \u2192 ' + toName;
+      if (dateStr !== visitData.dateStr) {
+        titleText += ' (' + visitData.dateStr + ' \u2192 ' + dateStr + ')';
+      }
+      document.getElementById('confirmTitle').textContent = titleText;
 
       var ngSec    = document.getElementById('ngSection');
       var warnSec  = document.getElementById('warnSection');
@@ -2984,6 +3005,10 @@
         targetStaffId = selectedTime.staffId;
       }
 
+      // Bug3 fix: capture original times BEFORE any mutations
+      var origStartMin = vd.startMin;
+      var origEndMin   = vd.endMin;
+
       // Record change
       var change = {
         type:        'move',
@@ -2992,6 +3017,8 @@
         fromStaffId: vd.staffId,
         toStaffId:   targetStaffId,
         dateStr:     dateStr,
+        origStartMin: origStartMin,
+        origEndMin:   origEndMin,
         startMin:    vd.startMin,
         endMin:      vd.endMin,
         svcMin:      vd.svcMin,
@@ -3001,10 +3028,26 @@
         timestamp:   new Date().toISOString()
       };
 
+      // 曜日変更対応
+      if (dateStr !== vd.dateStr) {
+        change.newDateStr = dateStr;
+        change.origDateStr = vd.dateStr;
+      }
+
+      // Bug2 fix: find paired visits BEFORE dateStr mutation (uses vd.dateStr to find partners)
+      var pairedVisits = [];
+      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
+        pairedVisits = ConstraintEngine.findPairedVisits(vd, _state);
+      }
+
       // Apply to local state
       applyMoveToState(vd.visitId, vd.staffId, targetStaffId, dateStr);
 
+      // 曜日変更: visitの日付を更新
       var movedVisit = findVisitById(vd.visitId);
+      if (movedVisit && dateStr !== vd.dateStr) {
+        movedVisit.dateStr = dateStr;
+      }
 
       if (selectedTime && movedVisit) {
         // 提案時間が選択されている → その時間をアンカーとして使用
@@ -3047,10 +3090,9 @@
       _state.pendingChanges.push(change);
 
       // --- 2名体制: ペア訪問も連動移動（絶対時間方式） ---
-      if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
-        var paired = ConstraintEngine.findPairedVisits(vd, _state);
-        for (var pi = 0; pi < paired.length; pi++) {
-          var pv = paired[pi];
+      // Bug2 fix: use pre-captured pairedVisits (found before dateStr mutation)
+      for (var pi = 0; pi < pairedVisits.length; pi++) {
+          var pv = pairedVisits[pi];
           // ペアの開始時間を移動先と同じにする（duration は保持）
           var pvDuration = (pv.endMin || 0) - (pv.startMin || 0);
           if (pvDuration <= 0) pvDuration = vd.svcMin || 30;
@@ -3063,7 +3105,8 @@
             visitId:     pv.visitId,
             pid:         pv.pid,
             staffId:     pv.staffId,
-            dateStr:     dateStr,
+            // Bug2 fix: use partner's original dateStr, not the primary visit's target dateStr
+            dateStr:     pv.dateStr,
             origStartMin: pv.startMin,
             origEndMin:   pv.endMin,
             newStartMin:  newPairedStart,
@@ -3075,12 +3118,12 @@
           pv.endMin = newPairedEnd;
           _state.pendingChanges.push(pairedChange);
           // Repack the paired visit's staff day
-          if (ConstraintEngine.repackStaffDay) {
+          // Bug6 fix: use pv.dateStr (partner's actual date) instead of dateStr (primary's target date)
+          if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.repackStaffDay) {
             var pAnchors = [{ visitId: pv.visitId, startMin: newPairedStart, endMin: newPairedEnd, isEvent: false }];
-            var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, dateStr, pAnchors, _state);
-            if (pRepack.schedule) applyNewSchedule(pv.staffId, dateStr, pRepack.schedule);
+            var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, pv.dateStr, pAnchors, _state);
+            if (pRepack.schedule) applyNewSchedule(pv.staffId, pv.dateStr, pRepack.schedule);
           }
-        }
       }
 
       closeConfirmDialog();
@@ -3152,10 +3195,31 @@
 
       if (chg.type === 'move') {
         applyMoveToState(chg.visitId, chg.toStaffId, chg.fromStaffId, chg.dateStr);
+        // Restore original dateStr if cross-day move
+        if (chg.origDateStr) {
+          var vDate = findVisitById(chg.visitId);
+          if (vDate) { vDate.dateStr = chg.origDateStr; }
+        }
         // Restore original times if they were changed
         if (chg.origStartMin != null) {
           var v = findVisitById(chg.visitId);
           if (v) { v.startMin = chg.origStartMin; v.endMin = chg.origEndMin; }
+        }
+        // Restore coupled kind when undoing a decouple operation
+        if (chg.decoupled) {
+          var vd = findVisitById(chg.visitId);
+          if (vd) vd.kind = 'coupled';
+          var matchD = chg.visitId.match(/^(V\d+)-(\d+)$/);
+          if (matchD) {
+            var baseIdD = matchD[1];
+            var allV = (_state.assignments || []).concat(_state.unassigned || []);
+            for (var j = 0; j < allV.length; j++) {
+              if (allV[j].visitId !== chg.visitId && allV[j].visitId && allV[j].visitId.indexOf(baseIdD + '-') === 0) {
+                allV[j].kind = 'coupled';
+                break;
+              }
+            }
+          }
         }
       } else if (chg.type === 'timeSet') {
         var visit = findVisitById(chg.visitId);
@@ -3578,8 +3642,18 @@
               onContextMoveToStaff(sid);
             };
           })(staff.id));
-          staffListEl.appendChild(item);
         }
+      }
+
+      // Show decouple option for coupled visits
+      var decoupleSection = document.getElementById("contextDecoupleSection");
+      var decoupleItem = document.getElementById("contextDecoupleItem");
+      if (visit && visit.kind === 'coupled') {
+        decoupleSection.style.display = "";
+        decoupleItem.style.display = "";
+      } else {
+        decoupleSection.style.display = "none";
+        decoupleItem.style.display = "none";
       }
 
       // Position, clamped to viewport
@@ -3669,6 +3743,93 @@
     }
     window.onContextMoveToUnassigned = onContextMoveToUnassigned;
 
+    function onContextDecouple() {
+      hideContextMenu();
+      var visitId = _contextVisitId;
+      if (!visitId || !_state) return;
+
+      var visit = findVisitById(visitId);
+      if (!visit) return;
+
+      if (visit.kind !== 'coupled') {
+        showToast('この訪問は既に1名体制です', 'info');
+        return;
+      }
+
+      // Find the base ID (e.g., "V001" from "V001-1")
+      var match = visitId.match(/^(V\d+)-(\d+)$/);
+      if (!match) {
+        showToast('ペアIDの形式が不正です', 'error');
+        return;
+      }
+      var baseId = match[1];
+
+      // Find the paired visit
+      var pairedVisit = null;
+      var allVisits = (_state.assignments || []).concat(_state.unassigned || []);
+      for (var i = 0; i < allVisits.length; i++) {
+        var v = allVisits[i];
+        if (v.visitId !== visitId && v.visitId && v.visitId.indexOf(baseId + '-') === 0 && v.dateStr === visit.dateStr) {
+          pairedVisit = v;
+          break;
+        }
+      }
+
+      if (!pairedVisit) {
+        showToast('ペアの訪問が見つかりません', 'error');
+        return;
+      }
+
+      // Confirm with user
+      var patient = getPatient(visit.pid);
+      var pName = (patient && patient.name) ? patient.name : visit.pid;
+      if (!confirm(pName + ' の2名体制を1名体制に変更します。\n\n' +
+        '残す: ' + getStaffName(visit.staffId) + '\n' +
+        '解除: ' + getStaffName(pairedVisit.staffId) + '\n\n' +
+        'よろしいですか？')) return;
+
+      // Capture original staffId BEFORE applyMoveToState mutates it
+      var savedFromStaffId = pairedVisit.staffId;
+      var savedFromStaffName = pairedVisit.staffName || getStaffName(pairedVisit.staffId);
+
+      // Move paired visit to unassigned
+      applyMoveToState(pairedVisit.visitId, pairedVisit.staffId, '__UNASSIGNED__', pairedVisit.dateStr);
+
+      // Record the change for paired visit (move to unassigned)
+      var change1 = {
+        type:        'move',
+        visitId:     pairedVisit.visitId,
+        pid:         pairedVisit.pid,
+        fromStaffId: savedFromStaffId,
+        toStaffId:   '__UNASSIGNED__',
+        dateStr:     pairedVisit.dateStr,
+        startMin:    pairedVisit.startMin,
+        endMin:      pairedVisit.endMin,
+        svcMin:      pairedVisit.svcMin,
+        newStaffId:  '',
+        newStaffName: '未割当',
+        decoupled:   true,
+        timestamp:   new Date().toISOString()
+      };
+      _state.pendingChanges.push(change1);
+
+      // Update the current visit's kind to 'normal' (visual update)
+      visit.kind = 'normal';
+
+      // Update the paired visit's kind too
+      var pVisit = findVisitById(pairedVisit.visitId);
+      if (pVisit) pVisit.kind = 'normal';
+
+      // Re-render
+      renderGrid();
+      renderSidePanel();
+      updateStatusBar();
+
+      showToast(pName + ' を1名体制に変更しました', 'success');
+    }
+    window.onContextDecouple = onContextDecouple;
+
+
     function onContextResetVisit() {
       hideContextMenu();
       if (!_contextVisitId || !_state) return;
@@ -3743,9 +3904,17 @@
           out.newStaffId   = c.toStaffId === '__UNASSIGNED__' ? '' : c.toStaffId;
           out.newStaffName = c.toStaffId === '__UNASSIGNED__' ? '未割当' : getStaffName(c.toStaffId);
         }
-        if (c.type === 'timeSet') {
+        if (c.type === 'timeSet' || (c.type === 'move' && c.newStartMin != null)) {
           out.newStartMin = c.newStartMin;
           out.newEndMin   = c.newEndMin;
+        }
+        // 曜日変更
+        if (c.newDateStr) {
+          out.newDateStr = c.newDateStr;
+        }
+        // Bug5 fix: send origDateStr so server can detect date changes
+        if (c.origDateStr) {
+          out.origDateStr = c.origDateStr;
         }
         // ログ用フィールド
         out.pid     = c.pid || '';
