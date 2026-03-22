@@ -253,7 +253,7 @@
       border-bottom: 3px solid var(--color-green);
     }
 
-    .button-group { margin-bottom: 20px; }
+    .button-group { margin-bottom: 14px; }
 
     /* 対象週セレクター */
     .week-selector { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border); }
@@ -1363,6 +1363,22 @@
       </div>
 
       <div class="button-group">
+        <div class="button-group-title">編集ツール</div>
+        <button class="action-btn primary" id="btnInteractiveEdit2" onclick="openInteractiveWeekView()">
+          <span class="icon">✏️</span>
+          インタラクティブ編集
+        </button>
+        <button class="action-btn audit" onclick="goToPattern()">
+          <span class="icon">📋</span>
+          週間パターン設定
+        </button>
+        <button class="action-btn secondary" id="btnSaveSnapshot2" onclick="saveWeekSnapshot()">
+          <span class="icon">💾</span>
+          記録保存
+        </button>
+      </div>
+
+      <div class="button-group">
         <div class="button-group-title">データ更新</div>
         <button class="action-btn secondary" onclick="runJob('updateWeekView', this)">
           <span class="icon">🔄</span><span class="spinner"></span>
@@ -1414,15 +1430,6 @@
       <button class="tab-btn" data-tab="routeSummary" onclick="showTab('routeSummary', this)">ルートサマリ</button>
     </div>
     <div class="tabs-right">
-      <button class="nav-link" id="btnInteractiveEdit" onclick="openInteractiveWeekView()"
-        style="background: var(--color-orange); color: white; border-color: var(--color-orange);">
-        インタラクティブ編集
-      </button>
-      <button class="nav-link" id="btnSaveSnapshot" onclick="saveWeekSnapshot()"
-        style="background: var(--color-blue); color: white; border-color: var(--color-blue);">
-        記録保存
-      </button>
-      <a class="nav-link" onclick="goToPattern()">📋 週間パターン設定</a>
       <a class="nav-link" id="inputLink" onclick="goToInput()">入力管理画面へ →</a>
     </div>
   </div>
