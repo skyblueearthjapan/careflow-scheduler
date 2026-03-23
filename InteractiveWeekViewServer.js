@@ -74,6 +74,13 @@ function getInteractiveWeekData(weekStartStr) {
 
   // 2名体制の不足分を未割当に追加
   var patientMap = iwv_loadPatientMaster_(ss);
+
+  // まず既存の未割当から時刻なし(_NEEDやstartMin=null)を除去（重複防止）
+  unassigned = unassigned.filter(function(u) {
+    if ((u.visitId || '').indexOf('_NEED') >= 0) return false;
+    return true;
+  });
+
   var pidDateAssigned = {};
   var pidDateRef = {};
   for (var asi = 0; asi < assigned.length; asi++) {
@@ -83,6 +90,15 @@ function getInteractiveWeekData(weekStartStr) {
     pidDateAssigned[pdKey] = (pidDateAssigned[pdKey] || 0) + 1;
     if (!pidDateRef[pdKey]) pidDateRef[pdKey] = ar;
   }
+  // 未割当も含めてカウント（Python側からの完全未割当スロット）
+  var pidDateUnassigned = {};
+  for (var uai = 0; uai < unassigned.length; uai++) {
+    var ua = unassigned[uai];
+    if (!ua.pid || !ua.dateStr) continue;
+    var uaKey = ua.pid + '|' + ua.dateStr;
+    pidDateUnassigned[uaKey] = (pidDateUnassigned[uaKey] || 0) + 1;
+  }
+
   for (var pdKey in pidDateAssigned) {
     var parts = pdKey.split('|');
     var pid = parts[0];
@@ -90,9 +106,11 @@ function getInteractiveWeekData(weekStartStr) {
     var pat = patientMap[pid];
     if (!pat || !pat.needStaff || pat.needStaff < 2) continue;
     var actual = pidDateAssigned[pdKey];
-    if (actual < pat.needStaff) {
+    var alreadyUnassigned = pidDateUnassigned[pdKey] || 0;
+    var totalAccountedFor = actual + alreadyUnassigned;
+    if (totalAccountedFor < pat.needStaff) {
       var ref = pidDateRef[pdKey];
-      var missing = pat.needStaff - actual;
+      var missing = pat.needStaff - totalAccountedFor;
       for (var mi = 0; mi < missing; mi++) {
         unassigned.push({
           visitId: (ref.visitId || '') + '_NEED' + mi,
@@ -102,8 +120,8 @@ function getInteractiveWeekData(weekStartStr) {
           pname: ref.pname || (pat.name || ''),
           staffId: '__UNASSIGNED__',
           staffName: '',
-          startMin: ref.startMin || null,
-          endMin: ref.endMin || null,
+          startMin: (ref.startMin != null) ? ref.startMin : null,
+          endMin: (ref.endMin != null) ? ref.endMin : null,
           svcMin: ref.svcMin || (pat.svcMin || 30),
           timeType: ref.timeType || '',
           needStaff: pat.needStaff,
