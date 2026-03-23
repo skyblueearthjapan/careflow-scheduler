@@ -30,13 +30,32 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
   // 期待がない場合
   if (!dayExpected || dayExpected.visits.length === 0) {
     if (actuals.length > 0) {
-      // 期待がないのに実績がある → EXTRA_ACTUAL (WARN)
+      // 期待がないのに実績がある → WARN
       status = AUDIT_STATUS.WARN;
-      tags.push(AUDIT_TAGS.EXTRA_ACTUAL);
+
+      // 希望曜日外かどうかを判定してタグとメッセージを切り替え
+      var extraReason = '期待がないのに実績があります';
+      var extraTag = AUDIT_TAGS.EXTRA_ACTUAL;
+      var extraType = 'extra';
+      var master = dataset.patientMasterMap ? dataset.patientMasterMap[pid] : null;
+      if (master) {
+        var prefDays = master.prefDays || [];
+        if (prefDays.length > 0) {
+          var dateObj = audit_parseDate_(dateStr);
+          var youbi = dateObj ? audit_getYoubiEn_(dateObj) : null;
+          if (youbi && prefDays.indexOf(youbi) < 0) {
+            extraReason = '希望曜日外の配置です。';
+            extraTag = AUDIT_TAGS.NON_PREFERRED_DAY;
+            extraType = 'nonPreferredDay';
+          }
+        }
+      }
+      tags.push(extraTag);
+
       checks.push({
-        type: 'extra',
+        type: extraType,
         status: AUDIT_STATUS.WARN,
-        reason: '期待がないのに実績があります'
+        reason: extraReason
       });
     }
     return { status: status, tags: tags, checks: checks };

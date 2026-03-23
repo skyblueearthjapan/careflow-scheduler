@@ -395,6 +395,7 @@ function audit_getCheckLabel_(check) {
     'unassigned': '未割当',
     'missing': '実績不足',
     'extra': '余剰実績',
+    'nonPreferredDay': '希望曜日外',
     'genderViolation': '性別制限',
     'twoStaffTime': '2人訪問時間',
     'twoStaffMissing': '2人訪問人数',

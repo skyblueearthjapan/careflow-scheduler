@@ -2988,6 +2988,7 @@
       'TIME_DIFF': '時間差あり',
       'MISSING_ACTUAL': '実績なし',
       'EXTRA_ACTUAL': '余剰実績',
+      'NON_PREFERRED_DAY': '希望曜日外',
       'UNASSIGNED': '未割当',
       'OUT_OF_WINDOW': '時間窓外',
       'EVENT_CONFLICT': 'イベント衝突',
@@ -3038,7 +3039,7 @@
           tag.indexOf('余剰') >= 0 || tag.indexOf('ズレ') >= 0 ||
           tag.indexOf('休み') >= 0 || tag.indexOf('半休') >= 0 ||
           tag.indexOf('時間外') >= 0 || tag.indexOf('制限') >= 0 ||
-          tag.indexOf('勤務日外') >= 0) return 'warn';
+          tag.indexOf('勤務日外') >= 0 || tag.indexOf('NON_PREFERRED') >= 0) return 'warn';
       return 'ok';
     }
 
