@@ -1903,9 +1903,67 @@
     // Rendering: Side Panel
     // ================================================================
     function renderSidePanel() {
+      recalculateCoupledShortages();
       renderChangeLog();
       renderUnassignedList();
       renderConstraintDetail();
+    }
+
+    /**
+     * 2名体制の不足分を_state.unassignedに反映（編集操作後のリアルタイム更新）
+     */
+    function recalculateCoupledShortages() {
+      if (!_state || !_state.assignments || !_state.unassigned) return;
+      var patientMap = _state.patientMap || {};
+
+      // 1. 既存のNEED/2人目未割当エントリを除去
+      _state.unassigned = _state.unassigned.filter(function(u) {
+        return !((u.note || '').indexOf('2名体制:2人目未割当') >= 0 ||
+                 (u.visitId || '').indexOf('_NEED') >= 0);
+      });
+
+      // 2. 割当済み訪問を患者×日でカウント
+      var pidDateCount = {};
+      var pidDateRef = {};
+      for (var i = 0; i < _state.assignments.length; i++) {
+        var a = _state.assignments[i];
+        if (!a.pid || !a.dateStr || !a.staffId || a.staffId === '__UNASSIGNED__') continue;
+        var key = a.pid + '|' + a.dateStr;
+        pidDateCount[key] = (pidDateCount[key] || 0) + 1;
+        if (!pidDateRef[key]) pidDateRef[key] = a;
+      }
+
+      // 3. 不足分を追加
+      for (var key in pidDateCount) {
+        var parts = key.split('|');
+        var pid = parts[0];
+        var dateStr = parts[1];
+        var pat = patientMap[pid];
+        if (!pat || !pat.needStaff || pat.needStaff < 2) continue;
+        var actual = pidDateCount[key];
+        if (actual < pat.needStaff) {
+          var ref = pidDateRef[key];
+          var missing = pat.needStaff - actual;
+          for (var mi = 0; mi < missing; mi++) {
+            _state.unassigned.push({
+              visitId: (ref.visitId || '') + '_NEED' + mi,
+              dateStr: dateStr,
+              weekday: ref.weekday || '',
+              pid: pid,
+              pname: ref.pname || (pat.name || ''),
+              staffId: '__UNASSIGNED__',
+              staffName: '',
+              startMin: ref.startMin || null,
+              endMin: ref.endMin || null,
+              svcMin: ref.svcMin || (pat.svcMin || 30),
+              timeType: ref.timeType || '',
+              needStaff: pat.needStaff,
+              area: ref.area || '',
+              note: '[2名体制:2人目未割当]'
+            });
+          }
+        }
+      }
     }
 
     function switchSideTab(tabName) {
