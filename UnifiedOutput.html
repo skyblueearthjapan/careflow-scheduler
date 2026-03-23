@@ -1924,26 +1924,47 @@
         if (cells.length < 2) return;
 
         var staffName = cells[0].textContent.trim();
-        var staffId = matchStaffNameToId(staffName, staffList);
+        var isUnassignedRow = (staffName.indexOf('未割当') >= 0);
+        var staffId = isUnassignedRow ? '_UNASSIGNED_' : matchStaffNameToId(staffName, staffList);
         if (!staffId) return;
 
         for (var dayIdx = 0; dayIdx < weekDates.length && dayIdx < cells.length - 1; dayIdx++) {
           var cell = cells[dayIdx + 1];
           var dateStr = weekDates[dayIdx].dateStr;
-          var sdKey = staffId + '|' + dateStr;
-          var items = cellSummary[sdKey] || [];
-
-          if (items.length === 0) continue;
 
           var okCount = 0, warnCount = 0, ngCount = 0;
-          // 患者IDごとのステータスマップを作成
           var pidStatusMap = {};
-          items.forEach(function(item) {
-            if (item.status === 'OK') okCount++;
-            else if (item.status === 'WARN') warnCount++;
-            else if (item.status === 'NG') ngCount++;
-            if (item.pid) pidStatusMap[item.pid] = item.status;
-          });
+
+          if (isUnassignedRow) {
+            // 未割当行: visit-line全てを一律NG判定
+            var uaLines = cell.querySelectorAll('.visit-line[data-pid]');
+            uaLines.forEach(function(line) {
+              var linePid = line.getAttribute('data-pid');
+              if (linePid) {
+                pidStatusMap[linePid] = 'NG';
+                ngCount++;
+              }
+            });
+            // visit-lineがなくてもテキスト内容があればカウント
+            if (ngCount === 0 && cell.textContent.trim() && cell.textContent.trim() !== '-') {
+              var textLines = cell.querySelectorAll('.visit-line');
+              ngCount = textLines.length || 0;
+            }
+          } else {
+            // 通常行: サーバー監査データから取得
+            var sdKey = staffId + '|' + dateStr;
+            var items = cellSummary[sdKey] || [];
+            if (items.length === 0) continue;
+
+            items.forEach(function(item) {
+              if (item.status === 'OK') okCount++;
+              else if (item.status === 'WARN') warnCount++;
+              else if (item.status === 'NG') ngCount++;
+              if (item.pid) pidStatusMap[item.pid] = item.status;
+            });
+          }
+
+          if (okCount + warnCount + ngCount === 0) continue;
 
           // セルにクラス追加（クリック可能にするため）
           cell.classList.add('audit-cell');
