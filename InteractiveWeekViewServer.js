@@ -79,8 +79,9 @@ function getInteractiveWeekData(weekStartStr) {
   unassigned = unassigned.filter(function(u) {
     // Python側の_NEEDエントリは除去（GAS側で再生成する）
     if ((u.visitId || '').indexOf('_NEED') >= 0) return false;
-    // 時刻なし（startMin=null/0）の未割当は表示できないので除去
-    if (!u.startMin && u.startMin !== 0) return false;
+    // 時刻なし（startMin=null/0/undefined）の未割当は表示できないので除去
+    // 00:00は実際の訪問時刻ではない
+    if (u.startMin == null || u.startMin <= 0) return false;
     return true;
   });
 
