@@ -1944,6 +1944,15 @@
         if (!pidDateRef[key]) pidDateRef[key] = a;
       }
 
+      // 2b. 既存の未割当（空staffIdのcoupledスロット等）もカウントに含める
+      for (var ui = 0; ui < _state.unassigned.length; ui++) {
+        var uu = _state.unassigned[ui];
+        if (!uu.pid || !uu.dateStr) continue;
+        var uuKey = uu.pid + '|' + uu.dateStr;
+        pidDateCount[uuKey] = (pidDateCount[uuKey] || 0) + 1;
+        if (!pidDateRef[uuKey]) pidDateRef[uuKey] = uu;
+      }
+
       // 3. 不足分を追加
       for (var key in pidDateCount) {
         var parts = key.split('|');
