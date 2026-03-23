@@ -227,9 +227,22 @@ class AllocationEngine:
         # Step 10 - mentor pair expansion (post-processing)
         self._apply_mentor_pairs()
 
-        # Step 11 - 最終安全ネット（必ずパイプライン最後に実行）
+        # Step 11 - 最終安全ネット
         self._final_overlap_sweep()
-        self._enforce_coupled_atomicity()  # coupled片割れ保護
+        self._enforce_coupled_atomicity(allow_partial=True)
+
+        # Step 12 - 最終曜日シフト（overlap sweepで解除された訪問を救済）
+        final_unassigned = [
+            i for i, r in enumerate(self.results)
+            if not r.staff_id and not r.is_event
+        ]
+        if final_unassigned:
+            logger.info("Final Day Shift: %d visits after overlap sweep...", len(final_unassigned))
+            shifted = self._day_shift_strategy(final_unassigned, active_requests)
+            if shifted > 0:
+                self._sync_coupled_times()
+                self._enforce_coupled_atomicity(allow_partial=True)
+                logger.info("Final Day Shift: resolved %d visits", shifted)
 
         # Summary
         assigned_count = sum(
@@ -243,6 +256,19 @@ class AllocationEngine:
             assigned_count, unassigned_count, len(active_requests),
         )
 
+        # デバッグ: 未割当の内訳
+        unassigned_detail = {}
+        for r in self.results:
+            if not r.staff_id and not r.is_event:
+                key = f"{r.pid}({r.pname})|{r.date_str}"
+                unassigned_detail[key] = unassigned_detail.get(key, 0) + 1
+        debug_notes = []
+        for r in self.results:
+            if r.note and ("[曜日シフト" in r.note or "[DayShift" in r.note):
+                debug_notes.append(f"{r.pid}: {r.note[:60]}")
+        # 曜日シフト失敗ログも収集
+        day_shift_failures = getattr(self, '_day_shift_failures', [])
+
         return {
             "results": self.results,
             "unassigned": self.unassigned,
@@ -250,6 +276,9 @@ class AllocationEngine:
                 "total": len(active_requests),
                 "assigned": assigned_count,
                 "unassigned": unassigned_count,
+                "unassigned_detail": unassigned_detail,
+                "day_shifts": debug_notes,
+                "day_shift_failures": day_shift_failures[:30],
                 "message": (
                     f"割当結果を {assigned_count} 件作成しました。"
                     f"割当不可: {unassigned_count} 件"
@@ -667,7 +696,6 @@ class AllocationEngine:
             return not self._has_overlap(staff.sid, req.date_str, fixed_start, fixed_end)
 
         # Flexible time: check if service fits in any available gap
-        # (既存訪問との重複も必ずチェック)
         eff_earliest, eff_latest = get_effective_window(
             req.time_type, req.earliest_min, req.latest_min,
         )
@@ -1089,8 +1117,13 @@ class AllocationEngine:
                 return gap_start
         return None
 
-    def _enforce_coupled_atomicity(self) -> None:
-        """If one half of a 2-staff pair is unassigned, unassign both."""
+    def _enforce_coupled_atomicity(self, allow_partial: bool = False) -> None:
+        """If one half of a 2-staff pair is unassigned, handle based on mode.
+
+        Args:
+            allow_partial: If True, keep the assigned half with a warning.
+                           If False (default), unassign both halves.
+        """
         coupled_map: Dict[str, List[int]] = {}
         for i, r in enumerate(self.results):
             if not r.visit_id:
@@ -1108,13 +1141,23 @@ class AllocationEngine:
             assigned2 = bool(r2.staff_id)
 
             if assigned1 != assigned2:
-                for idx in indices:
-                    r = self.results[idx]
-                    if r.staff_id:
-                        self._unregister_assignment(r.staff_id, r.date_str, idx)
-                    r.staff_id = ""
-                    r.staff_name = ""
-                    r.note += " [2名体制:ペア未確保]"
+                if allow_partial:
+                    # 1名のみ割当を許可（警告付き）
+                    for idx in indices:
+                        r = self.results[idx]
+                        if not r.staff_id:
+                            r.note += " [2名体制:1名のみ割当]"
+                        else:
+                            r.note += " [2名体制:1名のみ割当(相方未確保)]"
+                else:
+                    # 両方解除（厳格モード）
+                    for idx in indices:
+                        r = self.results[idx]
+                        if r.staff_id:
+                            self._unregister_assignment(r.staff_id, r.date_str, idx)
+                        r.staff_id = ""
+                        r.staff_name = ""
+                        r.note += " [2名体制:ペア未確保]"
 
     # ==================================================================
     # Level 3 - Route Optimization
@@ -1487,18 +1530,34 @@ class AllocationEngine:
         from datetime import datetime, timedelta
 
         resolved = 0
+        self._day_shift_failures = []
 
-        # Build a map of dates in this week
+        # Build a map of ALL dates in this week (Mon-Sun)
+        # 週の全7日を候補にする（リクエストにない日も含む）
         week_dates = set()
+        sample_dates = set()
         for r in self.results:
             if r.date_str:
-                week_dates.add(r.date_str)
+                sample_dates.add(r.date_str)
         for r in all_requests:
             if r.date_str:
-                week_dates.add(r.date_str)
+                sample_dates.add(r.date_str)
 
-        if not week_dates:
+        if not sample_dates:
             return 0
+
+        # 最初の日付から週の月曜を計算し、7日分を生成
+        first_date_str = min(sample_dates)
+        try:
+            parts = first_date_str.split("/")
+            first_dt = datetime(int(parts[0]), int(parts[1]), int(parts[2]))
+            # 月曜に戻す
+            monday = first_dt - timedelta(days=first_dt.weekday())
+            for i in range(7):
+                d = monday + timedelta(days=i)
+                week_dates.add(d.strftime("%Y/%m/%d"))
+        except (ValueError, IndexError):
+            week_dates = sample_dates
 
         # Calculate load per date (how many visits are already assigned)
         date_load: Dict[str, int] = {}
@@ -1519,33 +1578,57 @@ class AllocationEngine:
             except (ValueError, IndexError):
                 pass
 
-        # Group unassigned by patient (for coupled pair handling)
-        patient_unassigned: Dict[str, List[int]] = {}
+        # Group unassigned by patient+date
+        # For coupled visits, include ALL slots (even if one was assigned)
+        pid_date_unassigned: Dict[str, List[int]] = {}
+        unassigned_set = set()
         for idx in unassigned_indices:
             r = self.results[idx]
             if r.staff_id or r.is_event:
                 continue
-            patient_unassigned.setdefault(r.pid, []).append(idx)
+            unassigned_set.add(idx)
+            key = f"{r.pid}|{r.date_str}"
+            pid_date_unassigned.setdefault(key, []).append(idx)
+
+        # Coupled partners: don't modify existing assignments for now
+        coupled_partners: Dict[str, List[int]] = {}  # empty - no partner gathering
 
         # Sort dates by load (least crowded first)
         sorted_dates = sorted(date_load.keys(), key=lambda d: date_load.get(d, 0))
 
         # 曜日優先度でソート（低→中→高: 低優先度を先にシフト）
         priority_order = {"低": 0, "中": 1, "高": 2, "": 0}
-        sorted_patients = sorted(
-            patient_unassigned.items(),
+        sorted_groups = sorted(
+            pid_date_unassigned.items(),
             key=lambda x: priority_order.get(
-                getattr(self.patient_map.get(x[0], None), "day_priority", "低"), 0
+                getattr(self.patient_map.get(x[0].split("|")[0], None), "day_priority", "低"), 0
             ),
         )
 
-        for pid, indices in sorted_patients:
+        # Debug: P041が含まれているか確認
+        p041_groups = [k for k in pid_date_unassigned.keys() if "P041" in k]
+        p064_groups = [k for k in pid_date_unassigned.keys() if "P064" in k]
+
+        # P041のresults状態を確認
+        p041_results = [(i, r.visit_id, r.staff_id or "NONE", r.date_str, r.is_event)
+                        for i, r in enumerate(self.results) if r.pid == "P041"]
+        p041_in_unassigned = [i for i in unassigned_indices
+                              if i < len(self.results) and self.results[i].pid == "P041"]
+        self._day_shift_failures.append(
+            f"GROUPS: total={len(sorted_groups)}, P041_groups={p041_groups}, "
+            f"P041_results={p041_results[:6]}, P041_unassigned_idx={p041_in_unassigned}"
+        )
+
+        for pd_key, indices in sorted_groups:
             if not indices:
                 continue
+
+            pid = pd_key.split("|")[0]
 
             # Get patient info
             patient = self.patient_map.get(pid)
             if not patient:
+                self._day_shift_failures.append(f"SKIP: {pd_key} - no patient master (pid={pid})")
                 continue
 
             # Get the original date of the unassigned visit
@@ -1557,6 +1640,10 @@ class AllocationEngine:
             ng_ids = constraints.get("ng_staff_ids", [])
             sex_lim = constraints.get("sex_limit", "")
 
+            self._day_shift_failures.append(
+                f"TRYING: {pid}|{orig_date} ({len(indices)} slots)"
+            )
+
             # Try each date from least crowded
             for alt_date in sorted_dates:
                 if alt_date == orig_date:
@@ -1565,23 +1652,34 @@ class AllocationEngine:
                 if not alt_weekday:
                     continue
 
+                # Skip weekends (Sat/Sun)
+                if alt_weekday in ("Sat", "Sun"):
+                    continue
+
                 # Check if this patient already has a visit on this date
+                # (割当済み OR 曜日シフト済みの両方をチェック)
                 already_on_date = any(
-                    r.pid == pid and r.date_str == alt_date and r.staff_id
+                    r.pid == pid and r.date_str == alt_date
                     for r in self.results
+                    if r.staff_id  # 割当済みのみ
                 )
                 if already_on_date:
                     continue
 
-                # For coupled visits, need to handle all slots together
+                # For coupled visits, include partner slots
                 is_coupled = orig_r.is_coupled
-                need_staff = 2 if is_coupled else 1
+                all_slots = list(indices)
+                partner_slots = coupled_partners.get(pd_key, [])
+                if partner_slots:
+                    all_slots.extend(partner_slots)
+                need_staff = len(all_slots)
 
                 # Find eligible staff for this date
                 placed_staff = []
                 all_placed = True
+                fail_reasons = []
 
-                for slot_idx in indices[:need_staff]:
+                for slot_idx in all_slots:
                     r = self.results[slot_idx]
                     found_staff = False
 
@@ -1620,11 +1718,20 @@ class AllocationEngine:
 
                     if not found_staff:
                         all_placed = False
+                        fail_reasons.append(f"slot {slot_idx}: no staff on {alt_date}({alt_weekday})")
                         break
 
                 if all_placed and len(placed_staff) >= need_staff:
+                    # Unassign partner slots first (they were still assigned)
+                    for pi in partner_slots:
+                        pr = self.results[pi]
+                        if pr.staff_id:
+                            self._unregister_assignment(pr.staff_id, pr.date_str, pi)
+                            pr.staff_id = ""
+                            pr.staff_name = ""
+
                     # Assign all slots
-                    for si, slot_idx in enumerate(indices[:need_staff]):
+                    for si, slot_idx in enumerate(all_slots):
                         r = self.results[slot_idx]
                         staff = placed_staff[si]
                         svc = r.service_min or 30
@@ -1654,7 +1761,13 @@ class AllocationEngine:
 
                     # Update date_load
                     date_load[alt_date] = date_load.get(alt_date, 0) + need_staff
+                    logger.info("DayShift: SUCCESS %s %s→%s (%d staff)", pid, orig_date, alt_date, need_staff)
                     break  # Move to next patient
+            else:
+                # All dates tried, none worked
+                msg = f"{pid} from {orig_date}: {'; '.join(fail_reasons[:3]) if fail_reasons else 'no alt dates'}"
+                logger.info("DayShift: FAILED %s", msg)
+                self._day_shift_failures.append(msg)
 
         return resolved
 

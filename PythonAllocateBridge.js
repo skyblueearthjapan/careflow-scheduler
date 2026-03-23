@@ -110,6 +110,22 @@ function runPythonAllocate(weekStartStr) {
     var allocMsg = summary.message || ('割当完了: ' + assignmentResults.length + '件');
     console.log(allocMsg);
 
+    // デバッグ: 未割当詳細と曜日シフト結果
+    if (summary.unassigned_detail) {
+      console.log('=== 未割当内訳 ===');
+      console.log(JSON.stringify(summary.unassigned_detail, null, 2));
+    }
+    if (summary.day_shifts && summary.day_shifts.length > 0) {
+      console.log('=== 曜日シフト成功 ===');
+      summary.day_shifts.forEach(function(s) { console.log('  ' + s); });
+    } else {
+      console.log('=== 曜日シフト成功: なし ===');
+    }
+    if (summary.day_shift_failures && summary.day_shift_failures.length > 0) {
+      console.log('=== 曜日シフト失敗 ===');
+      summary.day_shift_failures.forEach(function(s) { console.log('  ' + s); });
+    }
+
     // ============================================================
     // 4. 週ビューを更新
     // ============================================================
