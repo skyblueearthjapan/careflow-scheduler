@@ -72,11 +72,53 @@ function getInteractiveWeekData(weekStartStr) {
     }
   }
 
+  // 2名体制の不足分を未割当に追加
+  var patientMap = iwv_loadPatientMaster_(ss);
+  var pidDateAssigned = {};
+  var pidDateRef = {};
+  for (var asi = 0; asi < assigned.length; asi++) {
+    var ar = assigned[asi];
+    if (!ar.pid || !ar.dateStr) continue;
+    var pdKey = ar.pid + '|' + ar.dateStr;
+    pidDateAssigned[pdKey] = (pidDateAssigned[pdKey] || 0) + 1;
+    if (!pidDateRef[pdKey]) pidDateRef[pdKey] = ar;
+  }
+  for (var pdKey in pidDateAssigned) {
+    var parts = pdKey.split('|');
+    var pid = parts[0];
+    var dateStr = parts[1];
+    var pat = patientMap[pid];
+    if (!pat || !pat.needStaff || pat.needStaff < 2) continue;
+    var actual = pidDateAssigned[pdKey];
+    if (actual < pat.needStaff) {
+      var ref = pidDateRef[pdKey];
+      var missing = pat.needStaff - actual;
+      for (var mi = 0; mi < missing; mi++) {
+        unassigned.push({
+          visitId: (ref.visitId || '') + '_NEED' + mi,
+          dateStr: dateStr,
+          weekday: ref.weekday || '',
+          pid: pid,
+          pname: ref.pname || (pat.name || ''),
+          staffId: '__UNASSIGNED__',
+          staffName: '',
+          startMin: ref.startMin || null,
+          endMin: ref.endMin || null,
+          svcMin: ref.svcMin || (pat.svcMin || 30),
+          timeType: ref.timeType || '',
+          needStaff: pat.needStaff,
+          area: ref.area || '',
+          note: '[2名体制:2人目未割当]'
+        });
+      }
+    }
+  }
+
   return {
     weekStartStr: weekStartStr,
     weekDates: weekDates,
     staffList: iwv_loadStaffMaster_(ss),
-    patientMap: iwv_loadPatientMaster_(ss),
+    patientMap: patientMap,
     assignments: assigned,
     unassigned: unassigned,
     eventMap: iwv_loadEvents_(ss, weekDates),
