@@ -405,7 +405,8 @@ function audit_getCheckLabel_(check) {
     'staffRestricted': 'スタッフ制限',
     'weeklyCount': '週回数',
     'svcDuration': 'サービス時間',
-    'workdayViolation': '勤務日'
+    'workdayViolation': '勤務日',
+    'staffTimeOverlap': 'スタッフ時間重複'
   };
   return typeLabels[check.type] || check.type || '判定';
 }

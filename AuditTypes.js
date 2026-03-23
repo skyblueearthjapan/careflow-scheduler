@@ -81,6 +81,7 @@ const AUDIT_TAGS = {
   STAFF_HALF_DAY_OFF: 'スタッフ半休中',
   STAFF_RESTRICTED: 'スタッフ時間制限',
   WORKDAY_VIOLATION: '勤務日外',
+  STAFF_TIME_OVERLAP: 'スタッフ時間重複',
   // サービス品質系
   WEEKLY_COUNT_MISMATCH: '週回数不一致',
   SVC_DURATION_MISMATCH: 'サービス時間不一致'

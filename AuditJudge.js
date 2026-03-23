@@ -450,6 +450,66 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
     }
   });
 
+  // === C-8: スタッフ時間重複チェック (STAFF_TIME_OVERLAP) ===
+  // 同一スタッフが同じ日に別患者と時間重複していないかチェック
+  actuals.forEach(function(actual) {
+    if (!actual.staffId || actual.startMin === null || actual.endMin === null) return;
+
+    // dataset.actualPlanMap から同じスタッフ×同じ日の全訪問を収集
+    var staffId = actual.staffId;
+    var overlappingVisits = [];
+
+    // actualPlanMap は pid|dateStr -> [actuals] の形式
+    // 全患者を横断してこのスタッフの同日訪問を検索
+    for (var pdKey in dataset.actualPlanMap) {
+      if (!dataset.actualPlanMap.hasOwnProperty(pdKey)) continue;
+      var parts = pdKey.split('|');
+      if (parts.length < 2 || parts[1] !== dateStr) continue;
+      var otherPid = parts[0];
+      if (otherPid === pid) continue; // 同一患者内の重複は2名体制チェックで対応
+
+      var otherActuals = dataset.actualPlanMap[pdKey];
+      otherActuals.forEach(function(otherActual) {
+        if (otherActual.staffId !== staffId) return;
+        if (otherActual.startMin === null || otherActual.endMin === null) return;
+
+        // 時間重複チェック
+        if (actual.startMin < otherActual.endMin && actual.endMin > otherActual.startMin) {
+          overlappingVisits.push({
+            pid: otherPid,
+            pname: otherActual.pname || otherPid,
+            startMin: otherActual.startMin,
+            endMin: otherActual.endMin
+          });
+        }
+      });
+    }
+
+    if (overlappingVisits.length > 0) {
+      status = AUDIT_STATUS.NG;
+      tags.push(AUDIT_TAGS.STAFF_TIME_OVERLAP);
+
+      var staffName = actual.staffName || staffId;
+      var overlapDetails = overlappingVisits.map(function(ov) {
+        var ovStart = audit_minutesToTimeStr_(ov.startMin);
+        var ovEnd = audit_minutesToTimeStr_(ov.endMin);
+        return ov.pname + '(' + ovStart + '-' + ovEnd + ')';
+      }).join(', ');
+
+      var thisStart = audit_minutesToTimeStr_(actual.startMin);
+      var thisEnd = audit_minutesToTimeStr_(actual.endMin);
+
+      checks.push({
+        type: 'staffTimeOverlap',
+        status: AUDIT_STATUS.NG,
+        staffId: staffId,
+        staffName: staffName,
+        reason: 'スタッフ時間重複: ' + staffName + 'が' + thisStart + '-' + thisEnd
+          + 'に本訪問、同時間帯に別患者訪問あり(' + overlapDetails + ')'
+      });
+    }
+  });
+
   // タグの重複除去
   tags = tags.filter(function(tag, idx, arr) {
     return arr.indexOf(tag) === idx;
@@ -1009,4 +1069,14 @@ function audit_isTimeOverlap_(start1, end1, start2, end2) {
     return false;
   }
   return start1 < end2 && end1 > start2;
+}
+
+/**
+ * 分を HH:MM 文字列に変換
+ */
+function audit_minutesToTimeStr_(min) {
+  if (min === null || min === undefined) return '--:--';
+  var h = Math.floor(min / 60);
+  var m = min % 60;
+  return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
 }
