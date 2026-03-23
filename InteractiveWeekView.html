@@ -1366,50 +1366,61 @@
     }
 
     function applyAuditOverlay() {
-      if (!_auditCellSummary) return;
-
       // Apply to each day cell
       var cells = document.querySelectorAll('.day-cell');
       for (var ci = 0; ci < cells.length; ci++) {
         var cell = cells[ci];
         var staffId = cell.getAttribute('data-staff-id') || '';
         var dateStr = cell.getAttribute('data-date') || '';
+        var isUnassignedRow = (staffId === '__UNASSIGNED__');
 
         // Remove old badges
         var oldBadge = cell.querySelector('.cell-audit-badge');
         if (oldBadge) oldBadge.remove();
 
-        var sdKey = staffId + '|' + dateStr;
-        // Also try _UNASSIGNED_ key for unassigned row
-        var items = _auditCellSummary[sdKey];
-        if (!items && staffId === '__UNASSIGNED__') {
-          items = _auditCellSummary['_UNASSIGNED_|' + dateStr];
-        }
-        if (!items || items.length === 0) continue;
-
         // Build pid→status map
         var pidStatus = {};
         var okN = 0, warnN = 0, ngN = 0;
-        for (var ii = 0; ii < items.length; ii++) {
-          var item = items[ii];
-          pidStatus[item.pid] = item.status;
-          if (item.status === 'NG') ngN++;
-          else if (item.status === 'WARN') warnN++;
-          else okN++;
+
+        if (isUnassignedRow) {
+          // 未割当セル: カード全てを一律NG判定
+          var uaCards = cell.querySelectorAll('.visit-card');
+          for (var ui = 0; ui < uaCards.length; ui++) {
+            var uaPid = uaCards[ui].getAttribute('data-pid');
+            if (uaPid) {
+              pidStatus[uaPid] = 'NG';
+              ngN++;
+            }
+          }
+        } else if (_auditCellSummary) {
+          // 通常セル: サーバー監査データから取得
+          var sdKey = staffId + '|' + dateStr;
+          var items = _auditCellSummary[sdKey];
+          if (!items || items.length === 0) continue;
+
+          for (var ii = 0; ii < items.length; ii++) {
+            var item = items[ii];
+            pidStatus[item.pid] = item.status;
+            if (item.status === 'NG') ngN++;
+            else if (item.status === 'WARN') warnN++;
+            else okN++;
+          }
+        } else {
+          continue;
         }
 
+        if (okN + warnN + ngN === 0) continue;
+
         // Cell-level summary badge
-        if (okN + warnN + ngN > 0) {
-          var badge = document.createElement('div');
-          badge.className = 'cell-audit-badge';
-          var bHtml = '';
-          if (okN > 0) bHtml += '<span class="a-ok">\u25CB' + okN + '</span>';
-          if (warnN > 0) bHtml += '<span class="a-warn">\u25B3' + warnN + '</span>';
-          if (ngN > 0) bHtml += '<span class="a-ng">\u00D7' + ngN + '</span>';
-          badge.innerHTML = bHtml;
-          cell.style.position = 'relative';
-          cell.appendChild(badge);
-        }
+        var badge = document.createElement('div');
+        badge.className = 'cell-audit-badge';
+        var bHtml = '';
+        if (okN > 0) bHtml += '<span class="a-ok">\u25CB' + okN + '</span>';
+        if (warnN > 0) bHtml += '<span class="a-warn">\u25B3' + warnN + '</span>';
+        if (ngN > 0) bHtml += '<span class="a-ng">\u00D7' + ngN + '</span>';
+        badge.innerHTML = bHtml;
+        cell.style.position = 'relative';
+        cell.appendChild(badge);
 
         // Per-visit card audit badge
         var cards = cell.querySelectorAll('.visit-card');
