@@ -474,14 +474,19 @@ class AllocationEngine:
                         "ng_staff_ids": req.ng_staff_ids,
                         "sex_limit": req.sex_limit,
                     }
-                    self.unassigned.append({
-                        "date_str": req.date_str,
-                        "pid": req.pid,
-                        "pname": req.pname,
-                        "need_staff": req.need_staff,
-                        "slot": slot,
-                        "reason": "条件を満たすスタッフなし",
-                    })
+                    # 2名体制のスロットはresultsに空staffIdで入るため、
+                    # GAS側が"割当結果"シートから検出・表示する。
+                    # unassignedリストにも追加すると"割当不可"シート経由で2重表示になるため、
+                    # 2名体制の個別スロットはunassignedに追加しない。
+                    if req.need_staff <= 1:
+                        self.unassigned.append({
+                            "date_str": req.date_str,
+                            "pid": req.pid,
+                            "pname": req.pname,
+                            "need_staff": req.need_staff,
+                            "slot": slot,
+                            "reason": "条件を満たすスタッフなし",
+                        })
 
     # ==================================================================
     # Staff Selection
