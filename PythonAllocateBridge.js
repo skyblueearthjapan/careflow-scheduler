@@ -125,6 +125,10 @@ function runPythonAllocate(weekStartStr) {
       console.log('=== 曜日シフト失敗 ===');
       summary.day_shift_failures.forEach(function(s) { console.log('  ' + s); });
     }
+    if (summary.coupled_debug) {
+      console.log('=== 2名体制不足検出 ===');
+      console.log(JSON.stringify(summary.coupled_debug, null, 2));
+    }
 
     // ============================================================
     // 4. 週ビューを更新
