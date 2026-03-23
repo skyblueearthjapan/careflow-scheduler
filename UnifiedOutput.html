@@ -2338,7 +2338,7 @@
           btn.disabled = false;
           if (result && result.success) {
             showToast(result.message, 'success');
-            showTab('assignResult', document.querySelector('[data-tab="assignResult"]'));
+            showTab('weekView', document.querySelector('[data-tab="weekView"]'));
           } else {
             showToast(result ? result.message : 'エラーが発生しました', 'error');
           }
