@@ -855,7 +855,7 @@ function pyb_writeAssignmentResults_(ss, tz, assignments) {
 
   // Clear and write header
   sheet.clear();
-  var headers = ['visit_id', '日付', '曜日', 'staff_id', 'スタッフ名', 'patient_id', '患者名', 'エリア', '開始時刻', '終了時刻', 'サービス時間', '時間タイプ', '希望最早時刻', '希望最遅時刻', '備考'];
+  var headers = ['visit_id', '日付', '曜日', 'staff_id', 'スタッフ名', 'patient_id', '患者名', 'エリア', '開始時刻', '終了時刻', 'サービス時間', '時間タイプ', '希望最早時刻', '希望最遅時刻', '移動距離(km)', '移動時間(分)', '備考'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 
   if (assignments.length === 0) return;
@@ -879,6 +879,8 @@ function pyb_writeAssignmentResults_(ss, tz, assignments) {
       a.time_type || '',
       a.earliest_time_minutes != null ? a.earliest_time_minutes / 1440 : '',
       a.latest_time_minutes != null ? a.latest_time_minutes / 1440 : '',
+      a.movement_km != null ? a.movement_km : '',
+      a.movement_km != null ? Math.round(a.movement_km / 30 * 60) : '',
       a.notes || ''
     ]);
   }
