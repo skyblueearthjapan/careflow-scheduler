@@ -2591,15 +2591,13 @@ function 週ビューを更新_(ss, weekStartStr) {
     var pidDateCount = {};
     var pidDateInfo = {};
     weekData.forEach(function(row) {
-      var sid = row[idxStaffId] || '';
-      if (!sid) return; // 未割当はカウントしない
       var pid = (idxPid >= 0) ? (row[idxPid] || '') : '';
       if (!pid) return;
       var d = row[idxDate];
       if (!(d instanceof Date)) return;
       var ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
       var key = pid + '|' + ds;
-      pidDateCount[key] = (pidDateCount[key] || 0) + 1;
+      pidDateCount[key] = (pidDateCount[key] || 0) + 1; // 未割当スロットも含めてカウント
       if (!pidDateInfo[key]) {
         var pname = (idxPatient >= 0) ? (row[idxPatient] || '') : '';
         var startVal = (idxStart >= 0) ? row[idxStart] : null;
