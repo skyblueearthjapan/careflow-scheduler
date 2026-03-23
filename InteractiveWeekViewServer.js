@@ -75,9 +75,12 @@ function getInteractiveWeekData(weekStartStr) {
   // 2名体制の不足分を未割当に追加
   var patientMap = iwv_loadPatientMaster_(ss);
 
-  // まず既存の未割当から時刻なし(_NEEDやstartMin=null)を除去（重複防止）
+  // 既存の未割当から不要エントリを除去
   unassigned = unassigned.filter(function(u) {
+    // Python側の_NEEDエントリは除去（GAS側で再生成する）
     if ((u.visitId || '').indexOf('_NEED') >= 0) return false;
+    // 時刻なし（startMin=null/0）の未割当は表示できないので除去
+    if (!u.startMin && u.startMin !== 0) return false;
     return true;
   });
 
