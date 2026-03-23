@@ -2276,12 +2276,27 @@ function 週ビューを更新_(ss, weekStartStr) {
       const pIdxId  = pHeader.indexOf('patient_id');
       const pIdxGen = pHeader.indexOf('性別');
       const pIdxName = pHeader.indexOf('患者名');
+      // need_staff列を検索（「必要スタッフ数」「2人」等）
+      let pIdxNeedStaff = -1;
+      for (let pi = 0; pi < pHeader.length; pi++) {
+        const h = String(pHeader[pi] || '').trim();
+        if (h.indexOf('人') >= 0 || h.indexOf('スタッフ数') >= 0 || h === 'need_staff') {
+          pIdxNeedStaff = pi;
+          break;
+        }
+      }
       pData.forEach(r => {
         const id = r[pIdxId];
         if (!id) return;
+        let needStaff = 1;
+        if (pIdxNeedStaff >= 0) {
+          var ns = String(r[pIdxNeedStaff] || '').replace(/[^0-9]/g, '');
+          if (ns) needStaff = parseInt(ns, 10) || 1;
+        }
         patientGenderMap[id] = {
           gender: pIdxGen >= 0 ? (r[pIdxGen] || '') : '',
-          name: pIdxName >= 0 ? (r[pIdxName] || '') : ''
+          name: pIdxName >= 0 ? (r[pIdxName] || '') : '',
+          needStaff: needStaff
         };
       });
     }
@@ -2566,6 +2581,67 @@ function 週ビューを更新_(ss, weekStartStr) {
       }
     }
   });
+
+  // === 2名体制の不足分を「未割当」行に追加 ===
+  // 患者×日ごとに、need_staff=2なのに割当が1件しかない場合、未割当エントリを追加
+  var unassignedStaff = staffList.find(function(s) { return s.name === '未割当'; });
+  if (unassignedStaff) {
+    var unassignedRowIdx = staffList.indexOf(unassignedStaff);
+    // 割当済み訪問を患者×日でカウント
+    var pidDateCount = {};
+    var pidDateInfo = {};
+    weekData.forEach(function(row) {
+      var sid = row[idxStaffId] || '';
+      if (!sid) return; // 未割当はカウントしない
+      var pid = (idxPid >= 0) ? (row[idxPid] || '') : '';
+      if (!pid) return;
+      var d = row[idxDate];
+      if (!(d instanceof Date)) return;
+      var ds = Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+      var key = pid + '|' + ds;
+      pidDateCount[key] = (pidDateCount[key] || 0) + 1;
+      if (!pidDateInfo[key]) {
+        var pname = (idxPatient >= 0) ? (row[idxPatient] || '') : '';
+        var startVal = (idxStart >= 0) ? row[idxStart] : null;
+        var endVal = (idxEnd >= 0) ? row[idxEnd] : null;
+        pidDateInfo[key] = { pid: pid, pname: pname, ds: ds, start: startVal, end: endVal };
+      }
+    });
+
+    // 不足分を追加
+    for (var pdKey in pidDateCount) {
+      var parts = pdKey.split('|');
+      var pid = parts[0];
+      var ds = parts[1];
+      var patInfo = patientGenderMap[pid];
+      if (!patInfo || patInfo.needStaff < 2) continue;
+      var actual = pidDateCount[pdKey];
+      if (actual < patInfo.needStaff) {
+        // この日付のカラムインデックスを計算
+        var dayDate = parseDateLoose_(ds);
+        if (!dayDate) continue;
+        dayDate.setHours(0,0,0,0);
+        var dayDiff = Math.round((dayDate - start) / 86400000);
+        if (dayDiff < 0 || dayDiff > 6) continue;
+
+        var info = pidDateInfo[pdKey];
+        var pGender = patInfo.gender ? '（' + patInfo.gender + '）' : '';
+        var missing = patInfo.needStaff - actual;
+        for (var mi = 0; mi < missing; mi++) {
+          // 未割当セルに追記
+          var uCell = viewSheet.getRange(2 + unassignedRowIdx, 2 + dayDiff);
+          var existing = uCell.getValue() || '';
+          var timeStr = '';
+          if (info.start) {
+            timeStr = formatTimeVal(info.start) + '〜' + (info.end ? formatTimeVal(info.end) : '??');
+          }
+          var newLine = '👥 ' + timeStr + ' ' + pid + pGender + ' ' + (info.pname || '') + ' [2人目未割当]';
+          uCell.setValue(existing ? existing + '\n' + newLine : newLine);
+          uCell.setWrap(true);
+        }
+      }
+    }
+  }
 
   // 監査キャッシュをクリア（割当結果が反映された週ビューに連動して監査データも更新が必要）
   try { audit_clearCache(startStr); } catch(e) { console.log('audit cache clear skipped: ' + e); }
