@@ -9,11 +9,17 @@ from .allocation_models import Interval
 # ============================================================
 # Constants
 # ============================================================
-EXTRA_BUFFER_MIN = 15     # Buffer between visits in gap packing
+EXTRA_BUFFER_MIN = 15     # Buffer between visits in gap packing (fallback)
 ASSIGN_BUFFER_MIN = 5     # Buffer within window capacity calc
 EARTH_RADIUS_KM = 6371.0  # Earth radius for Haversine
 MAX_TWO_OPT_ITER = 50     # Max 2-opt iterations
 TWO_OPT_THRESHOLD = 1e-9  # Improvement threshold for 2-opt
+
+# Travel time constants (distance-based buffer)
+TRAVEL_SPEED_KPH = 25.0    # Effective speed in km/h (car + traffic signals)
+TRAVEL_MIN_BUFFER = 5       # Minimum buffer between visits (minutes)
+TRAVEL_MAX_BUFFER = 30      # Maximum buffer between visits (minutes)
+TRAVEL_FALLBACK_MIN = 15    # Fallback when distance is unknown (minutes)
 
 # Default time windows by time type (in minutes from midnight)
 TIME_TYPE_DEFAULTS = {
@@ -64,6 +70,18 @@ def dist_to_score(km: Optional[float]) -> int:
         if km <= threshold:
             return score
     return DIST_SCORE_FAR
+
+
+def travel_time_min(dist_km: Optional[float]) -> int:
+    """Calculate travel time in minutes from straight-line distance.
+
+    Uses TRAVEL_SPEED_KPH (25 km/h) with min/max clamping.
+    Returns TRAVEL_FALLBACK_MIN (15) when distance is unknown.
+    """
+    if dist_km is None:
+        return TRAVEL_FALLBACK_MIN
+    raw = dist_km / TRAVEL_SPEED_KPH * 60
+    return max(TRAVEL_MIN_BUFFER, min(TRAVEL_MAX_BUFFER, round(raw)))
 
 
 # ============================================================

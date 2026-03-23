@@ -1337,7 +1337,8 @@ def api_allocate():
                 "latest_time_minutes": r.latest_min,
                 "notes": r.note,
                 "is_event": r.is_event,
-                "movement_km": round(r.movement_km, 2) if r.movement_km else None,
+                "movement_km": round(r.movement_km, 2) if r.movement_km is not None else None,
+                "movement_min": max(5, min(30, round(r.movement_km / 25.0 * 60))) if r.movement_km is not None else None,
             })
 
         add_log(f"allocate 完了: {len(assignment_results)}件割当")

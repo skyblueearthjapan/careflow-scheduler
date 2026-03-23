@@ -26,8 +26,9 @@ from .allocation_models import (
     WeeklyPattern, ConfirmedHistory, AssignmentResult, Interval
 )
 from .allocation_utils import (
-    EXTRA_BUFFER_MIN, ASSIGN_BUFFER_MIN,
-    calc_distance_km, dist_to_score, intervals_overlap, merge_intervals,
+    EXTRA_BUFFER_MIN, ASSIGN_BUFFER_MIN, TRAVEL_MIN_BUFFER,
+    calc_distance_km, dist_to_score, travel_time_min,
+    intervals_overlap, merge_intervals,
     compute_gaps, intersect_gaps, get_effective_window,
     nearest_neighbor_route, two_opt, route_length,
     normalize_cont_pref, weekday_index, fmt_min
@@ -244,8 +245,8 @@ class AllocationEngine:
                 self._enforce_coupled_atomicity(allow_partial=True)
                 logger.info("Final Day Shift: resolved %d visits", shifted)
 
-        # Step 13 - 2名体制の不足分を未割当として追加
-        self._add_missing_coupled_entries(active_requests)
+        # Step 13 - 2名体制の不足分はGAS側(週ビュー/インタラクティブ)で追加
+        # Python側では追加しない（二重カウント防止）
 
         # Summary
         assigned_count = sum(
@@ -656,10 +657,10 @@ class AllocationEngine:
             -c["is_pref"],                                  # 1. preferred staff first
             1 if c["same_patient_today"] else 0,            # 2. avoid same patient today
             1 if c["is_dynamic_prev"] else 0,               # 3. avoid dynamic prev
-            c["patient_count"],                              # 4. fewer patient visits
-            c["rotation_rank"],                              # 5. rotation rank
-            c["day_count"],                                  # 6. fewer day assignments
-            c["dist_score"],                                 # 7. closer distance
+            c["dist_score"],                                 # 4. closer distance
+            c["patient_count"],                              # 5. fewer patient visits
+            c["rotation_rank"],                              # 6. rotation rank
+            c["day_count"],                                  # 7. fewer day assignments
         )
 
     # ==================================================================
@@ -1258,7 +1259,7 @@ class AllocationEngine:
             if cursor < day_end:
                 gaps.append(Interval(cursor, day_end))
 
-            # Place optimised nodes into gaps
+            # Place optimised nodes into gaps with distance-based buffer
             opt_idx = 0
             for gap in gaps:
                 t = gap.start
@@ -1274,7 +1275,17 @@ class AllocationEngine:
                         if t >= eff_earliest and (eff_latest is None or t + svc <= eff_latest):
                             r.start_min = t
                             r.end_min = t + svc
-                            t += svc + EXTRA_BUFFER_MIN
+                            # 次のノードとの距離ベースバッファを計算
+                            next_idx = opt_idx + 1
+                            if next_idx < len(optimized):
+                                inter_dist = calc_distance_km(
+                                    node["lat"], node["lng"],
+                                    optimized[next_idx]["lat"], optimized[next_idx]["lng"]
+                                )
+                                buffer = travel_time_min(inter_dist)
+                            else:
+                                buffer = TRAVEL_MIN_BUFFER
+                            t += svc + buffer
                             opt_idx += 1
                         else:
                             # 時間窓外: スキップして次の訪問を試す
@@ -1811,8 +1822,9 @@ class AllocationEngine:
                 key = f"{req.pid}|{req.date_str}"
                 need_staff_map[key] = req.need_staff
 
-        # Count assigned per patient+date
+        # Count assigned and unassigned per patient+date
         assigned_count_map: Dict[str, int] = {}
+        unassigned_coupled: Dict[str, List[AssignmentResult]] = {}
         assigned_info: Dict[str, AssignmentResult] = {}
         for r in self.results:
             if r.is_event or not r.is_coupled:
@@ -1821,6 +1833,8 @@ class AllocationEngine:
             if r.staff_id:
                 assigned_count_map[key] = assigned_count_map.get(key, 0) + 1
                 assigned_info[key] = r
+            else:
+                unassigned_coupled.setdefault(key, []).append(r)
 
         # Also check day-shifted visits (they have different dates from original)
         for r in self.results:
@@ -1831,16 +1845,29 @@ class AllocationEngine:
                 # This visit was day-shifted to a date not in original requests
                 need_staff_map[key] = 2  # Assume 2-staff need
 
-        # Add missing entries
+        # Fix missing entries: set time on existing unassigned OR add new
         added = 0
         for key, need in need_staff_map.items():
             actual = assigned_count_map.get(key, 0)
             if 0 < actual < need:
-                # Has some assigned but not enough
                 ref = assigned_info.get(key)
                 if not ref:
                     continue
-                for _ in range(need - actual):
+                missing = need - actual
+                # まず既存の未割当スロットに時刻を設定
+                existing_unassigned = unassigned_coupled.get(key, [])
+                for i, ua in enumerate(existing_unassigned):
+                    if i >= missing:
+                        break
+                    # 割当済みスロットと同じ時刻を設定
+                    ua.start_min = ref.start_min
+                    ua.end_min = ref.end_min
+                    if "[2名体制:2人目未割当]" not in (ua.note or ""):
+                        ua.note = (ua.note or "") + " [2名体制:2人目未割当]"
+                    added += 1
+                # 既存の未割当が足りなければ新規追加
+                remaining = missing - len(existing_unassigned)
+                for _ in range(remaining):
                     placeholder = AssignmentResult(
                         visit_id=f"{ref.visit_id}_NEED",
                         date_str=ref.date_str,
