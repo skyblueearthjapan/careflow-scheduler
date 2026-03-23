@@ -175,12 +175,26 @@ function audit_buildWeekSummary_(dataset) {
     var actuals = dataset.actualPlanMap[expKey] || [];
     if (actuals.length > 0) continue;  // 実績があれば上のループで処理済み
 
-    // 実績がない場合 → MISSING_ACTUAL
+    // 実績がない場合 → 未割当（NG）
     var parts = expKey.split('|');
     var pid = parts[0];
     var dateStr = parts[1];
 
     var judgement = audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr);
+
+    // cellSummaryに未割当エントリを追加（グリッドのバッジ表示用）
+    var uaSdKey = audit_makeSdKey_('_UNASSIGNED_', dateStr);
+    if (!cellSummary[uaSdKey]) cellSummary[uaSdKey] = [];
+    var uaExists = cellSummary[uaSdKey].some(function(item) { return item.pid === pid; });
+    if (!uaExists) {
+      cellSummary[uaSdKey].push({
+        pid: pid,
+        pname: (dataset.patientMasterMap[pid] || {}).name || '',
+        status: judgement.status,
+        tags: judgement.tags,
+        detailKey: audit_makePdKey_(pid, dateStr)
+      });
+    }
 
     // 患者サマリを更新
     var master = dataset.patientMasterMap[pid];

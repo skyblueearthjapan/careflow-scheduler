@@ -2442,6 +2442,24 @@
       }
       container.appendChild(card);
 
+      // -- Unassigned NG Banner --
+      if (visit.staffId === '__UNASSIGNED__') {
+        var ngBanner = document.createElement('div');
+        ngBanner.className = 'constraint-info-card';
+        ngBanner.style.background = 'rgba(198,40,40,0.08)';
+        ngBanner.style.borderLeft = '4px solid #c62828';
+        var ngH4 = document.createElement('h4');
+        ngH4.style.color = '#c62828';
+        ngH4.textContent = '\u76e3\u67fb\u5224\u5b9a: NG\uff08\u672a\u5272\u5f53\uff09'; // 監査判定: NG（未割当）
+        ngBanner.appendChild(ngH4);
+        var ngMsg = document.createElement('div');
+        ngMsg.style.fontSize = '12px';
+        ngMsg.style.color = '#555';
+        ngMsg.textContent = '\u30b9\u30bf\u30c3\u30d5\u304c\u5272\u5f53\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002\u4e0b\u8a18\u306e\u5236\u7d04\u6761\u4ef6\u3092\u78ba\u8a8d\u306e\u4e0a\u3001\u5272\u5f53\u3092\u884c\u3063\u3066\u304f\u3060\u3055\u3044\u3002'; // スタッフが割当されていません。下記の制約条件を確認の上、割当を行ってください。
+        ngBanner.appendChild(ngMsg);
+        container.appendChild(ngBanner);
+      }
+
       // -- Schedule Requirements Card --
       if (patient) {
         // Count current week assignments for this patient
@@ -2679,7 +2697,7 @@
           // Show current-staff suggestions on timeline bar
           for (var sgi = 0; sgi < suggestions.length; sgi++) {
             var sg = suggestions[sgi];
-            if (sg.staffId !== visit.staffId) continue; // only current staff on timeline
+            if (visit.staffId !== '__UNASSIGNED__' && sg.staffId !== visit.staffId) continue; // only current staff on timeline (unassigned shows all)
             var sgLeft = Math.max(0, (sg.startMin - tlStart) / tlRange * 100);
             var sgWidth = Math.min(100, (sg.endMin - tlStart) / tlRange * 100) - sgLeft;
             var sgEl = document.createElement('div');

@@ -166,17 +166,32 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
         }
       }
     } else {
-      // 期待に対応する実績がない → MISSING_ACTUAL
-      if (status !== AUDIT_STATUS.NG) {
-        status = AUDIT_STATUS.WARN;
+      // 期待に対応する実績がない
+      if (actuals.length === 0) {
+        // 実績が完全にゼロ → 未割当 → NG
+        status = AUDIT_STATUS.NG;
+        if (tags.indexOf(AUDIT_TAGS.UNASSIGNED) < 0) {
+          tags.push(AUDIT_TAGS.UNASSIGNED);
+        }
+        checks.push({
+          type: 'unassigned',
+          status: AUDIT_STATUS.NG,
+          expected: exp,
+          reason: '未割当です（実績がありません）'
+        });
+      } else {
+        // 一部の実績はあるが足りない → MISSING_ACTUAL (WARN)
+        if (status !== AUDIT_STATUS.NG) {
+          status = AUDIT_STATUS.WARN;
+        }
+        tags.push(AUDIT_TAGS.MISSING_ACTUAL);
+        checks.push({
+          type: 'missing',
+          status: AUDIT_STATUS.WARN,
+          expected: exp,
+          reason: '期待に対応する実績がありません'
+        });
       }
-      tags.push(AUDIT_TAGS.MISSING_ACTUAL);
-      checks.push({
-        type: 'missing',
-        status: AUDIT_STATUS.WARN,
-        expected: exp,
-        reason: '期待に対応する実績がありません'
-      });
     }
 
     // ソースタグを追加
