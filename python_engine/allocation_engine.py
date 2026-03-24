@@ -1460,25 +1460,175 @@ class AllocationEngine:
         return result
 
     def _enrich_from_patterns(self, requests: List[VisitRequest]) -> List[VisitRequest]:
-        """Enrich requests with time window info from weekly_patterns."""
+        """Enrich requests with weekly_patterns and generate missing pattern-day requests.
+
+        Patterns are treated as SOFT constraints (best-effort):
+        - Pattern times are set as earliest/latest (preferred window), not fixed
+        - Pattern days generate new requests if missing, respecting master NG days
+        - Master data constraints (NG days, time windows) are HARD and always respected
+        """
         if not self.weekly_patterns:
             return requests
-        pattern_map: Dict[str, List] = {}
+
+        from datetime import datetime, timedelta
+
+        # --- Build pattern lookup: pid -> [WeeklyPattern] ---
+        patient_patterns: Dict[str, List[WeeklyPattern]] = {}
+        for wp in self.weekly_patterns:
+            patient_patterns.setdefault(wp.pid, []).append(wp)
+
+        # --- Build week date map: day_code -> date_str ---
+        # Derive from existing requests
+        day_to_date: Dict[str, str] = {}
+        for req in requests:
+            if req.weekday and req.date_str and req.weekday not in day_to_date:
+                day_to_date[req.weekday] = req.date_str
+
+        # If some days are missing, compute from first known date
+        if day_to_date and len(day_to_date) < 7:
+            day_codes = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            sample_day = next(iter(day_to_date))
+            sample_date_str = day_to_date[sample_day]
+            try:
+                parts = sample_date_str.split("/")
+                sample_dt = datetime(int(parts[0]), int(parts[1]), int(parts[2]))
+                sample_idx = day_codes.index(sample_day)
+                for i, dc in enumerate(day_codes):
+                    if dc not in day_to_date:
+                        delta = i - sample_idx
+                        dt = sample_dt + timedelta(days=delta)
+                        day_to_date[dc] = dt.strftime("%Y/%m/%d")
+            except (ValueError, IndexError):
+                pass
+
+        # --- Track existing requests per patient|day ---
+        existing_pd: Dict[str, bool] = {}
+        for req in requests:
+            if req.pid and req.weekday:
+                existing_pd[f"{req.pid}|{req.weekday}"] = True
+
+        # --- Phase 1: Enrich existing requests with pattern time windows ---
+        pattern_map: Dict[str, List[WeeklyPattern]] = {}
         for wp in self.weekly_patterns:
             key = f"{wp.pid}|{wp.day_code}"
             pattern_map.setdefault(key, []).append(wp)
+
         for req in requests:
             key = f"{req.pid}|{req.weekday}"
             patterns = pattern_map.get(key)
             if not patterns:
                 continue
             pat = patterns[0]
-            if req.start_min is None and pat.start_min is not None:
-                req.start_min = pat.start_min
-            if req.end_min is None and pat.end_min is not None:
-                req.end_min = pat.end_min
-            if not req.time_type and pat.start_min is not None:
-                req.time_type = "固定"
+            # Set pattern time as preferred window (soft constraint)
+            if pat.start_min is not None:
+                if req.start_min is None:
+                    req.start_min = pat.start_min
+                if req.end_min is None:
+                    req.end_min = pat.end_min if pat.end_min is not None else pat.start_min + (pat.service_min or 60)
+                # Use earliest/latest for soft constraint (allows engine to adjust)
+                if req.earliest_min is None:
+                    req.earliest_min = pat.start_min
+                if req.latest_min is None:
+                    end = pat.end_min if pat.end_min is not None else pat.start_min + (pat.service_min or 60)
+                    req.latest_min = end
+                # Set time_type to 時間帯 (flexible window) instead of 固定
+                if not req.time_type:
+                    req.time_type = "時間帯"
+            if pat.service_min and req.service_min == 60:
+                req.service_min = pat.service_min
+
+        # --- Build cancelled set: don't resurrect cancelled visits ---
+        cancelled_pd: set = set()
+        for pc in self.patient_changes:
+            op = pc.operation if hasattr(pc, 'operation') else (pc.get("operation", "") if isinstance(pc, dict) else "")
+            pc_pid = pc.pid if hasattr(pc, 'pid') else (pc.get("pid", "") if isinstance(pc, dict) else "")
+            pc_date = pc.date_str if hasattr(pc, 'date_str') else (pc.get("date_str", "") if isinstance(pc, dict) else "")
+            if op == "キャンセル" and pc_pid and pc_date:
+                # Reverse map date_str to weekday
+                for dc, ds in day_to_date.items():
+                    if ds == pc_date:
+                        cancelled_pd.add(f"{pc_pid}|{dc}")
+                        break
+
+        # --- Phase 2: Generate new requests for pattern days not in existing requests ---
+        new_requests: List[VisitRequest] = []
+        for pid, pats in patient_patterns.items():
+            patient = self.patient_map.get(pid)
+            if not patient:
+                continue
+            ng_days = set(patient.ng_days) if patient.ng_days else set()
+
+            for pat in pats:
+                pd_key = f"{pid}|{pat.day_code}"
+                # Skip if request already exists for this patient|day
+                if pd_key in existing_pd:
+                    continue
+                # Skip if this visit was cancelled by patient change
+                if pd_key in cancelled_pd:
+                    logger.info("Pattern day %s for patient %s was cancelled - skipped",
+                                pat.day_code, pid)
+                    continue
+                # Hard constraint: skip NG days
+                if pat.day_code in ng_days:
+                    logger.info("Pattern day %s for patient %s is NG day - skipped",
+                                pat.day_code, pid)
+                    continue
+                # Get date for this day code
+                date_str = day_to_date.get(pat.day_code)
+                if not date_str:
+                    continue
+
+                # Validate pattern time against master time window
+                master_earliest = patient.start_pref_min
+                master_latest = patient.end_pref_min
+                pat_start = pat.start_min
+                pat_end = pat.end_min if pat.end_min is not None else (
+                    pat.start_min + (pat.service_min or 60) if pat.start_min is not None else None
+                )
+
+                # Clamp pattern time to master window (hard constraint)
+                if pat_start is not None and master_earliest is not None:
+                    pat_start = max(pat_start, master_earliest)
+                if pat_end is not None and master_latest is not None:
+                    pat_end = min(pat_end, master_latest)
+
+                # Guard: skip if clamping produced an inverted window
+                if pat_start is not None and pat_end is not None and pat_start >= pat_end:
+                    logger.info("Pattern time for %s on %s is outside master window - skipped",
+                                pid, pat.day_code)
+                    continue
+
+                new_req = VisitRequest(
+                    request_id=f"PAT_{pid}_{pat.day_code}",
+                    date_str=date_str,
+                    weekday=pat.day_code,
+                    pid=pid,
+                    pname=pat.pname or (patient.name if patient else ""),
+                    area=patient.area if patient else "",
+                    start_min=pat_start,
+                    end_min=pat_end,
+                    service_min=pat.service_min or patient.service_minutes or 60,
+                    need_staff=pat.need_staff or patient.need_staff or 1,
+                    specified_staff_ids=list(patient.fixed_staff_ids) if patient.fixed_staff_ids else [],
+                    specified_type=patient.fixed_type or "",
+                    ng_staff_ids=list(patient.ng_staff_ids) if patient.ng_staff_ids else [],
+                    sex_limit=patient.sex_limit or "",
+                    cont_pref=patient.cont_pref or "",
+                    time_type="時間帯" if pat_start is not None else (patient.time_type or ""),
+                    earliest_min=pat_start,
+                    latest_min=pat_end,
+                    change_type="通常",
+                    note=f"[パターン生成: {pat.day_code}]",
+                )
+                new_requests.append(new_req)
+                existing_pd[pd_key] = True
+                logger.info("Pattern-generated request for %s on %s (%s)",
+                            pid, pat.day_code, date_str)
+
+        if new_requests:
+            logger.info("Pattern generated %d new requests", len(new_requests))
+            requests.extend(new_requests)
+
         return requests
 
     # ==================================================================
