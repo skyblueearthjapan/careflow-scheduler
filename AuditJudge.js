@@ -57,6 +57,21 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
         status: AUDIT_STATUS.WARN,
         reason: extraReason
       });
+
+      // 期待がなくても2名体制チェックは実施
+      // （希望曜日外でも実際に配置されている以上、人数不足はNGとすべき）
+      if (master && (master.needStaff || 1) >= 2) {
+        var assignedActuals = actuals.filter(function(a) { return !a.isUnassigned; });
+        if (assignedActuals.length < (master.needStaff || 1)) {
+          status = AUDIT_STATUS.NG;
+          tags.push(AUDIT_TAGS.TWO_STAFF_MISSING || 'TWO_STAFF_MISSING');
+          checks.push({
+            type: 'twoStaffMissing',
+            status: AUDIT_STATUS.NG,
+            reason: '2名体制で' + assignedActuals.length + '名しか割当されていません'
+          });
+        }
+      }
     }
     return { status: status, tags: tags, checks: checks };
   }
