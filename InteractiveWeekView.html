@@ -1366,6 +1366,17 @@
     }
 
     function applyAuditOverlay() {
+      // Build set of unassigned pid|dateStr for 2-staff NG override
+      var unassignedPidDateSet = {};
+      if (_state && _state.unassigned) {
+        for (var uai = 0; uai < _state.unassigned.length; uai++) {
+          var uaItem = _state.unassigned[uai];
+          if (uaItem.pid && uaItem.dateStr) {
+            unassignedPidDateSet[uaItem.pid + '|' + uaItem.dateStr] = true;
+          }
+        }
+      }
+
       // Apply to each day cell
       var cells = document.querySelectorAll('.day-cell');
       for (var ci = 0; ci < cells.length; ci++) {
@@ -1400,9 +1411,14 @@
 
           for (var ii = 0; ii < items.length; ii++) {
             var item = items[ii];
-            pidStatus[item.pid] = item.status;
-            if (item.status === 'NG') ngN++;
-            else if (item.status === 'WARN') warnN++;
+            // 未割当リストにある利用者は、サーバー判定に関わらずNG（2名体制で人数不足等）
+            var effectiveStatus = item.status;
+            if (effectiveStatus !== 'NG' && unassignedPidDateSet[item.pid + '|' + dateStr]) {
+              effectiveStatus = 'NG';
+            }
+            pidStatus[item.pid] = effectiveStatus;
+            if (effectiveStatus === 'NG') ngN++;
+            else if (effectiveStatus === 'WARN') warnN++;
             else okN++;
           }
         } else {

@@ -60,16 +60,23 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
 
       // 期待がなくても2名体制チェックは実施
       // （希望曜日外でも実際に配置されている以上、人数不足はNGとすべき）
-      if (master && (master.needStaff || 1) >= 2) {
-        var assignedActuals = actuals.filter(function(a) { return !a.isUnassigned; });
-        if (assignedActuals.length < (master.needStaff || 1)) {
+      var masterForCheck = master || (dataset.patientMasterMap ? dataset.patientMasterMap[pid] : null);
+      var requiredStaff = masterForCheck ? (masterForCheck.needStaff || 1) : 1;
+      console.log('audit_judgePatientDay_ 2staff-check: pid=' + pid + ' date=' + dateStr +
+        ' master=' + !!masterForCheck + ' needStaff=' + requiredStaff +
+        ' actuals.length=' + actuals.length +
+        ' unassigned=' + actuals.filter(function(a){ return a.isUnassigned; }).length);
+      if (requiredStaff >= 2) {
+        var assignedCount = actuals.filter(function(a) { return !a.isUnassigned; }).length;
+        if (assignedCount < requiredStaff) {
           status = AUDIT_STATUS.NG;
-          tags.push(AUDIT_TAGS.TWO_STAFF_MISSING || 'TWO_STAFF_MISSING');
+          tags.push('TWO_STAFF_MISSING');
           checks.push({
             type: 'twoStaffMissing',
             status: AUDIT_STATUS.NG,
-            reason: '2名体制で' + assignedActuals.length + '名しか割当されていません'
+            reason: '2名体制で' + assignedCount + '名しか割当されていません'
           });
+          console.log('audit_judgePatientDay_ 2staff-check: → NG (assigned=' + assignedCount + '/' + requiredStaff + ')');
         }
       }
     }
