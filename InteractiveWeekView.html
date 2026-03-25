@@ -2506,10 +2506,11 @@
         var seenVisitKeys = {};
         function countVisit_(v) {
           if (v.pid !== pid) return;
-          // ペアの baseId を抽出（V001-1 → V001）、ペアでなければ visitId そのまま
+          // _NEEDサフィックスを除去してからペアの baseId を抽出（V001-1_NEED0 → V001-1 → V001）
           var vid = v.visitId || '';
-          var pairMatch = vid.match(/^(V\d+)-\d+$/);
-          var baseKey = (pairMatch ? pairMatch[1] : vid) + '|' + v.dateStr;
+          var cleanVid = vid.replace(/_NEED\d+$/, '');
+          var pairMatch = cleanVid.match(/^(V\d+)-\d+$/);
+          var baseKey = (pairMatch ? pairMatch[1] : cleanVid) + '|' + v.dateStr;
           if (seenVisitKeys[baseKey]) return;
           seenVisitKeys[baseKey] = true;
           currentWeekCount++;
