@@ -180,16 +180,23 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
           reason: '未割当です（実績がありません）'
         });
       } else {
-        // 一部の実績はあるが足りない → MISSING_ACTUAL (WARN)
-        if (status !== AUDIT_STATUS.NG) {
+        // 一部の実績はあるが足りない
+        // needStaff>=2 の場合は人数不足で NG（赤）、それ以外は WARN（オレンジ）
+        var missingIsNg = (exp.needStaff || 1) >= 2;
+        if (missingIsNg) {
+          status = AUDIT_STATUS.NG;
+        } else if (status !== AUDIT_STATUS.NG) {
           status = AUDIT_STATUS.WARN;
         }
+        var missingStatus = missingIsNg ? AUDIT_STATUS.NG : AUDIT_STATUS.WARN;
         tags.push(AUDIT_TAGS.MISSING_ACTUAL);
         checks.push({
           type: 'missing',
-          status: AUDIT_STATUS.WARN,
+          status: missingStatus,
           expected: exp,
-          reason: '期待に対応する実績がありません'
+          reason: missingIsNg
+            ? '2名体制で実績が不足しています（未割当）'
+            : '期待に対応する実績がありません'
         });
       }
     }
