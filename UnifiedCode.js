@@ -519,6 +519,16 @@ function input_appendRows(sheetName, rows) {
       sheet.getRange(lastRow + 1, 1, normalizedRows.length, numCols).setValues(normalizedRows);
     }
 
+    // 患者マスタ・スタッフマスタの場合、緯度経度が空の行を自動補完
+    if (sheetName === SHEETS.PATIENT_MASTER || sheetName === SHEETS.STAFF_MASTER) {
+      try {
+        var addrH = (sheetName === SHEETS.STAFF_MASTER) ? '拠点住所' : '住所';
+        updateSheetLatLng_(sheet, addrH, '緯度', '経度');
+      } catch (geoErr) {
+        console.warn('自動位置情報更新でエラー:', geoErr);
+      }
+    }
+
     return { success: true, message: normalizedRows.length + ' 行を追加しました', addedCount: normalizedRows.length };
   } finally {
     lock.releaseLock();
@@ -600,6 +610,22 @@ function input_updateCells(sheetName, updates) {
     validUpdates.forEach(u => {
       sheet.getRange(u.row, u.col).setValue(u.value);
     });
+
+    // 患者マスタ・スタッフマスタで住所が更新された場合、緯度経度を自動補完
+    if (sheetName === SHEETS.PATIENT_MASTER || sheetName === SHEETS.STAFF_MASTER) {
+      var addrH2 = (sheetName === SHEETS.STAFF_MASTER) ? '拠点住所' : '住所';
+      var headerRow2 = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      var addrColIdx = headerRow2.indexOf(addrH2);
+      // 住所列が更新対象に含まれているかチェック
+      var addressUpdated = validUpdates.some(u => u.col === addrColIdx + 1);
+      if (addressUpdated) {
+        try {
+          updateSheetLatLng_(sheet, addrH2, '緯度', '経度');
+        } catch (geoErr) {
+          console.warn('自動位置情報更新でエラー:', geoErr);
+        }
+      }
+    }
 
     return { success: true, message: validUpdates.length + ' セルを更新しました', updatedCount: validUpdates.length };
   } finally {
@@ -1253,6 +1279,16 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
       generatedId = rowData[header.indexOf('change_id')] || '';
     } else if (formType === 'スタッフ個別変更') {
       generatedId = rowData[header.indexOf('staff_change_id')] || '';
+    }
+
+    // 患者マスタ・スタッフマスタの場合、緯度経度を自動補完
+    if (formType === '患者マスタ' || formType === 'スタッフマスタ') {
+      try {
+        var geoAddrH = (formType === 'スタッフマスタ') ? '拠点住所' : '住所';
+        updateSheetLatLng_(sheet, geoAddrH, '緯度', '経度');
+      } catch (geoErr) {
+        console.warn('自動位置情報更新でエラー:', geoErr);
+      }
     }
 
     return {
