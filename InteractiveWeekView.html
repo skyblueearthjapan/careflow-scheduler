@@ -3380,91 +3380,94 @@
 
         container.appendChild(tlCard);
 
-        // Move proposal cards — cross-staff with 2-staff pair validation
-        var moveProposalCard = document.createElement('div');
-        moveProposalCard.className = 'constraint-info-card';
-        var mpH4 = document.createElement('h4');
-        mpH4.textContent = '\u79fb\u52d5\u63d0\u6848'; // 移動提案
-        moveProposalCard.appendChild(mpH4);
 
+        // ============================================================
+        // 移動提案 + 移動可能先（統合ブロック）
+        // 「移動可能先」のデータを先に計算し、OKスタッフから移動提案を構築
+        // ============================================================
         var needStaffForProposal = (patient && patient.needStaff) || 1;
         var isUnassigned = (visit.staffId === '__UNASSIGNED__');
         var moveProposals = [];
+        var targets = {};
+        var targetIds = [];
 
-        if (typeof ConstraintEngine !== 'undefined' &&
-            ConstraintEngine.validateAllDropTargets && ConstraintEngine.computeAvailableWindow) {
-          // --- 全ケース共通: 実際の訪問データで直接提案を構築 ---
-          var dropTargets = ConstraintEngine.validateAllDropTargets(visit, _state);
-          var svcMin = visit.svcMin || ((visit.endMin || 0) - (visit.startMin || 0)) || 30;
-          var visitPrefCenter = (visit.startMin != null && visit.endMin != null)
+        // Step 1: validateAllDropTargets で各スタッフの受入可否を判定
+        if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.validateAllDropTargets) {
+          targets = ConstraintEngine.validateAllDropTargets(visit, _state);
+          targetIds = Object.keys(targets);
+        }
+
+        // Step 2: OKスタッフの空き窓から移動提案を構築
+        if (targetIds.length > 0 && typeof ConstraintEngine !== 'undefined' && ConstraintEngine.computeAvailableWindow) {
+          var svcMinP = visit.svcMin || ((visit.endMin || 0) - (visit.startMin || 0)) || 30;
+          var prefCenterP = (visit.startMin != null && visit.endMin != null)
             ? (visit.startMin + visit.endMin) / 2 : 720;
-          var staffList = _state.staffList || [];
 
-          for (var dsi = 0; dsi < staffList.length; dsi++) {
-            var ds = staffList[dsi];
-            if (ds.id === visit.staffId) continue;
-            var dt = dropTargets[ds.id];
-            if (!dt || dt.canAccept === false) continue;
+          for (var pti = 0; pti < targetIds.length; pti++) {
+            var ptStaffId = targetIds[pti];
+            if (ptStaffId === visit.staffId) continue;
+            var ptRes = targets[ptStaffId];
+            if (!ptRes || ptRes.canAccept === false) continue;
 
-            var dsAw = ConstraintEngine.computeAvailableWindow(
-              visit.pid, visit.dateStr, ds.id, _state, visit.visitId
+            var ptAw = ConstraintEngine.computeAvailableWindow(
+              visit.pid, visit.dateStr, ptStaffId, _state, visit.visitId
             );
-            if (!dsAw.windows || dsAw.windows.length === 0) continue;
+            if (!ptAw.windows || ptAw.windows.length === 0) continue;
 
-            // 空き時間から最適スロットを探す（5分刻み）
-            var bestSlot = null;
-            var bestScore = -Infinity;
-            for (var dwi = 0; dwi < dsAw.windows.length; dwi++) {
-              var dw = dsAw.windows[dwi];
-              for (var dt2 = dw.startMin; dt2 + svcMin <= dw.endMin; dt2 += 5) {
-                var slotCenter = dt2 + svcMin / 2;
-                var score = 1000 - Math.abs(slotCenter - visitPrefCenter);
-                if (dt.status === 'WARN') score -= 100;
-                if (score > bestScore) {
-                  bestScore = score;
-                  bestSlot = { startMin: dt2, endMin: dt2 + svcMin };
+            var ptBest = null;
+            var ptBestScore = -Infinity;
+            for (var pwi = 0; pwi < ptAw.windows.length; pwi++) {
+              var pw = ptAw.windows[pwi];
+              for (var pt = pw.startMin; pt + svcMinP <= pw.endMin; pt += 5) {
+                var ptCenter = pt + svcMinP / 2;
+                var ptScore = 1000 - Math.abs(ptCenter - prefCenterP);
+                if (ptRes.status === 'WARN') ptScore -= 100;
+                if (ptScore > ptBestScore) {
+                  ptBestScore = ptScore;
+                  ptBest = { startMin: pt, endMin: pt + svcMinP };
                 }
               }
             }
-            if (bestSlot) {
+            if (ptBest) {
+              var ptStaffName = (_state.staffMasterMap && _state.staffMasterMap[ptStaffId])
+                ? _state.staffMasterMap[ptStaffId].name : ptStaffId;
               moveProposals.push({
-                staffId: ds.id,
-                staffName: ds.name || ds.id,
-                startMin: bestSlot.startMin,
-                endMin: bestSlot.endMin,
-                score: bestScore,
-                label: ConstraintEngine.minutesToTimeStr(bestSlot.startMin) + '\u301C' +
-                       ConstraintEngine.minutesToTimeStr(bestSlot.endMin),
-                travelNote: (dt.status === 'WARN') ? dt.quickReason : ''
+                staffId: ptStaffId,
+                staffName: ptStaffName,
+                startMin: ptBest.startMin,
+                endMin: ptBest.endMin,
+                score: ptBestScore,
+                label: fmtMin(ptBest.startMin) + '\u301C' + fmtMin(ptBest.endMin),
+                travelNote: (ptRes.status === 'WARN') ? ptRes.quickReason : ''
               });
             }
           }
           moveProposals.sort(function(a, b) { return b.score - a.score; });
           moveProposals = moveProposals.slice(0, 5);
 
-          // --- 未割当 + 2名体制: ペア検証（提案からペアが確保できないものを除外）---
-          if (isUnassigned && needStaffForProposal >= 2 && moveProposals.length > 0 &&
-              ConstraintEngine.suggestTimeSlotsForAll) {
+          // 未割当 + 2名体制: ペア検証
+          if (isUnassigned && needStaffForProposal >= 2 && moveProposals.length > 0) {
             moveProposals = moveProposals.filter(function(mp) {
-              var peerResult = ConstraintEngine.suggestTimeSlotsForAll(
-                visit.pid, visit.dateStr, _state, { strict: false, maxSuggestions: 5 }
-              );
-              for (var pi = 0; pi < (peerResult.suggestions || []).length; pi++) {
-                if (peerResult.suggestions[pi].staffId !== mp.staffId) {
-                  mp.peerStaffId = peerResult.suggestions[pi].staffId;
-                  mp.peerStaffName = peerResult.suggestions[pi].staffName;
-                  mp.peerStartMin = mp.startMin;
-                  mp.peerEndMin = mp.endMin;
-                  mp.needStaff = 2;
-                  return true;
-                }
+              for (var pk = 0; pk < targetIds.length; pk++) {
+                var peerId = targetIds[pk];
+                if (peerId === mp.staffId || peerId === visit.staffId) continue;
+                var peerTgt = targets[peerId];
+                if (!peerTgt || peerTgt.canAccept === false) continue;
+                mp.peerStaffId = peerId;
+                mp.peerStaffName = (_state.staffMasterMap && _state.staffMasterMap[peerId])
+                  ? _state.staffMasterMap[peerId].name : peerId;
+                mp.peerStartMin = mp.startMin;
+                mp.peerEndMin = mp.endMin;
+                mp.needStaff = 2;
+                return true;
               }
               return false;
             });
           }
 
-          // --- 未割当: 同日で見つからなければ曜日変更も探索 ---
-          if (isUnassigned && moveProposals.length === 0 && ConstraintEngine.suggestWithRelaxation) {
+          // 未割当: 同日で見つからなければ曜日変更も探索
+          if (isUnassigned && moveProposals.length === 0 &&
+              typeof ConstraintEngine !== 'undefined' && ConstraintEngine.suggestWithRelaxation) {
             var relaxResult = ConstraintEngine.suggestWithRelaxation(
               visit.pid, visit.dateStr, _state,
               { maxSuggestions: 5, excludeVisitId: visit.visitId }
@@ -3475,202 +3478,71 @@
           }
         }
 
+        // Step 3: 移動提案カードを描画
+        var moveProposalCard = document.createElement('div');
+        moveProposalCard.className = 'constraint-info-card';
+        var mpH4 = document.createElement('h4');
+        mpH4.textContent = '\u79fb\u52d5\u63d0\u6848'; // 移動提案
+        moveProposalCard.appendChild(mpH4);
+
         if (moveProposals.length > 0) {
           var mpNote = document.createElement('div');
           mpNote.style.fontSize = '10px';
           mpNote.style.color = '#888';
           mpNote.style.marginBottom = '6px';
-          if (isUnassigned && needStaffForProposal >= 2) {
-            mpNote.textContent = '2名体制: 2人分セットで検証済みの提案です';
-          } else {
-            mpNote.textContent = 'ボタンをクリックで移動を実行';
-          }
+          mpNote.textContent = (isUnassigned && needStaffForProposal >= 2)
+            ? '2名体制: 2人分セットで検証済みの提案です'
+            : 'ボタンをクリックで移動を実行';
           moveProposalCard.appendChild(mpNote);
 
           for (var mpi = 0; mpi < moveProposals.length; mpi++) {
             var mp = moveProposals[mpi];
             var mpDiv = document.createElement('div');
             mpDiv.className = 'move-proposal-card' + (mpi === 0 ? ' best' : '');
-
-            // Header: rank + execute button
             var mpHeader = document.createElement('div');
             mpHeader.className = 'move-proposal-header';
             var mpRank = document.createElement('span');
             mpRank.className = 'move-proposal-rank';
-            mpRank.textContent = (mpi === 0 ? '\u2605 \u6700\u9069' : '\u63d0\u6848' + (mpi + 1)); // ★ 最適 or 提案N
+            mpRank.textContent = (mpi === 0 ? '\u2605 \u6700\u9069' : '\u63d0\u6848' + (mpi + 1));
             mpHeader.appendChild(mpRank);
             var mpBtn = document.createElement('button');
             mpBtn.className = 'move-proposal-btn';
-            mpBtn.textContent = '\u3053\u306e\u63d0\u6848\u3067\u79fb\u52d5'; // この提案で移動
-            mpBtn.addEventListener('click', (function(visitRef, mpRef, patientRef) {
-              return function(e) {
-                e.stopPropagation();
-                executeProposalMove(visitRef, mpRef, patientRef);
-              };
+            mpBtn.textContent = '\u3053\u306e\u63d0\u6848\u3067\u79fb\u52d5';
+            mpBtn.addEventListener('click', (function(vRef, mRef, pRef) {
+              return function(e) { e.stopPropagation(); executeProposalMove(vRef, mRef, pRef); };
             })(visit, mp, patient));
             mpHeader.appendChild(mpBtn);
             mpDiv.appendChild(mpHeader);
-
-            // Day change info
             if (mp.altDateStr) {
               var mpDay = document.createElement('div');
-              mpDay.style.fontSize = '11px';
-              mpDay.style.color = '#1565C0';
-              mpDay.style.fontWeight = '600';
-              mpDay.style.marginBottom = '3px';
-              mpDay.textContent = '\u66dc\u65e5\u5909\u66f4: ' + visit.dateStr + ' \u2192 ' + mp.altDateStr; // 曜日変更: ... → ...
+              mpDay.style.cssText = 'font-size:11px;color:#1565C0;font-weight:600;margin-bottom:3px';
+              mpDay.textContent = '\u66dc\u65e5\u5909\u66f4: ' + visit.dateStr + ' \u2192 ' + mp.altDateStr;
               mpDiv.appendChild(mpDay);
             }
-
-            // Staff 1
             var mpStaff = document.createElement('div');
             mpStaff.className = 'move-proposal-staff';
-            mpStaff.textContent = mp.staffName + '  ' + fmtMin(mp.startMin) + '\u301C' + fmtMin(mp.endMin);
+            mpStaff.textContent = mp.staffName + '  ' + mp.label;
             mpDiv.appendChild(mpStaff);
-
-            // Staff 2 (peer for 2-staff)
             if (mp.peerStaffId) {
               var mpPeer = document.createElement('div');
               mpPeer.className = 'move-proposal-peer';
-              mpPeer.textContent = '+ ' + mp.peerStaffName + '  ' +
-                fmtMin(mp.peerStartMin) + '\u301C' + fmtMin(mp.peerEndMin) + '  [2\u540d\u4f53\u5236]';
+              mpPeer.textContent = '+ ' + mp.peerStaffName + '  ' + fmtMin(mp.peerStartMin) + '\u301C' + fmtMin(mp.peerEndMin) + '  [2\u540d\u4f53\u5236]';
               mpDiv.appendChild(mpPeer);
             }
-
-            // Travel/detour warning
-            if (mp.travelNote) {
-              var mpWarn = document.createElement('div');
-              mpWarn.className = 'move-proposal-warn';
-              mpWarn.textContent = mp.travelNote;
-              mpDiv.appendChild(mpWarn);
-            }
-
-            // Relaxation note
-            if (mp.relaxationNote) {
-              var mpRelax = document.createElement('div');
-              mpRelax.className = 'move-proposal-warn';
-              mpRelax.textContent = mp.relaxationNote;
-              mpDiv.appendChild(mpRelax);
-            }
-
+            if (mp.travelNote) { var w1 = document.createElement('div'); w1.className = 'move-proposal-warn'; w1.textContent = mp.travelNote; mpDiv.appendChild(w1); }
+            if (mp.relaxationNote) { var w2 = document.createElement('div'); w2.className = 'move-proposal-warn'; w2.textContent = mp.relaxationNote; mpDiv.appendChild(w2); }
             moveProposalCard.appendChild(mpDiv);
           }
         } else {
-          var noProposal = document.createElement('div');
-          noProposal.style.fontSize = '11px';
-          noProposal.style.color = '#C62828';
-          noProposal.style.padding = '6px 0';
-          noProposal.textContent = '\u79fb\u52d5\u53ef\u80fd\u306a\u30b9\u30bf\u30c3\u30d5\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093'; // 移動可能なスタッフが見つかりません
-          if (needStaffForProposal >= 2) {
-            noProposal.textContent += '\uff082\u540d\u4f53\u5236: 2\u4eba\u5206\u30bb\u30c3\u30c8\u3067\u78ba\u4fdd\u4e0d\u53ef\uff09'; // （2名体制: 2人分セットで確保不可）
-          }
-          moveProposalCard.appendChild(noProposal);
+          var noP = document.createElement('div');
+          noP.style.cssText = 'font-size:11px;color:#C62828;padding:6px 0';
+          noP.textContent = '\u79fb\u52d5\u53ef\u80fd\u306a\u30b9\u30bf\u30c3\u30d5\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093';
+          if (needStaffForProposal >= 2) noP.textContent += '\uff082\u540d\u4f53\u5236: 2\u4eba\u5206\u30bb\u30c3\u30c8\u3067\u78ba\u4fdd\u4e0d\u53ef\uff09';
+          moveProposalCard.appendChild(noP);
         }
-
         container.appendChild(moveProposalCard);
-      }
 
-      // -- Drop target validation card (with available windows) --
-      // ※ 移動提案が空の場合、ここで得られるOKスタッフから提案を再構築する
-      if (typeof ConstraintEngine !== 'undefined') {
-        var targets = ConstraintEngine.validateAllDropTargets(visit, _state);
-        var targetIds = Object.keys(targets);
-
-        // --- 移動提案が空 + OKスタッフがいる場合: ここから提案を構築 ---
-        if (moveProposals.length === 0 && targetIds.length > 0) {
-          var svcMinFb = visit.svcMin || ((visit.endMin || 0) - (visit.startMin || 0)) || 30;
-          var prefCenterFb = (visit.startMin != null && visit.endMin != null)
-            ? (visit.startMin + visit.endMin) / 2 : 720;
-          var fbProposals = [];
-
-          for (var fbi = 0; fbi < targetIds.length; fbi++) {
-            var fbStaffId = targetIds[fbi];
-            if (fbStaffId === visit.staffId) continue;
-            var fbRes = targets[fbStaffId];
-            if (!fbRes || fbRes.canAccept === false) continue;
-
-            var fbAw = ConstraintEngine.computeAvailableWindow(
-              visit.pid, visit.dateStr, fbStaffId, _state, visit.visitId
-            );
-            if (!fbAw.windows || fbAw.windows.length === 0) continue;
-
-            var fbBest = null;
-            var fbBestScore = -Infinity;
-            for (var fwi = 0; fwi < fbAw.windows.length; fwi++) {
-              var fw = fbAw.windows[fwi];
-              for (var ft = fw.startMin; ft + svcMinFb <= fw.endMin; ft += 5) {
-                var fCenter = ft + svcMinFb / 2;
-                var fScore = 1000 - Math.abs(fCenter - prefCenterFb);
-                if (fbRes.status === 'WARN') fScore -= 100;
-                if (fScore > fbBestScore) {
-                  fbBestScore = fScore;
-                  fbBest = { startMin: ft, endMin: ft + svcMinFb };
-                }
-              }
-            }
-            if (fbBest) {
-              var fbStaffName = (_state.staffMasterMap && _state.staffMasterMap[fbStaffId])
-                ? _state.staffMasterMap[fbStaffId].name : fbStaffId;
-              fbProposals.push({
-                staffId: fbStaffId,
-                staffName: fbStaffName,
-                startMin: fbBest.startMin,
-                endMin: fbBest.endMin,
-                score: fbBestScore,
-                label: ConstraintEngine.minutesToTimeStr(fbBest.startMin) + '\u301C' +
-                       ConstraintEngine.minutesToTimeStr(fbBest.endMin),
-                travelNote: (fbRes.status === 'WARN') ? fbRes.quickReason : ''
-              });
-            }
-          }
-          if (fbProposals.length > 0) {
-            fbProposals.sort(function(a, b) { return b.score - a.score; });
-            // moveProposalCard を再構築
-            moveProposalCard.innerHTML = '';
-            var fbH4 = document.createElement('h4');
-            fbH4.textContent = '\u79fb\u52d5\u63d0\u6848'; // 移動提案
-            moveProposalCard.appendChild(fbH4);
-            var fbNote = document.createElement('div');
-            fbNote.style.fontSize = '10px';
-            fbNote.style.color = '#888';
-            fbNote.style.marginBottom = '6px';
-            fbNote.textContent = 'ボタンをクリックで移動を実行';
-            moveProposalCard.appendChild(fbNote);
-            for (var fbpi = 0; fbpi < Math.min(fbProposals.length, 5); fbpi++) {
-              var fbMp = fbProposals[fbpi];
-              var fbDiv = document.createElement('div');
-              fbDiv.className = 'move-proposal-card' + (fbpi === 0 ? ' best' : '');
-              var fbHeader = document.createElement('div');
-              fbHeader.className = 'move-proposal-header';
-              var fbRank = document.createElement('span');
-              fbRank.className = 'move-proposal-rank';
-              fbRank.textContent = (fbpi === 0 ? '\u2605 \u6700\u9069' : '\u63d0\u6848' + (fbpi + 1));
-              fbHeader.appendChild(fbRank);
-              var fbBtn = document.createElement('button');
-              fbBtn.className = 'move-proposal-btn';
-              fbBtn.textContent = '\u3053\u306e\u63d0\u6848\u3067\u79fb\u52d5';
-              fbBtn.addEventListener('click', (function(visitRef, mpRef, patientRef) {
-                return function(e) {
-                  e.stopPropagation();
-                  executeProposalMove(visitRef, mpRef, patientRef);
-                };
-              })(visit, fbMp, patient));
-              fbHeader.appendChild(fbBtn);
-              fbDiv.appendChild(fbHeader);
-              var fbStaffDiv = document.createElement('div');
-              fbStaffDiv.className = 'move-proposal-staff';
-              fbStaffDiv.textContent = fbMp.staffName + '  ' + fbMp.label;
-              fbDiv.appendChild(fbStaffDiv);
-              if (fbMp.travelNote) {
-                var fbWarn = document.createElement('div');
-                fbWarn.className = 'move-proposal-warn';
-                fbWarn.textContent = fbMp.travelNote;
-                fbDiv.appendChild(fbWarn);
-              }
-              moveProposalCard.appendChild(fbDiv);
-            }
-          }
-        }
+        // Step 4: 移動可能先カードを描画
         if (targetIds.length > 0) {
           var tcard = document.createElement('div');
           tcard.className = 'constraint-info-card';
@@ -3678,8 +3550,8 @@
           th4.textContent = '\u79fb\u52d5\u53ef\u80fd\u5148'; // 移動可能先
           tcard.appendChild(th4);
 
-          for (var ti = 0; ti < targetIds.length; ti++) {
-            var tid = targetIds[ti];
+          for (var tci = 0; tci < targetIds.length; tci++) {
+            var tid = targetIds[tci];
             if (tid === visit.staffId) continue;
             var res = targets[tid];
             var trow = document.createElement('div');
@@ -3689,26 +3561,13 @@
             tl.className = 'ci-label';
             tl.textContent = getStaffName(tid);
             trow.appendChild(tl);
-
             var tag = document.createElement('span');
-            if (res.status === 'OK') {
-              tag.className = 'constraint-tag ok';
-              tag.textContent = 'OK';
-            } else if (res.status === 'WARN') {
-              tag.className = 'constraint-tag warn';
-              tag.textContent = 'WARN';
-            } else {
-              tag.className = 'constraint-tag ng';
-              tag.textContent = 'NG';
-              if (res.quickReason) tag.title = res.quickReason;
-            }
+            if (res.status === 'OK') { tag.className = 'constraint-tag ok'; tag.textContent = 'OK'; }
+            else if (res.status === 'WARN') { tag.className = 'constraint-tag warn'; tag.textContent = 'WARN'; }
+            else { tag.className = 'constraint-tag ng'; tag.textContent = 'NG'; if (res.quickReason) tag.title = res.quickReason; }
             trow.appendChild(tag);
-
-            // Add available window info for this staff
             if (ConstraintEngine.computeAvailableWindow && res.status !== 'NG') {
-              var staffAw = ConstraintEngine.computeAvailableWindow(
-                visit.pid, visit.dateStr, tid, _state, visit.visitId
-              );
+              var staffAw = ConstraintEngine.computeAvailableWindow(visit.pid, visit.dateStr, tid, _state, visit.visitId);
               if (staffAw.windows && staffAw.windows.length > 0) {
                 var winTag = document.createElement('span');
                 winTag.className = 'staff-window-tag';
@@ -3721,12 +3580,10 @@
                 trow.appendChild(winTag);
               }
             }
-
             tcard.appendChild(trow);
           }
           container.appendChild(tcard);
         }
-      }
     }
 
     // ================================================================
