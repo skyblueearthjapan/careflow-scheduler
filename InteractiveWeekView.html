@@ -1605,6 +1605,8 @@
     // ================================================================
     function renderGrid() {
       if (!_state) return;
+      // 2名体制の不足分をグリッド描画前に再計算（サイドパネルと同じデータで描画するため）
+      recalculateCoupledShortages();
       renderGridHeader();
       renderGridBody();
       applyAuditOverlay();
