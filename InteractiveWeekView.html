@@ -2867,33 +2867,34 @@
         if (!cb || !cb.checked) continue;
 
         var item = _pendingApprovals[i];
-        var proposal = item.proposal;
-        if (!proposal || !proposal.suggestions || proposal.suggestions.length === 0) {
-          failed.push(item.pName);
+        var patient = getPatient(item.pid);
+
+        // --- 最新の状態で提案を再計算（古い提案は使わない） ---
+        var freshProposal = ConstraintEngine.suggestWithRelaxation(
+          item.pid, item.dateStr, _state, { maxSuggestions: 3 }
+        );
+
+        if (freshProposal.level === 'impossible' ||
+            !freshProposal.suggestions || freshProposal.suggestions.length === 0) {
+          failed.push(item.pName + '(再計算で割当不可)');
           continue;
         }
 
-        var best = proposal.suggestions[0];
-        var patient = getPatient(item.pid);
+        var best = freshProposal.suggestions[0];
         var effectiveDateStr = best.altDateStr || item.dateStr;
-        var isDayChange = (effectiveDateStr !== item.dateStr);
 
-        // 未割当データを取得
+        // --- 未割当データを現在の _state.unassigned から取得 ---
         var ua = null;
-        if (item.items && item.items.length > 0) {
-          ua = item.items[0];
-        } else {
-          // unassigned リストから検索
-          for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
-            if (_state.unassigned[ui].pid === item.pid && _state.unassigned[ui].dateStr === item.dateStr) {
-              ua = _state.unassigned[ui];
-              break;
-            }
+        for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
+          var uaCandidate = _state.unassigned[ui];
+          if (uaCandidate.pid === item.pid && uaCandidate.dateStr === item.dateStr) {
+            ua = uaCandidate;
+            break;
           }
         }
 
         if (!ua) {
-          failed.push(item.pName + '(データ未検出)');
+          failed.push(item.pName + '(未割当データ未検出)');
           continue;
         }
 
