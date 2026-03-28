@@ -3571,9 +3571,106 @@
       }
 
       // -- Drop target validation card (with available windows) --
+      // ※ 移動提案が空の場合、ここで得られるOKスタッフから提案を再構築する
       if (typeof ConstraintEngine !== 'undefined') {
         var targets = ConstraintEngine.validateAllDropTargets(visit, _state);
         var targetIds = Object.keys(targets);
+
+        // --- 移動提案が空 + OKスタッフがいる場合: ここから提案を構築 ---
+        if (moveProposals.length === 0 && targetIds.length > 0) {
+          var svcMinFb = visit.svcMin || ((visit.endMin || 0) - (visit.startMin || 0)) || 30;
+          var prefCenterFb = (visit.startMin != null && visit.endMin != null)
+            ? (visit.startMin + visit.endMin) / 2 : 720;
+          var fbProposals = [];
+
+          for (var fbi = 0; fbi < targetIds.length; fbi++) {
+            var fbStaffId = targetIds[fbi];
+            if (fbStaffId === visit.staffId) continue;
+            var fbRes = targets[fbStaffId];
+            if (!fbRes || fbRes.canAccept === false) continue;
+
+            var fbAw = ConstraintEngine.computeAvailableWindow(
+              visit.pid, visit.dateStr, fbStaffId, _state, visit.visitId
+            );
+            if (!fbAw.windows || fbAw.windows.length === 0) continue;
+
+            var fbBest = null;
+            var fbBestScore = -Infinity;
+            for (var fwi = 0; fwi < fbAw.windows.length; fwi++) {
+              var fw = fbAw.windows[fwi];
+              for (var ft = fw.startMin; ft + svcMinFb <= fw.endMin; ft += 5) {
+                var fCenter = ft + svcMinFb / 2;
+                var fScore = 1000 - Math.abs(fCenter - prefCenterFb);
+                if (fbRes.status === 'WARN') fScore -= 100;
+                if (fScore > fbBestScore) {
+                  fbBestScore = fScore;
+                  fbBest = { startMin: ft, endMin: ft + svcMinFb };
+                }
+              }
+            }
+            if (fbBest) {
+              var fbStaffName = (_state.staffMasterMap && _state.staffMasterMap[fbStaffId])
+                ? _state.staffMasterMap[fbStaffId].name : fbStaffId;
+              fbProposals.push({
+                staffId: fbStaffId,
+                staffName: fbStaffName,
+                startMin: fbBest.startMin,
+                endMin: fbBest.endMin,
+                score: fbBestScore,
+                label: ConstraintEngine.minutesToTimeStr(fbBest.startMin) + '\u301C' +
+                       ConstraintEngine.minutesToTimeStr(fbBest.endMin),
+                travelNote: (fbRes.status === 'WARN') ? fbRes.quickReason : ''
+              });
+            }
+          }
+          if (fbProposals.length > 0) {
+            fbProposals.sort(function(a, b) { return b.score - a.score; });
+            // moveProposalCard を再構築
+            moveProposalCard.innerHTML = '';
+            var fbH4 = document.createElement('h4');
+            fbH4.textContent = '\u79fb\u52d5\u63d0\u6848'; // 移動提案
+            moveProposalCard.appendChild(fbH4);
+            var fbNote = document.createElement('div');
+            fbNote.style.fontSize = '10px';
+            fbNote.style.color = '#888';
+            fbNote.style.marginBottom = '6px';
+            fbNote.textContent = 'ボタンをクリックで移動を実行';
+            moveProposalCard.appendChild(fbNote);
+            for (var fbpi = 0; fbpi < Math.min(fbProposals.length, 5); fbpi++) {
+              var fbMp = fbProposals[fbpi];
+              var fbDiv = document.createElement('div');
+              fbDiv.className = 'move-proposal-card' + (fbpi === 0 ? ' best' : '');
+              var fbHeader = document.createElement('div');
+              fbHeader.className = 'move-proposal-header';
+              var fbRank = document.createElement('span');
+              fbRank.className = 'move-proposal-rank';
+              fbRank.textContent = (fbpi === 0 ? '\u2605 \u6700\u9069' : '\u63d0\u6848' + (fbpi + 1));
+              fbHeader.appendChild(fbRank);
+              var fbBtn = document.createElement('button');
+              fbBtn.className = 'move-proposal-btn';
+              fbBtn.textContent = '\u3053\u306e\u63d0\u6848\u3067\u79fb\u52d5';
+              fbBtn.addEventListener('click', (function(visitRef, mpRef, patientRef) {
+                return function(e) {
+                  e.stopPropagation();
+                  executeProposalMove(visitRef, mpRef, patientRef);
+                };
+              })(visit, fbMp, patient));
+              fbHeader.appendChild(fbBtn);
+              fbDiv.appendChild(fbHeader);
+              var fbStaffDiv = document.createElement('div');
+              fbStaffDiv.className = 'move-proposal-staff';
+              fbStaffDiv.textContent = fbMp.staffName + '  ' + fbMp.label;
+              fbDiv.appendChild(fbStaffDiv);
+              if (fbMp.travelNote) {
+                var fbWarn = document.createElement('div');
+                fbWarn.className = 'move-proposal-warn';
+                fbWarn.textContent = fbMp.travelNote;
+                fbDiv.appendChild(fbWarn);
+              }
+              moveProposalCard.appendChild(fbDiv);
+            }
+          }
+        }
         if (targetIds.length > 0) {
           var tcard = document.createElement('div');
           tcard.className = 'constraint-info-card';
