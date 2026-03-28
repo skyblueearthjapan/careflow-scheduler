@@ -831,6 +831,103 @@
     }
 
     /* ============================================================
+       Bulk Reinsert Approval Modal
+       ============================================================ */
+    .approval-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4); z-index: 1200;
+      display: none; align-items: center; justify-content: center;
+    }
+    .approval-overlay.show { display: flex; }
+
+    .approval-dialog {
+      background: var(--color-white); border-radius: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      min-width: 520px; max-width: 680px; max-height: 85vh;
+      display: flex; flex-direction: column;
+      overflow: hidden; animation: dialogSlideIn 0.2s ease;
+    }
+
+    .approval-header {
+      background: linear-gradient(135deg, var(--color-orange) 0%, var(--color-orange-dark) 100%);
+      color: var(--color-white); padding: 14px 18px;
+    }
+    .approval-header h3 { font-size: 14px; font-weight: 600; }
+
+    .approval-body { padding: 0; overflow-y: auto; flex: 1; }
+
+    .approval-section {
+      padding: 12px 18px; border-bottom: 1px solid var(--color-border);
+    }
+    .approval-section:last-child { border-bottom: none; }
+    .approval-section-title {
+      font-size: 13px; font-weight: 600; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .approval-section-title .section-count {
+      background: var(--color-orange-light); color: var(--color-orange-dark);
+      padding: 1px 8px; border-radius: 10px; font-size: 11px;
+    }
+
+    .approval-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 8px 10px; margin: 4px 0; border-radius: 6px;
+      background: var(--color-bg); border: 1px solid var(--color-border);
+      font-size: 12px; transition: all 0.15s;
+    }
+    .approval-item:hover { border-color: var(--color-orange); }
+    .approval-item input[type="checkbox"] {
+      margin-top: 2px; flex-shrink: 0; cursor: pointer;
+      width: 16px; height: 16px;
+    }
+    .approval-item-content { flex: 1; min-width: 0; }
+    .approval-item-name {
+      font-weight: 600; color: var(--color-text); margin-bottom: 2px;
+    }
+    .approval-item-detail {
+      color: var(--color-text-light); font-size: 11px; line-height: 1.5;
+    }
+    .approval-item-relaxation {
+      display: inline-block; margin-top: 3px; padding: 1px 8px;
+      border-radius: 4px; font-size: 10px; font-weight: 500;
+    }
+    .relaxation-softcap {
+      background: #FFF8E1; color: #F57F17; border: 1px solid #FFE082;
+    }
+    .relaxation-daychange {
+      background: #E3F2FD; color: #1565C0; border: 1px solid #90CAF9;
+    }
+    .relaxation-both {
+      background: #FCE4EC; color: #C62828; border: 1px solid #F8BBD0;
+    }
+
+    .approval-impossible-item {
+      padding: 6px 10px; margin: 4px 0; border-radius: 6px;
+      background: #FFEBEE; border: 1px solid #FFCDD2;
+      font-size: 12px; color: #C62828;
+    }
+    .approval-impossible-item .ai-name { font-weight: 600; }
+    .approval-impossible-item .ai-reason { font-size: 11px; color: #B71C1C; }
+
+    .approval-strict-item {
+      padding: 6px 10px; margin: 4px 0; border-radius: 6px;
+      background: #E8F5E9; border: 1px solid #C8E6C9;
+      font-size: 12px; color: #2E7D32;
+    }
+
+    .approval-footer {
+      padding: 12px 18px; border-top: 1px solid var(--color-border);
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--color-bg);
+    }
+    .approval-footer-left {
+      font-size: 11px; color: var(--color-text-light);
+    }
+    .approval-footer-right {
+      display: flex; gap: 8px;
+    }
+
+    /* ============================================================
        Time Setting Dialog
        ============================================================ */
     .time-overlay {
@@ -1151,6 +1248,25 @@
   <div class="loading-overlay" id="loadingOverlay">
     <div class="loading-spinner"></div>
     <div class="loading-text" id="loadingText">データを読み込み中...</div>
+  </div>
+
+  <!-- Bulk Reinsert Approval Modal -->
+  <div class="approval-overlay" id="approvalOverlay">
+    <div class="approval-dialog">
+      <div class="approval-header">
+        <h3 id="approvalTitle">一括再挿入 - 承認確認</h3>
+      </div>
+      <div class="approval-body" id="approvalBody">
+        <!-- Dynamically populated -->
+      </div>
+      <div class="approval-footer">
+        <div class="approval-footer-left" id="approvalSelectedCount">0件選択中</div>
+        <div class="approval-footer-right">
+          <button class="btn-cancel" onclick="closeApprovalModal()">キャンセル</button>
+          <button class="btn-confirm" id="btnApprovalExecute" onclick="executeApprovedReinserts()" disabled>選択した件を承認・実行</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Error Screen -->
@@ -2233,7 +2349,7 @@
      * @param {object} patient      - 患者マスターデータ
      * @param {string} pName        - 表示用患者名
      */
-    function applyReinsert_(pid, origDateStr, newDateStr, ua, best, patient, pName) {
+    function applyReinsert_(pid, origDateStr, newDateStr, ua, best, patient, pName, skipRender) {
       var visitId = ua.visitId || ('UA_' + pid + '_' + origDateStr);
       var isDayChange = (newDateStr !== origDateStr);
 
@@ -2349,10 +2465,12 @@
               if (isDayChange) revert.dateStr = origDateStr;
             }
             _state.pendingChanges.pop(); // 1件目のchangeを除去
-            renderGrid();
-            renderSidePanel();
-            updateStatusBar();
-            showToast('2名体制のペアを配置できないため、挿入を取り消しました', 'error');
+            if (!skipRender) {
+              renderGrid();
+              renderSidePanel();
+              updateStatusBar();
+              showToast('2名体制のペアを配置できないため、挿入を取り消しました', 'error');
+            }
             return;
           }
         }
@@ -2363,12 +2481,14 @@
         refreshTwoStaffUnassigned_();
       }
 
-      renderGrid();
-      renderSidePanel();
-      updateStatusBar();
-      var successMsg = '挿入完了: ' + pName + ' → ' + best.staffName;
-      if (isDayChange) successMsg += ' (' + origDateStr + '→' + newDateStr + ')';
-      showToast(successMsg, 'success');
+      if (!skipRender) {
+        renderGrid();
+        renderSidePanel();
+        updateStatusBar();
+        var successMsg = '挿入完了: ' + pName + ' → ' + best.staffName;
+        if (isDayChange) successMsg += ' (' + origDateStr + '→' + newDateStr + ')';
+        showToast(successMsg, 'success');
+      }
     }
 
     function onReinsertAll() {
@@ -2423,7 +2543,9 @@
             pid: pid,
             dateStr: dateStr,
             level: proposal.level,
-            relaxations: proposal.relaxations
+            relaxations: proposal.relaxations,
+            proposal: proposal,
+            items: items
           });
           continue;
         }
@@ -2475,7 +2597,9 @@
               pid: pid,
               dateStr: dateStr,
               level: '2名体制ペア不足',
-              relaxations: ['2名体制のペアスタッフが厳格条件で確保できません']
+              relaxations: ['2名体制のペアスタッフが厳格条件で確保できません'],
+              proposal: proposal,
+              items: items
             });
             continue;
           }
@@ -2521,7 +2645,9 @@
                   pid: pid,
                   dateStr: dateStr,
                   level: proposal.level,
-                  relaxations: proposal.relaxations
+                  relaxations: proposal.relaxations,
+                  proposal: proposal,
+                  items: [ua]
                 });
                 continue;
               }
@@ -2561,28 +2687,238 @@
       renderSidePanel();
       updateStatusBar();
 
-      // --- 結果メッセージ ---
-      var msgParts = [];
-      if (strictInserted > 0) {
-        msgParts.push(strictInserted + '件を厳格条件で挿入');
-      }
-      if (needsApproval.length > 0) {
-        var approvalNames = needsApproval.map(function(n) { return n.pName; });
-        msgParts.push(needsApproval.length + '件は条件緩和が必要（個別対応）: ' + approvalNames.join(', '));
-      }
-      if (impossible.length > 0) {
-        msgParts.push(impossible.length + '件は割当不可: ' + impossible.join(', '));
-      }
-
-      var toastType = strictInserted > 0 ? 'success' : (needsApproval.length > 0 ? 'info' : 'error');
-      showToast(msgParts.join('\n'), toastType);
-
-      // 緩和が必要な件がある場合、サイドパネルの未割当タブに切り替え
-      if (needsApproval.length > 0) {
-        switchSideTab('unassigned');
+      // --- 結果処理 ---
+      if (needsApproval.length > 0 || impossible.length > 0) {
+        // 厳格挿入結果をトーストで表示
+        if (strictInserted > 0) {
+          showToast(strictInserted + '件を厳格条件で挿入しました', 'success');
+        }
+        // 承認モーダルを表示
+        showApprovalModal(strictInserted, needsApproval, impossible);
+      } else if (strictInserted > 0) {
+        showToast(strictInserted + '件を全て厳格条件で挿入しました', 'success');
+      } else {
+        showToast('挿入可能な未割当はありませんでした', 'info');
       }
     }
     window.onReinsertAll = onReinsertAll;
+
+    // ================================================================
+    // Bulk Reinsert Approval Modal
+    // ================================================================
+    var _pendingApprovals = []; // 承認待ちデータを保持
+
+    function showApprovalModal(strictCount, needsApproval, impossible) {
+      _pendingApprovals = needsApproval;
+
+      var body = document.getElementById('approvalBody');
+      body.innerHTML = '';
+
+      // タイトル更新
+      var title = document.getElementById('approvalTitle');
+      title.textContent = '一括再挿入 - 承認確認';
+
+      // --- 厳格挿入結果セクション ---
+      if (strictCount > 0) {
+        var strictSection = document.createElement('div');
+        strictSection.className = 'approval-section';
+        var strictTitle = document.createElement('div');
+        strictTitle.className = 'approval-section-title';
+        strictTitle.style.color = '#2E7D32';
+        strictTitle.innerHTML = '&#10004; 厳格条件で挿入済み <span class="section-count" style="background:#E8F5E9;color:#2E7D32;">' + strictCount + '件</span>';
+        strictSection.appendChild(strictTitle);
+        var strictNote = document.createElement('div');
+        strictNote.className = 'approval-strict-item';
+        strictNote.textContent = '全制約条件を満たして自動挿入されました。';
+        strictSection.appendChild(strictNote);
+        body.appendChild(strictSection);
+      }
+
+      // --- 緩和が必要セクション ---
+      if (needsApproval.length > 0) {
+        var approvalSection = document.createElement('div');
+        approvalSection.className = 'approval-section';
+        var approvalTitle = document.createElement('div');
+        approvalTitle.className = 'approval-section-title';
+        approvalTitle.innerHTML = '&#9888; 条件緩和が必要 <span class="section-count">' + needsApproval.length + '件</span>';
+        approvalSection.appendChild(approvalTitle);
+
+        for (var i = 0; i < needsApproval.length; i++) {
+          var item = needsApproval[i];
+          var best = (item.proposal && item.proposal.suggestions && item.proposal.suggestions.length > 0)
+            ? item.proposal.suggestions[0] : null;
+
+          var div = document.createElement('div');
+          div.className = 'approval-item';
+
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.id = 'approval_cb_' + i;
+          cb.checked = true;
+          cb.addEventListener('change', updateApprovalCount);
+          div.appendChild(cb);
+
+          var content = document.createElement('div');
+          content.className = 'approval-item-content';
+
+          var nameDiv = document.createElement('div');
+          nameDiv.className = 'approval-item-name';
+          nameDiv.textContent = item.pName + '  (' + item.dateStr + ')';
+          content.appendChild(nameDiv);
+
+          var detailDiv = document.createElement('div');
+          detailDiv.className = 'approval-item-detail';
+          if (best) {
+            var detailText = '';
+            if (best.altDateStr) {
+              detailText += item.dateStr + ' → ' + best.altDateStr + '  ';
+            }
+            detailText += best.staffName + '  ' + fmtMin(best.startMin) + '〜' + fmtMin(best.endMin);
+            detailDiv.textContent = detailText;
+          } else {
+            detailDiv.textContent = '提案あり（個別の再挿入ボタンで詳細確認）';
+          }
+          content.appendChild(detailDiv);
+
+          // 緩和理由タグ
+          var relaxClass = 'relaxation-softcap';
+          if (item.level === 'day_change') relaxClass = 'relaxation-daychange';
+          else if (item.level === 'softcap_day_change' || item.level === '2名体制ペア不足') relaxClass = 'relaxation-both';
+
+          for (var ri = 0; ri < item.relaxations.length; ri++) {
+            var tag = document.createElement('span');
+            tag.className = 'approval-item-relaxation ' + relaxClass;
+            tag.textContent = item.relaxations[ri];
+            content.appendChild(tag);
+          }
+
+          // 詳細メモ（best.relaxationNote）
+          if (best && best.relaxationNote) {
+            var noteDiv = document.createElement('div');
+            noteDiv.className = 'approval-item-detail';
+            noteDiv.style.marginTop = '2px';
+            noteDiv.textContent = best.relaxationNote;
+            content.appendChild(noteDiv);
+          }
+
+          div.appendChild(content);
+          approvalSection.appendChild(div);
+        }
+
+        body.appendChild(approvalSection);
+      }
+
+      // --- 割当不可セクション ---
+      if (impossible.length > 0) {
+        var impSection = document.createElement('div');
+        impSection.className = 'approval-section';
+        var impTitle = document.createElement('div');
+        impTitle.className = 'approval-section-title';
+        impTitle.style.color = '#C62828';
+        impTitle.innerHTML = '&#10006; 割当不可 <span class="section-count" style="background:#FFEBEE;color:#C62828;">' + impossible.length + '件</span>';
+        impSection.appendChild(impTitle);
+
+        for (var ii = 0; ii < impossible.length; ii++) {
+          var impDiv = document.createElement('div');
+          impDiv.className = 'approval-impossible-item';
+          var impName = document.createElement('span');
+          impName.className = 'ai-name';
+          impName.textContent = impossible[ii];
+          impDiv.appendChild(impName);
+          var impReason = document.createElement('span');
+          impReason.className = 'ai-reason';
+          impReason.textContent = '  - 全スタッフ受入不可（手動対応が必要）';
+          impDiv.appendChild(impReason);
+          impSection.appendChild(impDiv);
+        }
+
+        body.appendChild(impSection);
+      }
+
+      updateApprovalCount();
+      document.getElementById('approvalOverlay').classList.add('show');
+    }
+
+    function updateApprovalCount() {
+      var count = 0;
+      for (var i = 0; i < _pendingApprovals.length; i++) {
+        var cb = document.getElementById('approval_cb_' + i);
+        if (cb && cb.checked) count++;
+      }
+      document.getElementById('approvalSelectedCount').textContent = count + '件選択中';
+      var btn = document.getElementById('btnApprovalExecute');
+      btn.disabled = (count === 0);
+      btn.textContent = count > 0 ? count + '件を承認・実行' : '選択した件を承認・実行';
+    }
+
+    function closeApprovalModal() {
+      document.getElementById('approvalOverlay').classList.remove('show');
+      _pendingApprovals = [];
+    }
+
+    function executeApprovedReinserts() {
+      var inserted = 0;
+      var failed = [];
+
+      for (var i = 0; i < _pendingApprovals.length; i++) {
+        var cb = document.getElementById('approval_cb_' + i);
+        if (!cb || !cb.checked) continue;
+
+        var item = _pendingApprovals[i];
+        var proposal = item.proposal;
+        if (!proposal || !proposal.suggestions || proposal.suggestions.length === 0) {
+          failed.push(item.pName);
+          continue;
+        }
+
+        var best = proposal.suggestions[0];
+        var patient = getPatient(item.pid);
+        var effectiveDateStr = best.altDateStr || item.dateStr;
+        var isDayChange = (effectiveDateStr !== item.dateStr);
+
+        // 未割当データを取得
+        var ua = null;
+        if (item.items && item.items.length > 0) {
+          ua = item.items[0];
+        } else {
+          // unassigned リストから検索
+          for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
+            if (_state.unassigned[ui].pid === item.pid && _state.unassigned[ui].dateStr === item.dateStr) {
+              ua = _state.unassigned[ui];
+              break;
+            }
+          }
+        }
+
+        if (!ua) {
+          failed.push(item.pName + '(データ未検出)');
+          continue;
+        }
+
+        // applyReinsert_ を利用（skipRender=true でループ中はrender抑制）
+        try {
+          applyReinsert_(item.pid, item.dateStr, effectiveDateStr, ua, best, patient, item.pName, true);
+          inserted++;
+        } catch (e) {
+          failed.push(item.pName + '(' + e.message + ')');
+        }
+      }
+
+      closeApprovalModal();
+
+      renderGrid();
+      renderSidePanel();
+      updateStatusBar();
+
+      var msg = inserted + '件を承認・挿入しました';
+      if (failed.length > 0) {
+        msg += ' / ' + failed.length + '件は挿入失敗: ' + failed.join(', ');
+      }
+      showToast(msg, inserted > 0 ? 'success' : 'error');
+    }
+
+    window.closeApprovalModal = closeApprovalModal;
+    window.executeApprovedReinserts = executeApprovedReinserts;
 
     function renderConstraintDetail() {
       var container = document.getElementById('constraintDetail');
