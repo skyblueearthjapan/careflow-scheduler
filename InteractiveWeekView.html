@@ -711,6 +711,42 @@
     .suggest-slot.best { border: 2px solid #F57F17; font-weight: 600; }
     .suggest-slot.selected { background: #FFB300; color: #fff; }
 
+    /* Move proposal cards */
+    .move-proposal-card {
+      padding: 8px 10px; margin: 6px 0; border-radius: 6px;
+      background: var(--color-white); border: 1px solid #FFB300;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .move-proposal-card:hover { border-color: var(--color-orange-dark); box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    .move-proposal-card.best { border: 2px solid #F57F17; }
+    .move-proposal-header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+    }
+    .move-proposal-rank {
+      font-size: 10px; font-weight: 600; color: var(--color-orange-dark);
+      background: var(--color-orange-light); padding: 1px 6px; border-radius: 8px;
+    }
+    .move-proposal-btn {
+      padding: 3px 10px; border: none; border-radius: 4px;
+      background: var(--color-green); color: var(--color-white);
+      font-size: 10px; font-weight: 600; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .move-proposal-btn:hover { background: var(--color-green-dark); }
+    .move-proposal-staff {
+      font-size: 12px; font-weight: 600; color: var(--color-text);
+    }
+    .move-proposal-time {
+      font-size: 11px; color: var(--color-text-light); margin-top: 2px;
+    }
+    .move-proposal-peer {
+      font-size: 11px; color: var(--color-blue-dark); margin-top: 3px;
+      padding: 2px 6px; background: var(--color-blue-light); border-radius: 4px;
+    }
+    .move-proposal-warn {
+      font-size: 10px; color: var(--color-orange-dark); margin-top: 2px;
+    }
+
     /* Staff window tag in drop targets */
     .staff-window-tag {
       font-size: 9px; color: #666; display: block;
@@ -3344,69 +3380,109 @@
 
         container.appendChild(tlCard);
 
-        // Suggestion slots card (clickable buttons) — cross-staff
-        if (suggestions.length > 0) {
-          var sgCard = document.createElement('div');
-          sgCard.className = 'constraint-info-card';
-          var sgH4 = document.createElement('h4');
-          sgH4.textContent = '\u63d0\u6848\u6642\u9593\u30b9\u30ed\u30c3\u30c8\uff08\u5168\u30b9\u30bf\u30c3\u30d5\uff09'; // 提案時間スロット（全スタッフ）
-          sgCard.appendChild(sgH4);
-          var sgNote = document.createElement('div');
-          sgNote.style.fontSize = '10px';
-          sgNote.style.color = '#888';
-          sgNote.style.marginBottom = '6px';
-          sgNote.textContent = '\u30af\u30ea\u30c3\u30af\u3067\u6642\u9593\u3092\u9069\u7528'; // クリックで時間を適用
-          sgCard.appendChild(sgNote);
+        // Move proposal cards — cross-staff with 2-staff pair validation
+        var moveProposalCard = document.createElement('div');
+        moveProposalCard.className = 'constraint-info-card';
+        var mpH4 = document.createElement('h4');
+        mpH4.textContent = '\u79fb\u52d5\u63d0\u6848'; // 移動提案
+        moveProposalCard.appendChild(mpH4);
 
-          // Show staff windows summary
-          if (allStaffResult && allStaffResult.staffWindows) {
-            var swSummary = document.createElement('div');
-            swSummary.style.fontSize = '10px';
-            swSummary.style.marginBottom = '8px';
-            swSummary.style.padding = '4px 6px';
-            swSummary.style.background = '#F3E5F5';
-            swSummary.style.borderRadius = '4px';
-            for (var swi2 = 0; swi2 < allStaffResult.staffWindows.length; swi2++) {
-              var sw2 = allStaffResult.staffWindows[swi2];
-              var swLine = document.createElement('div');
-              var wTexts2 = [];
-              for (var wti = 0; wti < sw2.windows.length; wti++) {
-                wTexts2.push(ConstraintEngine.minutesToTimeStr(sw2.windows[wti].startMin) + '\u301C' +
-                             ConstraintEngine.minutesToTimeStr(sw2.windows[wti].endMin));
-              }
-              var isCurrent = sw2.staffId === visit.staffId;
-              swLine.innerHTML = '<span class="staff-window-tag">' +
-                (isCurrent ? '\u2605 ' : '') + sw2.staffName + '</span> ' + wTexts2.join(', ');
-              swSummary.appendChild(swLine);
-            }
-            if (allStaffResult.staffWindows.length === 0) {
-              swSummary.style.background = '#FFCDD2';
-              swSummary.textContent = '\u5168\u30b9\u30bf\u30c3\u30d5\u53d7\u5165\u4e0d\u53ef'; // 全スタッフ受入不可
-            }
-            sgCard.appendChild(swSummary);
-          }
+        // Use suggestWithRelaxation for 2-staff validated proposals
+        var needStaffForProposal = (patient && patient.needStaff) || 1;
+        var moveProposals = [];
 
-          for (var sbi = 0; sbi < suggestions.length; sbi++) {
-            var s = suggestions[sbi];
-            var btn = document.createElement('span');
-            btn.className = 'suggest-slot' + (sbi === 0 ? ' best' : '');
-            var staffLabel = s.staffId === visit.staffId ? '' : ' [' + s.staffName + ']';
-            btn.textContent = s.label + staffLabel;
-            if (s.travelNote) btn.title = s.travelNote;
-            btn.addEventListener('click', (function(vid, startMin, endMin, staffId) {
-              return function() {
-                if (staffId) {
-                  // If different staff, need to move visit first then set time
-                  applySuggestedTimeWithStaff(vid, startMin, endMin, staffId);
-                } else {
-                  applySuggestedTime(vid, startMin, endMin);
-                }
-              };
-            })(visit.visitId, s.startMin, s.endMin, s.staffId !== visit.staffId ? s.staffId : null));
-            sgCard.appendChild(btn);
+        if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.suggestWithRelaxation) {
+          var proposalResult = ConstraintEngine.suggestWithRelaxation(
+            visit.pid, visit.dateStr, _state,
+            { maxSuggestions: 5, excludeVisitId: visit.visitId }
+          );
+          if (proposalResult.suggestions && proposalResult.suggestions.length > 0) {
+            moveProposals = proposalResult.suggestions;
           }
-          container.appendChild(sgCard);
         }
+
+        if (moveProposals.length > 0) {
+          var mpNote = document.createElement('div');
+          mpNote.style.fontSize = '10px';
+          mpNote.style.color = '#888';
+          mpNote.style.marginBottom = '6px';
+          if (needStaffForProposal >= 2) {
+            mpNote.textContent = '2名体制: 2人分セットで検証済みの提案です';
+          } else {
+            mpNote.textContent = 'ボタンをクリックで移動を実行';
+          }
+          moveProposalCard.appendChild(mpNote);
+
+          for (var mpi = 0; mpi < moveProposals.length; mpi++) {
+            var mp = moveProposals[mpi];
+            var mpDiv = document.createElement('div');
+            mpDiv.className = 'move-proposal-card' + (mpi === 0 ? ' best' : '');
+
+            // Header: rank + execute button
+            var mpHeader = document.createElement('div');
+            mpHeader.className = 'move-proposal-header';
+            var mpRank = document.createElement('span');
+            mpRank.className = 'move-proposal-rank';
+            mpRank.textContent = (mpi === 0 ? '\u2605 \u6700\u9069' : '\u63d0\u6848' + (mpi + 1)); // ★ 最適 or 提案N
+            mpHeader.appendChild(mpRank);
+            var mpBtn = document.createElement('button');
+            mpBtn.className = 'move-proposal-btn';
+            mpBtn.textContent = '\u3053\u306e\u63d0\u6848\u3067\u79fb\u52d5'; // この提案で移動
+            mpBtn.addEventListener('click', (function(visitRef, mpRef, patientRef) {
+              return function(e) {
+                e.stopPropagation();
+                executeProposalMove(visitRef, mpRef, patientRef);
+              };
+            })(visit, mp, patient));
+            mpHeader.appendChild(mpBtn);
+            mpDiv.appendChild(mpHeader);
+
+            // Staff 1
+            var mpStaff = document.createElement('div');
+            mpStaff.className = 'move-proposal-staff';
+            mpStaff.textContent = mp.staffName + '  ' + fmtMin(mp.startMin) + '\u301C' + fmtMin(mp.endMin);
+            mpDiv.appendChild(mpStaff);
+
+            // Staff 2 (peer for 2-staff)
+            if (mp.peerStaffId) {
+              var mpPeer = document.createElement('div');
+              mpPeer.className = 'move-proposal-peer';
+              mpPeer.textContent = '+ ' + mp.peerStaffName + '  ' +
+                fmtMin(mp.peerStartMin) + '\u301C' + fmtMin(mp.peerEndMin) + '  [2\u540d\u4f53\u5236]';
+              mpDiv.appendChild(mpPeer);
+            }
+
+            // Travel/detour warning
+            if (mp.travelNote) {
+              var mpWarn = document.createElement('div');
+              mpWarn.className = 'move-proposal-warn';
+              mpWarn.textContent = mp.travelNote;
+              mpDiv.appendChild(mpWarn);
+            }
+
+            // Relaxation note
+            if (mp.relaxationNote) {
+              var mpRelax = document.createElement('div');
+              mpRelax.className = 'move-proposal-warn';
+              mpRelax.textContent = mp.relaxationNote;
+              mpDiv.appendChild(mpRelax);
+            }
+
+            moveProposalCard.appendChild(mpDiv);
+          }
+        } else {
+          var noProposal = document.createElement('div');
+          noProposal.style.fontSize = '11px';
+          noProposal.style.color = '#C62828';
+          noProposal.style.padding = '6px 0';
+          noProposal.textContent = '\u79fb\u52d5\u53ef\u80fd\u306a\u30b9\u30bf\u30c3\u30d5\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093'; // 移動可能なスタッフが見つかりません
+          if (needStaffForProposal >= 2) {
+            noProposal.textContent += '\uff082\u540d\u4f53\u5236: 2\u4eba\u5206\u30bb\u30c3\u30c8\u3067\u78ba\u4fdd\u4e0d\u53ef\uff09'; // （2名体制: 2人分セットで確保不可）
+          }
+          moveProposalCard.appendChild(noProposal);
+        }
+
+        container.appendChild(moveProposalCard);
       }
 
       // -- Drop target validation card (with available windows) --
@@ -4546,6 +4622,81 @@
       renderSidePanel();
       updateStatusBar();
       showToast('\u30b9\u30bf\u30c3\u30d5\u5909\u66f4+\u6642\u9593\u9069\u7528: ' + getStaffName(newStaffId) + ' ' + fmtMin(newStart) + '\u301C' + fmtMin(newEnd), 'success');
+    }
+
+    /**
+     * Execute a move from the constraint panel proposal cards.
+     * Handles both 1-staff and 2-staff (peer) moves.
+     */
+    function executeProposalMove(visit, proposal, patient) {
+      if (!visit || !proposal) return;
+      var pName = (patient && patient.name) || visit.pname || visit.pid;
+      var needStaff = (patient && patient.needStaff) || 1;
+
+      // Confirmation message
+      var msg = pName + ' の移動:\n\n';
+      msg += 'スタッフ: ' + proposal.staffName + '  ' +
+             fmtMin(proposal.startMin) + '\u301C' + fmtMin(proposal.endMin);
+      if (proposal.peerStaffId) {
+        msg += '\n+ ' + proposal.peerStaffName + '  ' +
+               fmtMin(proposal.peerStartMin) + '\u301C' + fmtMin(proposal.peerEndMin) + '  [2名体制]';
+      }
+      if (proposal.relaxationNote) msg += '\n\n緩和: ' + proposal.relaxationNote;
+      if (proposal.travelNote) msg += '\n移動注意: ' + proposal.travelNote;
+      msg += '\n\nこの提案で移動しますか？';
+
+      if (!confirm(msg)) return;
+
+      // --- Staff 1 move ---
+      var visitId = visit.visitId;
+      var dateStr = visit.dateStr;
+      applySuggestedTimeWithStaff(visitId, proposal.startMin, proposal.endMin, proposal.staffId);
+
+      // --- Staff 2 move (2-staff peer) ---
+      if (proposal.peerStaffId && needStaff >= 2) {
+        var pairedVisits = [];
+        if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
+          pairedVisits = ConstraintEngine.findPairedVisits(
+            { visitId: visitId, pid: visit.pid, dateStr: dateStr, startMin: proposal.startMin },
+            _state
+          );
+        }
+
+        if (pairedVisits.length > 0) {
+          applySuggestedTimeWithStaff(
+            pairedVisits[0].visitId, proposal.peerStartMin, proposal.peerEndMin, proposal.peerStaffId
+          );
+        } else {
+          // No paired visit in assignments — find _NEED entry in unassigned
+          var peerUa = null;
+          for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
+            var u = _state.unassigned[ui];
+            if (u.pid === visit.pid && u.dateStr === dateStr) { peerUa = u; break; }
+          }
+          if (peerUa) {
+            var peerVid = peerUa.visitId;
+            if (!peerVid || peerVid.indexOf('_NEED') >= 0) peerVid = 'UA_' + visit.pid + '_' + dateStr + '_2';
+            for (var nri = _state.unassigned.length - 1; nri >= 0; nri--) {
+              if (_state.unassigned[nri] === peerUa) { _state.unassigned.splice(nri, 1); break; }
+            }
+            peerUa.visitId = peerVid;
+            peerUa.staffId = proposal.peerStaffId;
+            peerUa.staffName = getStaffName(proposal.peerStaffId);
+            peerUa.startMin = proposal.peerStartMin;
+            peerUa.endMin = proposal.peerEndMin;
+            _state.assignments.push(peerUa);
+            _state.pendingChanges.push({
+              type: 'move', visitId: peerVid, pid: visit.pid,
+              fromStaffId: '__UNASSIGNED__', toStaffId: proposal.peerStaffId,
+              dateStr: dateStr, newStaffId: proposal.peerStaffId,
+              newStaffName: getStaffName(proposal.peerStaffId),
+              newStartMin: proposal.peerStartMin, newEndMin: proposal.peerEndMin,
+              pairedWith: visitId, timestamp: new Date().toISOString()
+            });
+            renderGrid(); renderSidePanel(); updateStatusBar();
+          }
+        }
+      }
     }
 
     // ================================================================
