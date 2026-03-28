@@ -3437,6 +3437,17 @@
             mpHeader.appendChild(mpBtn);
             mpDiv.appendChild(mpHeader);
 
+            // Day change info
+            if (mp.altDateStr) {
+              var mpDay = document.createElement('div');
+              mpDay.style.fontSize = '11px';
+              mpDay.style.color = '#1565C0';
+              mpDay.style.fontWeight = '600';
+              mpDay.style.marginBottom = '3px';
+              mpDay.textContent = '\u66dc\u65e5\u5909\u66f4: ' + visit.dateStr + ' \u2192 ' + mp.altDateStr; // 曜日変更: ... → ...
+              mpDiv.appendChild(mpDay);
+            }
+
             // Staff 1
             var mpStaff = document.createElement('div');
             mpStaff.className = 'move-proposal-staff';
@@ -4632,9 +4643,12 @@
       if (!visit || !proposal) return;
       var pName = (patient && patient.name) || visit.pname || visit.pid;
       var needStaff = (patient && patient.needStaff) || 1;
+      var isDayChange = !!proposal.altDateStr;
+      var newDateStr = proposal.altDateStr || visit.dateStr;
 
       // Confirmation message
       var msg = pName + ' の移動:\n\n';
+      if (isDayChange) msg += '曜日変更: ' + visit.dateStr + ' → ' + newDateStr + '\n';
       msg += 'スタッフ: ' + proposal.staffName + '  ' +
              fmtMin(proposal.startMin) + '\u301C' + fmtMin(proposal.endMin);
       if (proposal.peerStaffId) {
@@ -4649,33 +4663,73 @@
 
       // --- Staff 1 move ---
       var visitId = visit.visitId;
-      var dateStr = visit.dateStr;
+      var origDateStr = visit.dateStr;
+
+      // Move to new staff + time
       applySuggestedTimeWithStaff(visitId, proposal.startMin, proposal.endMin, proposal.staffId);
+
+      // Day change: update dateStr on the moved visit
+      if (isDayChange) {
+        var movedVisit = findVisitById(visitId);
+        if (movedVisit) {
+          movedVisit.dateStr = newDateStr;
+          var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          var parts = newDateStr.split('/');
+          var nd = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+          movedVisit.weekday = dayNames[nd.getDay()] || '';
+        }
+        // Update the last pendingChange to include day change info
+        var lastChg = _state.pendingChanges[_state.pendingChanges.length - 1];
+        if (lastChg && lastChg.visitId === visitId) {
+          lastChg.dateStr = newDateStr;
+          lastChg.origDateStr = origDateStr;
+          lastChg.newDateStr = newDateStr;
+        }
+      }
 
       // --- Staff 2 move (2-staff peer) ---
       if (proposal.peerStaffId && needStaff >= 2) {
+        // Find paired visit in assignments (same pid, same original date)
         var pairedVisits = [];
         if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
           pairedVisits = ConstraintEngine.findPairedVisits(
-            { visitId: visitId, pid: visit.pid, dateStr: dateStr, startMin: proposal.startMin },
+            { visitId: visitId, pid: visit.pid, dateStr: origDateStr, startMin: proposal.startMin },
             _state
           );
         }
 
         if (pairedVisits.length > 0) {
+          var peerV = pairedVisits[0];
           applySuggestedTimeWithStaff(
-            pairedVisits[0].visitId, proposal.peerStartMin, proposal.peerEndMin, proposal.peerStaffId
+            peerV.visitId, proposal.peerStartMin, proposal.peerEndMin, proposal.peerStaffId
           );
+          // Day change for peer too
+          if (isDayChange) {
+            var movedPeer = findVisitById(peerV.visitId);
+            if (movedPeer) {
+              movedPeer.dateStr = newDateStr;
+              var pParts = newDateStr.split('/');
+              var pNd = new Date(+pParts[0], +pParts[1] - 1, +pParts[2]);
+              var dayN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+              movedPeer.weekday = dayN[pNd.getDay()] || '';
+            }
+            var lastPeerChg = _state.pendingChanges[_state.pendingChanges.length - 1];
+            if (lastPeerChg && lastPeerChg.visitId === peerV.visitId) {
+              lastPeerChg.dateStr = newDateStr;
+              lastPeerChg.origDateStr = origDateStr;
+              lastPeerChg.newDateStr = newDateStr;
+            }
+          }
         } else {
-          // No paired visit in assignments — find _NEED entry in unassigned
+          // No paired visit in assignments — find in unassigned (including _NEED)
           var peerUa = null;
           for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
             var u = _state.unassigned[ui];
-            if (u.pid === visit.pid && u.dateStr === dateStr) { peerUa = u; break; }
+            if (u.pid === visit.pid && u.dateStr === origDateStr) { peerUa = u; break; }
           }
           if (peerUa) {
             var peerVid = peerUa.visitId;
-            if (!peerVid || peerVid.indexOf('_NEED') >= 0) peerVid = 'UA_' + visit.pid + '_' + dateStr + '_2';
+            if (!peerVid || peerVid.indexOf('_NEED') >= 0) peerVid = 'UA_' + visit.pid + '_' + origDateStr + '_2';
             for (var nri = _state.unassigned.length - 1; nri >= 0; nri--) {
               if (_state.unassigned[nri] === peerUa) { _state.unassigned.splice(nri, 1); break; }
             }
@@ -4684,19 +4738,37 @@
             peerUa.staffName = getStaffName(proposal.peerStaffId);
             peerUa.startMin = proposal.peerStartMin;
             peerUa.endMin = proposal.peerEndMin;
+            peerUa.dateStr = newDateStr;
+            if (isDayChange) {
+              var ppParts = newDateStr.split('/');
+              var ppNd = new Date(+ppParts[0], +ppParts[1] - 1, +ppParts[2]);
+              var ppDN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+              peerUa.weekday = ppDN[ppNd.getDay()] || '';
+            }
             _state.assignments.push(peerUa);
             _state.pendingChanges.push({
               type: 'move', visitId: peerVid, pid: visit.pid,
               fromStaffId: '__UNASSIGNED__', toStaffId: proposal.peerStaffId,
-              dateStr: dateStr, newStaffId: proposal.peerStaffId,
+              dateStr: newDateStr, origDateStr: isDayChange ? origDateStr : undefined,
+              newStaffId: proposal.peerStaffId,
               newStaffName: getStaffName(proposal.peerStaffId),
               newStartMin: proposal.peerStartMin, newEndMin: proposal.peerEndMin,
+              newDateStr: isDayChange ? newDateStr : undefined,
               pairedWith: visitId, timestamp: new Date().toISOString()
             });
-            renderGrid(); renderSidePanel(); updateStatusBar();
           }
         }
+
+        renderGrid(); renderSidePanel(); updateStatusBar();
+      } else if (isDayChange) {
+        // 1名体制 + 曜日変更の場合もUI更新
+        renderGrid(); renderSidePanel(); updateStatusBar();
       }
+
+      var toastMsg = '移動完了: ' + pName + ' → ' + proposal.staffName;
+      if (isDayChange) toastMsg += ' (' + origDateStr + '→' + newDateStr + ')';
+      if (proposal.peerStaffId) toastMsg += ' + ' + proposal.peerStaffName + ' [2名体制]';
+      showToast(toastMsg, 'success');
     }
 
     // ================================================================
