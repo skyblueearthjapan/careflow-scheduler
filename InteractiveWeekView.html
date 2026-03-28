@@ -3401,15 +3401,60 @@
             if (proposalResult.suggestions && proposalResult.suggestions.length > 0) {
               moveProposals = proposalResult.suggestions;
             }
-          } else if (ConstraintEngine.suggestTimeSlotsForAll) {
-            // 割当済み: suggestTimeSlotsForAll を直接使用（ペア検証不要=ペアは既に別スタッフに割当済み）
-            var directResult = ConstraintEngine.suggestTimeSlotsForAll(
-              visit.pid, visit.dateStr, _state,
-              { maxSuggestions: 5, excludeVisitId: visit.visitId, preferStaffId: visit.staffId }
-            );
-            if (directResult.suggestions && directResult.suggestions.length > 0) {
-              moveProposals = directResult.suggestions;
+          } else if (ConstraintEngine.validateAllDropTargets && ConstraintEngine.computeAvailableWindow) {
+            // 割当済み: validateAllDropTargets + computeAvailableWindow で直接提案を構築
+            // suggestTimeSlotsForAll は dummyVisit の希望時間で検証するため、
+            // 実際の訪問時間と合わない場合に提案が出ない問題を回避
+            var dropTargets = ConstraintEngine.validateAllDropTargets(visit, _state);
+            var svcMin = visit.svcMin || ((visit.endMin || 0) - (visit.startMin || 0)) || 30;
+            var visitPrefCenter = (visit.startMin != null && visit.endMin != null)
+              ? (visit.startMin + visit.endMin) / 2 : 720;
+            var staffList = _state.staffList || [];
+
+            for (var dsi = 0; dsi < staffList.length; dsi++) {
+              var ds = staffList[dsi];
+              if (ds.id === visit.staffId) continue; // 現在のスタッフは除外
+              var dt = dropTargets[ds.id];
+              if (!dt || dt.canAccept === false) continue; // NG スタッフは除外
+
+              // この スタッフの空き時間を計算
+              var dsAw = ConstraintEngine.computeAvailableWindow(
+                visit.pid, visit.dateStr, ds.id, _state, visit.visitId
+              );
+              if (!dsAw.windows || dsAw.windows.length === 0) continue;
+
+              // 空き時間から最適スロットを探す（5分刻み）
+              var bestSlot = null;
+              var bestScore = -Infinity;
+              for (var dwi = 0; dwi < dsAw.windows.length; dwi++) {
+                var dw = dsAw.windows[dwi];
+                for (var dt2 = dw.startMin; dt2 + svcMin <= dw.endMin; dt2 += 5) {
+                  var slotCenter = dt2 + svcMin / 2;
+                  var score = 1000 - Math.abs(slotCenter - visitPrefCenter);
+                  if (ds.id === visit.staffId) score += 200; // prefer current staff
+                  if (dt.status === 'WARN') score -= 100;
+                  if (score > bestScore) {
+                    bestScore = score;
+                    bestSlot = { startMin: dt2, endMin: dt2 + svcMin };
+                  }
+                }
+              }
+              if (bestSlot) {
+                moveProposals.push({
+                  staffId: ds.id,
+                  staffName: ds.name || ds.id,
+                  startMin: bestSlot.startMin,
+                  endMin: bestSlot.endMin,
+                  score: bestScore,
+                  label: ConstraintEngine.minutesToTimeStr(bestSlot.startMin) + '\u301C' +
+                         ConstraintEngine.minutesToTimeStr(bestSlot.endMin),
+                  travelNote: (dt.status === 'WARN') ? dt.quickReason : ''
+                });
+              }
             }
+            // スコア順にソートして上位5件
+            moveProposals.sort(function(a, b) { return b.score - a.score; });
+            moveProposals = moveProposals.slice(0, 5);
           }
         }
 
