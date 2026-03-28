@@ -2481,7 +2481,7 @@
               updateStatusBar();
               showToast('2名体制のペアを配置できないため、挿入を取り消しました', 'error');
             }
-            return;
+            return false; // 失敗
           }
         }
       }
@@ -2499,6 +2499,7 @@
         if (isDayChange) successMsg += ' (' + origDateStr + '→' + newDateStr + ')';
         showToast(successMsg, 'success');
       }
+      return true; // 成功
     }
 
     function onReinsertAll() {
@@ -2512,10 +2513,17 @@
       }
 
       // _NEED エントリは2名体制のマーカーであり実体ではないため除外
-      var snapshot = _state.unassigned.filter(function(u) {
-        return (u.visitId || '').indexOf('_NEED') < 0 &&
-               (u.note || '').indexOf('2名体制:2人目未割当') < 0;
-      });
+      var needEntryCount = 0;
+      var snapshot = [];
+      for (var si = 0; si < _state.unassigned.length; si++) {
+        var su = _state.unassigned[si];
+        if ((su.visitId || '').indexOf('_NEED') >= 0 ||
+            (su.note || '').indexOf('2名体制:2人目未割当') >= 0) {
+          needEntryCount++;
+        } else {
+          snapshot.push(su);
+        }
+      }
 
       // pid+dateStr でグループ化
       var groups = {};
@@ -2708,7 +2716,7 @@
           showToast(strictInserted + '件を厳格条件で挿入しました', 'success');
         }
         // 承認モーダルを表示
-        showApprovalModal(strictInserted, needsApproval, impossible);
+        showApprovalModal(strictInserted, needsApproval, impossible, needEntryCount);
       } else if (strictInserted > 0) {
         showToast(strictInserted + '件を全て厳格条件で挿入しました', 'success');
       } else {
@@ -2722,7 +2730,7 @@
     // ================================================================
     var _pendingApprovals = []; // 承認待ちデータを保持
 
-    function showApprovalModal(strictCount, needsApproval, impossible) {
+    function showApprovalModal(strictCount, needsApproval, impossible, needEntryCount) {
       _pendingApprovals = needsApproval;
 
       var body = document.getElementById('approvalBody');
@@ -2849,6 +2857,25 @@
         body.appendChild(impSection);
       }
 
+      // --- 2名体制不足セクション ---
+      if (needEntryCount > 0) {
+        var needSection = document.createElement('div');
+        needSection.className = 'approval-section';
+        var needTitle = document.createElement('div');
+        needTitle.className = 'approval-section-title';
+        needTitle.style.color = '#1565C0';
+        needTitle.innerHTML = '&#128101; 2名体制の不足分 <span class="section-count" style="background:#E3F2FD;color:#1565C0;">' + needEntryCount + '件</span>';
+        needSection.appendChild(needTitle);
+        var needNote = document.createElement('div');
+        needNote.className = 'approval-strict-item';
+        needNote.style.background = '#E3F2FD';
+        needNote.style.borderColor = '#90CAF9';
+        needNote.style.color = '#1565C0';
+        needNote.textContent = '2名体制の利用者で2人目のスタッフが不足しています。実体の訪問が割当されると自動的に解消されます。';
+        needSection.appendChild(needNote);
+        body.appendChild(needSection);
+      }
+
       updateApprovalCount();
       document.getElementById('approvalOverlay').classList.add('show');
     }
@@ -2914,8 +2941,12 @@
 
         // applyReinsert_ を利用（skipRender=true でループ中はrender抑制）
         try {
-          applyReinsert_(item.pid, item.dateStr, effectiveDateStr, ua, best, patient, item.pName, true);
-          inserted++;
+          var success = applyReinsert_(item.pid, item.dateStr, effectiveDateStr, ua, best, patient, item.pName, true);
+          if (success) {
+            inserted++;
+          } else {
+            failed.push(item.pName + '(2名体制ペア確保不可)');
+          }
         } catch (e) {
           failed.push(item.pName + '(' + e.message + ')');
         }
