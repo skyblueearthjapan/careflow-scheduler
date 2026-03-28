@@ -2127,35 +2127,115 @@
     // Reinsert Functions
     // ================================================================
     function reinsertSinglePatient(pid, dateStr, ua, btn) {
-      if (!_state || typeof ConstraintEngine === 'undefined' || !ConstraintEngine.suggestTimeSlotsForAll) {
+      if (!_state || typeof ConstraintEngine === 'undefined' || !ConstraintEngine.suggestWithRelaxation) {
         showToast('ConstraintEngine が利用できません', 'error');
         return;
       }
 
-      var result = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 1 });
-      if (!result.suggestions || result.suggestions.length === 0) {
-        showToast('割当可能なスタッフが見つかりません: ' + (ua.pname || pid), 'error');
+      var patient = getPatient(pid);
+      var pName = (patient && patient.name) ? patient.name : (ua.pname || pid);
+
+      // --- 段階的緩和で提案を取得 ---
+      var proposal = ConstraintEngine.suggestWithRelaxation(pid, dateStr, _state, { maxSuggestions: 5 });
+
+      // === 全条件で割当不可 ===
+      if (proposal.level === 'impossible') {
+        showToast('自動割当不可: ' + pName + '\n' +
+          (proposal.ngReason || '全スタッフ受入不可') +
+          '\n手動での割当をご検討ください。', 'error');
         return;
       }
 
-      var best = result.suggestions[0];
-      var patient = getPatient(pid);
-      var pName = (patient && patient.name) ? patient.name : (ua.pname || pid);
+      var best = proposal.suggestions[0];
+      var effectiveDateStr = best.altDateStr || dateStr;
 
       // 迂回警告テキスト
       var detourWarn = '';
       if (typeof ConstraintEngine.calcRouteDetour === 'function') {
-        var detour = ConstraintEngine.calcRouteDetour(best.staffId, dateStr, best.startMin, best.endMin, pid, _state);
-        if (detour.warningText) detourWarn = '\n' + detour.warningText;
+        var detour = ConstraintEngine.calcRouteDetour(best.staffId, effectiveDateStr, best.startMin, best.endMin, pid, _state);
+        if (detour.warningText) detourWarn = '\n  移動注意: ' + detour.warningText;
       }
 
-      var msg = pName + ' → ' + best.staffName + ' ' +
-                fmtMin(best.startMin) + '〜' + fmtMin(best.endMin) + ' に挿入しますか？' + detourWarn;
+      // === 厳格モードで割当可能 ===
+      if (proposal.level === 'strict') {
+        var msg = pName + ' → ' + best.staffName + ' ' +
+                  fmtMin(best.startMin) + '〜' + fmtMin(best.endMin) +
+                  ' に挿入しますか？' + detourWarn;
+        if (!confirm(msg)) return;
+        applyReinsert_(pid, dateStr, effectiveDateStr, ua, best, patient, pName);
+        return;
+      }
 
-      if (!confirm(msg)) return;
+      // === 緩和が必要: 提案 → 承認フロー ===
+      var msgLines = [];
+      msgLines.push('【' + pName + ' の自動割当】');
+      msgLines.push('');
 
-      // visitId
-      var visitId = ua.visitId || ('UA_' + pid + '_' + dateStr);
+      if (proposal.level === 'softcap_relaxed') {
+        msgLines.push('★ 現在の条件では厳格な割当ができません。');
+        msgLines.push('  以下の条件緩和が必要です:');
+      } else if (proposal.level === 'day_change') {
+        msgLines.push('★ 現在の曜日(' + effectiveDateStr + ')では割当できません。');
+        msgLines.push('  以下の曜日変更を提案します:');
+      } else if (proposal.level === 'softcap_day_change') {
+        msgLines.push('★ 現在の条件・曜日では割当できません。');
+        msgLines.push('  以下の条件緩和＋曜日変更を提案します:');
+      }
+
+      msgLines.push('');
+
+      // 緩和理由を表示
+      for (var ri = 0; ri < proposal.relaxations.length; ri++) {
+        msgLines.push('  【緩和】' + proposal.relaxations[ri]);
+      }
+      if (best.relaxationNote) {
+        msgLines.push('  【詳細】' + best.relaxationNote);
+      }
+
+      msgLines.push('');
+      msgLines.push('提案内容:');
+      if (best.altDateStr) {
+        msgLines.push('  日付: ' + dateStr + ' → ' + best.altDateStr);
+      }
+      msgLines.push('  スタッフ: ' + best.staffName);
+      msgLines.push('  時間: ' + fmtMin(best.startMin) + '〜' + fmtMin(best.endMin));
+      if (detourWarn) msgLines.push(detourWarn);
+
+      // 追加候補がある場合は表示
+      if (proposal.suggestions.length > 1) {
+        msgLines.push('');
+        msgLines.push('--- 他の候補 ---');
+        for (var oi = 1; oi < Math.min(proposal.suggestions.length, 4); oi++) {
+          var other = proposal.suggestions[oi];
+          var otherLine = '  ' + (oi + 1) + '. ';
+          if (other.altDateStr) otherLine += other.altDateStr + ' ';
+          otherLine += other.staffName + ' ' + fmtMin(other.startMin) + '〜' + fmtMin(other.endMin);
+          if (other.relaxationNote) otherLine += ' (' + other.relaxationNote + ')';
+          msgLines.push(otherLine);
+        }
+      }
+
+      msgLines.push('');
+      msgLines.push('上記の提案（1番目）を承認しますか？');
+
+      if (!confirm(msgLines.join('\n'))) return;
+
+      applyReinsert_(pid, dateStr, effectiveDateStr, ua, best, patient, pName);
+    }
+
+    /**
+     * 再挿入を実際に適用する内部関数。
+     * @param {string} pid          - Patient ID
+     * @param {string} origDateStr  - 元の日付
+     * @param {string} newDateStr   - 挿入先日付（曜日変更時は異なる）
+     * @param {object} ua           - 未割当データ
+     * @param {object} best         - 最適提案
+     * @param {object} patient      - 患者マスターデータ
+     * @param {string} pName        - 表示用患者名
+     */
+    function applyReinsert_(pid, origDateStr, newDateStr, ua, best, patient, pName) {
+      var visitId = ua.visitId || ('UA_' + pid + '_' + origDateStr);
+      var isDayChange = (newDateStr !== origDateStr);
 
       // pendingChanges追加
       var change = {
@@ -2164,7 +2244,8 @@
         pid:         pid,
         fromStaffId: '__UNASSIGNED__',
         toStaffId:   best.staffId,
-        dateStr:     dateStr,
+        dateStr:     newDateStr,
+        origDateStr: isDayChange ? origDateStr : undefined,
         startMin:    null,
         endMin:      null,
         svcMin:      (patient && patient.svcMin) || ua.svcMin || 30,
@@ -2174,42 +2255,53 @@
         newStaffName: best.staffName,
         newStartMin:  best.startMin,
         newEndMin:    best.endMin,
+        newDateStr:   isDayChange ? newDateStr : undefined,
         timestamp:   new Date().toISOString()
       };
 
       // applyMoveToState
-      applyMoveToState(visitId, '__UNASSIGNED__', best.staffId, dateStr);
+      applyMoveToState(visitId, '__UNASSIGNED__', best.staffId, origDateStr);
 
-      // Set time on the moved visit
+      // Set time & date on the moved visit
       var movedVisit = findVisitById(visitId);
       if (movedVisit) {
         movedVisit.startMin = best.startMin;
         movedVisit.endMin   = best.endMin;
+        if (isDayChange) {
+          movedVisit.dateStr = newDateStr;
+          // 曜日も更新
+          var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          var parts = newDateStr.split('/');
+          var nd = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+          movedVisit.weekday = dayNames[nd.getDay()] || '';
+        }
       }
 
       _state.pendingChanges.push(change);
 
       // --- 2名体制ペア連動 ---
       if (patient && patient.needStaff >= 2) {
-        // 同じpid+dateStrの未割当ペアを検索
+        // 同じpid+origDateStrの未割当ペアを検索
         var peerUa = null;
         for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
           var u = _state.unassigned[ui];
-          if (u.pid === pid && u.dateStr === dateStr) {
+          if (u.pid === pid && u.dateStr === origDateStr) {
             peerUa = u;
             break;
           }
         }
         if (peerUa) {
-          // ペアは別スタッフに挿入（同じスタッフはC-1違反）
-          var peerResult = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 5 });
+          // ペアは別スタッフに挿入（同じスタッフはC-1違反）- strict モードで探索
+          var peerResult = ConstraintEngine.suggestTimeSlotsForAll(pid, newDateStr, _state, {
+            strict: true, maxSuggestions: 5
+          });
           var peerSuggestions = (peerResult.suggestions || []).filter(function(s) {
             return s.staffId !== best.staffId;
           });
 
           if (peerSuggestions.length > 0) {
             var peerBest = peerSuggestions[0];
-            var peerVisitId = peerUa.visitId || ('UA_' + pid + '_' + dateStr + '_2');
+            var peerVisitId = peerUa.visitId || ('UA_' + pid + '_' + origDateStr + '_2');
 
             var peerChange = {
               type:        'move',
@@ -2217,7 +2309,8 @@
               pid:         pid,
               fromStaffId: '__UNASSIGNED__',
               toStaffId:   peerBest.staffId,
-              dateStr:     dateStr,
+              dateStr:     newDateStr,
+              origDateStr: isDayChange ? origDateStr : undefined,
               startMin:    null,
               endMin:      null,
               svcMin:      (patient && patient.svcMin) || peerUa.svcMin || 30,
@@ -2227,45 +2320,64 @@
               newStaffName: peerBest.staffName,
               newStartMin:  best.startMin,
               newEndMin:    best.endMin,
+              newDateStr:   isDayChange ? newDateStr : undefined,
               pairedWith:   visitId,
               timestamp:   new Date().toISOString()
             };
 
-            applyMoveToState(peerVisitId, '__UNASSIGNED__', peerBest.staffId, dateStr);
+            applyMoveToState(peerVisitId, '__UNASSIGNED__', peerBest.staffId, origDateStr);
             var movedPeer = findVisitById(peerVisitId);
             if (movedPeer) {
               movedPeer.startMin = best.startMin;  // 同じ時間
               movedPeer.endMin   = best.endMin;
+              if (isDayChange) {
+                movedPeer.dateStr = newDateStr;
+                var pParts = newDateStr.split('/');
+                var pNd = new Date(+pParts[0], +pParts[1] - 1, +pParts[2]);
+                var dayN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                movedPeer.weekday = dayN[pNd.getDay()] || '';
+              }
             }
             _state.pendingChanges.push(peerChange);
           } else {
             // ペアの挿入先が見つからない → 1件目も取り消し
-            applyMoveToState(visitId, best.staffId, '__UNASSIGNED__', dateStr);
+            applyMoveToState(visitId, best.staffId, '__UNASSIGNED__', isDayChange ? newDateStr : origDateStr);
             var revert = findVisitById(visitId);
-            if (revert) { revert.startMin = null; revert.endMin = null; }
+            if (revert) {
+              revert.startMin = null;
+              revert.endMin = null;
+              if (isDayChange) revert.dateStr = origDateStr;
+            }
             _state.pendingChanges.pop(); // 1件目のchangeを除去
             renderGrid();
             renderSidePanel();
             updateStatusBar();
-            showToast('2\u540d\u4f53\u5236\u306e\u30da\u30a2\u3092\u914d\u7f6e\u3067\u304d\u306a\u3044\u305f\u3081\u3001\u633f\u5165\u3092\u53d6\u308a\u6d88\u3057\u307e\u3057\u305f', 'error');
+            showToast('2名体制のペアを配置できないため、挿入を取り消しました', 'error');
             return;
           }
         }
       }
 
+      // 2名体制の不足分を再チェック
+      if (typeof refreshTwoStaffUnassigned_ === 'function') {
+        refreshTwoStaffUnassigned_();
+      }
+
       renderGrid();
       renderSidePanel();
       updateStatusBar();
-      showToast('挿入完了: ' + pName + ' → ' + best.staffName, 'success');
+      var successMsg = '挿入完了: ' + pName + ' → ' + best.staffName;
+      if (isDayChange) successMsg += ' (' + origDateStr + '→' + newDateStr + ')';
+      showToast(successMsg, 'success');
     }
 
     function onReinsertAll() {
       if (!_state || !_state.unassigned || _state.unassigned.length === 0) {
-        showToast('\u672a\u5272\u5f53\u306f\u3042\u308a\u307e\u305b\u3093', 'info');
+        showToast('未割当はありません', 'info');
         return;
       }
-      if (typeof ConstraintEngine === 'undefined' || !ConstraintEngine.suggestTimeSlotsForAll) {
-        showToast('ConstraintEngine \u304c\u5229\u7528\u3067\u304d\u307e\u305b\u3093', 'error');
+      if (typeof ConstraintEngine === 'undefined' || !ConstraintEngine.suggestWithRelaxation) {
+        showToast('ConstraintEngine が利用できません', 'error');
         return;
       }
 
@@ -2283,8 +2395,9 @@
         groups[key].push(snapshot[i]);
       }
 
-      var inserted = 0;
-      var failedNames = [];
+      var strictInserted = 0;
+      var needsApproval = [];   // 緩和が必要な分
+      var impossible = [];      // 割当不可
 
       for (var gi = 0; gi < groupOrder.length; gi++) {
         var gKey = groupOrder[gi];
@@ -2293,56 +2406,81 @@
         var dateStr = items[0].dateStr;
         var patient = getPatient(pid);
         var needStaff = (patient && patient.needStaff) || 1;
+        var pName = (patient && patient.name) || items[0].pname || pid;
+
+        // 段階的緩和で提案取得
+        var proposal = ConstraintEngine.suggestWithRelaxation(pid, dateStr, _state, { maxSuggestions: 3 });
+
+        if (proposal.level === 'impossible') {
+          impossible.push(pName);
+          continue;
+        }
+
+        if (proposal.level !== 'strict') {
+          // 緩和が必要 → 個別対応に回す（自動では挿入しない）
+          needsApproval.push({
+            pName: pName,
+            pid: pid,
+            dateStr: dateStr,
+            level: proposal.level,
+            relaxations: proposal.relaxations
+          });
+          continue;
+        }
+
+        // === 厳格モードで割当可能 → 自動挿入 ===
+        var best = proposal.suggestions[0];
 
         if (needStaff >= 2 && items.length >= 2) {
           // --- 2名体制: 2つの別スタッフに同じ時間で挿入 ---
-          var result1 = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 5 });
-          if (!result1.suggestions || result1.suggestions.length === 0) {
-            failedNames.push((patient && patient.name) || items[0].pname || pid);
-            continue;
-          }
-          var best1 = result1.suggestions[0];
-
-          // 1件目挿入
           var visitId1 = items[0].visitId || ('UA_' + pid + '_' + dateStr);
           var change1 = {
             type:        'move',
             visitId:     visitId1,
             pid:         pid,
             fromStaffId: '__UNASSIGNED__',
-            toStaffId:   best1.staffId,
+            toStaffId:   best.staffId,
             dateStr:     dateStr,
             startMin:    null,
             endMin:      null,
             svcMin:      (patient && patient.svcMin) || items[0].svcMin || 30,
             timeType:    (patient && patient.timeType) || '',
             area:        (patient && patient.area) || '',
-            newStaffId:   best1.staffId,
-            newStaffName: best1.staffName,
-            newStartMin:  best1.startMin,
-            newEndMin:    best1.endMin,
+            newStaffId:   best.staffId,
+            newStaffName: best.staffName,
+            newStartMin:  best.startMin,
+            newEndMin:    best.endMin,
             timestamp:   new Date().toISOString()
           };
-          applyMoveToState(visitId1, '__UNASSIGNED__', best1.staffId, dateStr);
+          applyMoveToState(visitId1, '__UNASSIGNED__', best.staffId, dateStr);
           var moved1 = findVisitById(visitId1);
-          if (moved1) { moved1.startMin = best1.startMin; moved1.endMin = best1.endMin; }
+          if (moved1) { moved1.startMin = best.startMin; moved1.endMin = best.endMin; }
           _state.pendingChanges.push(change1);
 
-          // 2件目: best1.staffIdを除外して検索
-          var result2 = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 5 });
-          var filtered = (result2.suggestions || []).filter(function(s) { return s.staffId !== best1.staffId; });
+          // 2件目: best.staffIdを除外して厳格検索
+          var result2 = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, {
+            strict: true, maxSuggestions: 5
+          });
+          var filtered = (result2.suggestions || []).filter(function(s) {
+            return s.staffId !== best.staffId;
+          });
           if (filtered.length === 0) {
-            // ペア不可 → 1件目もundo
-            applyMoveToState(visitId1, best1.staffId, '__UNASSIGNED__', dateStr);
+            // ペア不可 → 1件目もundo → 個別対応に回す
+            applyMoveToState(visitId1, best.staffId, '__UNASSIGNED__', dateStr);
             var revert1 = findVisitById(visitId1);
             if (revert1) { revert1.startMin = null; revert1.endMin = null; }
             _state.pendingChanges.pop();
-            failedNames.push((patient && patient.name) || items[0].pname || pid);
+            needsApproval.push({
+              pName: pName,
+              pid: pid,
+              dateStr: dateStr,
+              level: '2名体制ペア不足',
+              relaxations: ['2名体制のペアスタッフが厳格条件で確保できません']
+            });
             continue;
           }
           var best2 = filtered[0];
 
-          // 2件目は同じ時間(best1.startMin, best1.endMin)で挿入
           var visitId2 = items[1].visitId || ('UA_' + pid + '_' + dateStr + '_2');
           var change2 = {
             type:        'move',
@@ -2358,30 +2496,39 @@
             area:        (patient && patient.area) || '',
             newStaffId:   best2.staffId,
             newStaffName: best2.staffName,
-            newStartMin:  best1.startMin,
-            newEndMin:    best1.endMin,
+            newStartMin:  best.startMin,
+            newEndMin:    best.endMin,
             pairedWith:   visitId1,
             timestamp:   new Date().toISOString()
           };
           applyMoveToState(visitId2, '__UNASSIGNED__', best2.staffId, dateStr);
           var moved2 = findVisitById(visitId2);
-          if (moved2) { moved2.startMin = best1.startMin; moved2.endMin = best1.endMin; }
+          if (moved2) { moved2.startMin = best.startMin; moved2.endMin = best.endMin; }
           _state.pendingChanges.push(change2);
-          inserted += 2;
+
+          strictInserted += 2;
 
         } else {
-          // --- 通常（1名体制）or 単独の未割当 ---
+          // --- 通常（1名体制）---
           for (var ii = 0; ii < items.length; ii++) {
             var ua = items[ii];
-            var result = ConstraintEngine.suggestTimeSlotsForAll(pid, dateStr, _state, { maxSuggestions: 1 });
-            if (!result.suggestions || result.suggestions.length === 0) {
-              failedNames.push((patient && patient.name) || ua.pname || pid);
-              continue;
+            // 2件目以降は再度厳格チェック（1件目の挿入で状態が変わるため）
+            if (ii > 0) {
+              proposal = ConstraintEngine.suggestWithRelaxation(pid, dateStr, _state, { maxSuggestions: 1 });
+              if (proposal.level !== 'strict') {
+                needsApproval.push({
+                  pName: pName,
+                  pid: pid,
+                  dateStr: dateStr,
+                  level: proposal.level,
+                  relaxations: proposal.relaxations
+                });
+                continue;
+              }
+              best = proposal.suggestions[0];
             }
 
-            var best = result.suggestions[0];
             var visitId = ua.visitId || ('UA_' + pid + '_' + dateStr);
-
             var change = {
               type:        'move',
               visitId:     visitId,
@@ -2405,7 +2552,7 @@
             var movedVisit = findVisitById(visitId);
             if (movedVisit) { movedVisit.startMin = best.startMin; movedVisit.endMin = best.endMin; }
             _state.pendingChanges.push(change);
-            inserted++;
+            strictInserted++;
           }
         }
       }
@@ -2414,11 +2561,26 @@
       renderSidePanel();
       updateStatusBar();
 
-      var msg = inserted + '\u4ef6\u633f\u5165';
-      if (failedNames.length > 0) {
-        msg += ' / ' + failedNames.length + '\u4ef6\u306f\u633f\u5165\u4e0d\u53ef: ' + failedNames.join(', ');
+      // --- 結果メッセージ ---
+      var msgParts = [];
+      if (strictInserted > 0) {
+        msgParts.push(strictInserted + '件を厳格条件で挿入');
       }
-      showToast(msg, inserted > 0 ? 'success' : 'error');
+      if (needsApproval.length > 0) {
+        var approvalNames = needsApproval.map(function(n) { return n.pName; });
+        msgParts.push(needsApproval.length + '件は条件緩和が必要（個別対応）: ' + approvalNames.join(', '));
+      }
+      if (impossible.length > 0) {
+        msgParts.push(impossible.length + '件は割当不可: ' + impossible.join(', '));
+      }
+
+      var toastType = strictInserted > 0 ? 'success' : (needsApproval.length > 0 ? 'info' : 'error');
+      showToast(msgParts.join('\n'), toastType);
+
+      // 緩和が必要な件がある場合、サイドパネルの未割当タブに切り替え
+      if (needsApproval.length > 0) {
+        switchSideTab('unassigned');
+      }
     }
     window.onReinsertAll = onReinsertAll;
 

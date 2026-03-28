@@ -2072,6 +2072,26 @@
     var patient = getPatient(pid, state);
     var svcMin = (patient && patient.svcMin) ? patient.svcMin : 30;
 
+    // C-13: Special week REPLACE mode check
+    if (state.specialWeek && state.specialWeek.mode === 'REPLACE') {
+      var hasSpecialEntry = false;
+      var swDetails = state.specialWeek.details || [];
+      for (var swi = 0; swi < swDetails.length; swi++) {
+        if (swDetails[swi].pid === pid && swDetails[swi].dateStr === dateStr) {
+          hasSpecialEntry = true;
+          break;
+        }
+      }
+      if (!hasSpecialEntry) {
+        return {
+          suggestions: [],
+          staffWindows: [],
+          constraintSummary: '特別訪問週間(REPLACE)にエントリがないため割当不可',
+          ngReason: 'C-13: 特別訪問週間REPLACE対象外'
+        };
+      }
+    }
+
     // Determine preferred center time
     var prefCenter;
     if (patient && patient.startPref != null && patient.endPref != null) {
@@ -2136,6 +2156,9 @@
 
       // Skip if staff is NG
       if (validationMap[staffId] && validationMap[staffId].canAccept === false) continue;
+
+      // Strict mode: also skip WARN staff (soft cap exceeded etc.)
+      if (opts.strict && validationMap[staffId] && validationMap[staffId].status === 'WARN') continue;
 
       // 2名体制: 提案先がペアスタッフと同一ならスキップ（C-1違反）
       if (needStaff >= 2 && pairedStaffId && staffId === pairedStaffId) continue;
@@ -2424,6 +2447,209 @@
   // Expose via public API below.
 
   // ===========================================================
+  // 11. suggestWithRelaxation
+  //     段階的緩和による再挿入提案。
+  //     Level 0: 厳格（soft_cap適用、全制約チェック）
+  //     Level 1: ソフトキャップ緩和（maxPerDay まで許容）
+  //     Level 2: 曜日変更（同一週内の別日に配置）
+  //     Level 3: ソフトキャップ緩和 + 曜日変更
+  //     各レベルで見つかった時点で提案を返す。
+  // ===========================================================
+
+  /** Youbi EN → JA mapping */
+  var YOUBI_JA = { Sun: '日', Mon: '月', Tue: '火', Wed: '水', Thu: '木', Fri: '金', Sat: '土' };
+
+  /**
+   * 段階的緩和で再挿入提案を生成する。
+   *
+   * @param {string} pid             - Patient ID
+   * @param {string} dateStr         - Original date "yyyy/MM/dd"
+   * @param {object} state           - Complete local state
+   * @param {object} [options]       - Optional settings
+   * @param {number} [options.maxSuggestions=5]
+   * @return {{
+   *   level: string,
+   *   suggestions: object[],
+   *   relaxations: string[],
+   *   ngReason: string
+   * }}
+   *   level: 'strict' | 'softcap_relaxed' | 'day_change' | 'softcap_day_change' | 'impossible'
+   */
+  function suggestWithRelaxation(pid, dateStr, state, options) {
+    var opts = options || {};
+    var maxSuggestions = opts.maxSuggestions || 5;
+    var patient = getPatient(pid, state);
+
+    // --- Level 0: 厳格モード（soft_cap適用、全CRITICAL + WARN除外） ---
+    var strict = suggestTimeSlotsForAll(pid, dateStr, state, {
+      strict: true, maxSuggestions: maxSuggestions,
+      excludeVisitId: opts.excludeVisitId
+    });
+    if (strict.suggestions && strict.suggestions.length > 0) {
+      return {
+        level: 'strict',
+        suggestions: strict.suggestions,
+        relaxations: [],
+        ngReason: ''
+      };
+    }
+
+    // --- Level 1: ソフトキャップ緩和（maxPerDay まで許容） ---
+    var relaxed = suggestTimeSlotsForAll(pid, dateStr, state, {
+      strict: false, maxSuggestions: maxSuggestions,
+      excludeVisitId: opts.excludeVisitId
+    });
+    if (relaxed.suggestions && relaxed.suggestions.length > 0) {
+      // 緩和理由を特定: どのスタッフがソフトキャップ超過か
+      var relaxDetails = [];
+      for (var ri = 0; ri < relaxed.suggestions.length; ri++) {
+        var sg = relaxed.suggestions[ri];
+        var staff = getStaff(sg.staffId, state);
+        if (staff && staff.maxPerDay != null) {
+          var cnt = countStaffDayAssignments(sg.staffId, dateStr, state);
+          var sc = getSoftCap(staff);
+          if (cnt >= sc) {
+            sg.relaxationNote = 'ソフトキャップ超過: ' +
+              (staff.name || sg.staffId) + ' ' + dateStr +
+              ' 現在' + cnt + '件/推奨' + sc + '件(上限' + staff.maxPerDay + '件)';
+            if (relaxDetails.indexOf(sg.relaxationNote) < 0) {
+              relaxDetails.push(sg.relaxationNote);
+            }
+          }
+        }
+      }
+      return {
+        level: 'softcap_relaxed',
+        suggestions: relaxed.suggestions,
+        relaxations: relaxDetails.length > 0 ? relaxDetails : ['ソフトキャップ超過を許容'],
+        ngReason: ''
+      };
+    }
+
+    // --- Level 2: 曜日変更（厳格モードで別日を探索） ---
+    var weekDates = state.weekDates || [];
+    var altDaySuggestions = [];
+    var youbiOrig = getYoubiEn(dateStr);
+
+    for (var di = 0; di < weekDates.length; di++) {
+      var altDate = weekDates[di];
+      if (altDate === dateStr) continue;
+
+      var altYoubi = getYoubiEn(altDate);
+
+      // 患者NG曜日チェック
+      if (patient && patient.ngDays && patient.ngDays.indexOf(altYoubi) >= 0) continue;
+
+      // キャンセル済みチェック
+      var altPChange = getPatientChange(pid, altDate, state);
+      if (altPChange && altPChange.op === '\u30ad\u30e3\u30f3\u30bb\u30eb') continue;
+
+      // 同じ患者が既にその日に割当済みでないか（重複防止）
+      var alreadyOnAltDay = false;
+      var allVisits = (state.assignments || []).concat(state.unassigned || []);
+      for (var avi = 0; avi < allVisits.length; avi++) {
+        if (allVisits[avi].pid === pid && allVisits[avi].dateStr === altDate &&
+            allVisits[avi].staffId !== '__UNASSIGNED__') {
+          alreadyOnAltDay = true;
+          break;
+        }
+      }
+      if (alreadyOnAltDay) continue;
+
+      var altResult = suggestTimeSlotsForAll(pid, altDate, state, {
+        strict: true, maxSuggestions: 2,
+        excludeVisitId: opts.excludeVisitId
+      });
+      if (altResult.suggestions && altResult.suggestions.length > 0) {
+        for (var asi = 0; asi < altResult.suggestions.length; asi++) {
+          var altSg = altResult.suggestions[asi];
+          altSg.altDateStr = altDate;
+          altSg.originalDateStr = dateStr;
+          altSg.relaxationNote = '曜日変更: ' +
+            (YOUBI_JA[youbiOrig] || youbiOrig) + '→' +
+            (YOUBI_JA[altYoubi] || altYoubi);
+          altDaySuggestions.push(altSg);
+        }
+      }
+    }
+    if (altDaySuggestions.length > 0) {
+      altDaySuggestions.sort(function (a, b) { return b.score - a.score; });
+      var topAlt = altDaySuggestions.slice(0, maxSuggestions);
+      return {
+        level: 'day_change',
+        suggestions: topAlt,
+        relaxations: ['曜日変更が必要'],
+        ngReason: ''
+      };
+    }
+
+    // --- Level 3: ソフトキャップ緩和 + 曜日変更 ---
+    var altDayRelaxed = [];
+    for (var dri = 0; dri < weekDates.length; dri++) {
+      var altDate2 = weekDates[dri];
+      if (altDate2 === dateStr) continue;
+
+      var altYoubi2 = getYoubiEn(altDate2);
+      if (patient && patient.ngDays && patient.ngDays.indexOf(altYoubi2) >= 0) continue;
+
+      var altPChange2 = getPatientChange(pid, altDate2, state);
+      if (altPChange2 && altPChange2.op === '\u30ad\u30e3\u30f3\u30bb\u30eb') continue;
+
+      var alreadyOnAlt2 = false;
+      var allV2 = (state.assignments || []).concat(state.unassigned || []);
+      for (var av2 = 0; av2 < allV2.length; av2++) {
+        if (allV2[av2].pid === pid && allV2[av2].dateStr === altDate2 &&
+            allV2[av2].staffId !== '__UNASSIGNED__') {
+          alreadyOnAlt2 = true;
+          break;
+        }
+      }
+      if (alreadyOnAlt2) continue;
+
+      var altRes2 = suggestTimeSlotsForAll(pid, altDate2, state, {
+        strict: false, maxSuggestions: 2,
+        excludeVisitId: opts.excludeVisitId
+      });
+      if (altRes2.suggestions && altRes2.suggestions.length > 0) {
+        for (var as2 = 0; as2 < altRes2.suggestions.length; as2++) {
+          var sg2 = altRes2.suggestions[as2];
+          sg2.altDateStr = altDate2;
+          sg2.originalDateStr = dateStr;
+          sg2.relaxationNote = '曜日変更(' +
+            (YOUBI_JA[youbiOrig] || youbiOrig) + '→' +
+            (YOUBI_JA[altYoubi2] || altYoubi2) + ') + ソフトキャップ超過';
+          altDayRelaxed.push(sg2);
+        }
+      }
+    }
+    if (altDayRelaxed.length > 0) {
+      altDayRelaxed.sort(function (a, b) { return b.score - a.score; });
+      return {
+        level: 'softcap_day_change',
+        suggestions: altDayRelaxed.slice(0, maxSuggestions),
+        relaxations: ['曜日変更 + ソフトキャップ超過許容が必要'],
+        ngReason: ''
+      };
+    }
+
+    // --- 全条件で割当不可 ---
+    // NG理由を収集
+    var reasons = [];
+    if (strict.ngReason) reasons.push(strict.ngReason);
+    if (strict.constraintSummary) reasons.push(strict.constraintSummary);
+    if (relaxed.constraintSummary && reasons.indexOf(relaxed.constraintSummary) < 0) {
+      reasons.push(relaxed.constraintSummary);
+    }
+
+    return {
+      level: 'impossible',
+      suggestions: [],
+      relaxations: [],
+      ngReason: reasons.length > 0 ? reasons.join(' / ') : '全スタッフ受入不可'
+    };
+  }
+
+  // ===========================================================
   // Expose public API via window.ConstraintEngine
   // ===========================================================
 
@@ -2439,6 +2665,7 @@
     computeAvailableWindow: computeAvailableWindow,
     suggestTimeSlots: suggestTimeSlots,
     suggestTimeSlotsForAll: suggestTimeSlotsForAll,
+    suggestWithRelaxation: suggestWithRelaxation,
 
     // ---- Distance helpers ----
     calcDistanceKm: calcDistanceKm,
