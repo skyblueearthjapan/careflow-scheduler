@@ -3387,17 +3387,29 @@
         mpH4.textContent = '\u79fb\u52d5\u63d0\u6848'; // 移動提案
         moveProposalCard.appendChild(mpH4);
 
-        // Use suggestWithRelaxation for 2-staff validated proposals
         var needStaffForProposal = (patient && patient.needStaff) || 1;
+        var isUnassigned = (visit.staffId === '__UNASSIGNED__');
         var moveProposals = [];
 
-        if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.suggestWithRelaxation) {
-          var proposalResult = ConstraintEngine.suggestWithRelaxation(
-            visit.pid, visit.dateStr, _state,
-            { maxSuggestions: 5, excludeVisitId: visit.visitId }
-          );
-          if (proposalResult.suggestions && proposalResult.suggestions.length > 0) {
-            moveProposals = proposalResult.suggestions;
+        if (typeof ConstraintEngine !== 'undefined') {
+          if (isUnassigned && ConstraintEngine.suggestWithRelaxation) {
+            // 未割当: suggestWithRelaxation を使用（2名体制ペア検証付き、曜日変更含む）
+            var proposalResult = ConstraintEngine.suggestWithRelaxation(
+              visit.pid, visit.dateStr, _state,
+              { maxSuggestions: 5, excludeVisitId: visit.visitId }
+            );
+            if (proposalResult.suggestions && proposalResult.suggestions.length > 0) {
+              moveProposals = proposalResult.suggestions;
+            }
+          } else if (ConstraintEngine.suggestTimeSlotsForAll) {
+            // 割当済み: suggestTimeSlotsForAll を直接使用（ペア検証不要=ペアは既に別スタッフに割当済み）
+            var directResult = ConstraintEngine.suggestTimeSlotsForAll(
+              visit.pid, visit.dateStr, _state,
+              { maxSuggestions: 5, excludeVisitId: visit.visitId, preferStaffId: visit.staffId }
+            );
+            if (directResult.suggestions && directResult.suggestions.length > 0) {
+              moveProposals = directResult.suggestions;
+            }
           }
         }
 
@@ -3406,7 +3418,7 @@
           mpNote.style.fontSize = '10px';
           mpNote.style.color = '#888';
           mpNote.style.marginBottom = '6px';
-          if (needStaffForProposal >= 2) {
+          if (isUnassigned && needStaffForProposal >= 2) {
             mpNote.textContent = '2名体制: 2人分セットで検証済みの提案です';
           } else {
             mpNote.textContent = 'ボタンをクリックで移動を実行';
