@@ -2285,8 +2285,12 @@
       // === 厳格モードで割当可能 ===
       if (proposal.level === 'strict') {
         var msg = pName + ' → ' + best.staffName + ' ' +
-                  fmtMin(best.startMin) + '〜' + fmtMin(best.endMin) +
-                  ' に挿入しますか？' + detourWarn;
+                  fmtMin(best.startMin) + '〜' + fmtMin(best.endMin);
+        if (best.peerStaffId) {
+          msg += '\n  + ' + best.peerStaffName + ' ' +
+                 fmtMin(best.peerStartMin) + '〜' + fmtMin(best.peerEndMin) + ' [2名体制]';
+        }
+        msg += ' に挿入しますか？' + detourWarn;
         if (!confirm(msg)) return;
         applyReinsert_(pid, dateStr, effectiveDateStr, ua, best, patient, pName);
         return;
@@ -2323,8 +2327,10 @@
       if (best.altDateStr) {
         msgLines.push('  日付: ' + dateStr + ' → ' + best.altDateStr);
       }
-      msgLines.push('  スタッフ: ' + best.staffName);
-      msgLines.push('  時間: ' + fmtMin(best.startMin) + '〜' + fmtMin(best.endMin));
+      msgLines.push('  スタッフ1: ' + best.staffName + '  ' + fmtMin(best.startMin) + '〜' + fmtMin(best.endMin));
+      if (best.peerStaffId) {
+        msgLines.push('  スタッフ2: ' + best.peerStaffName + '  ' + fmtMin(best.peerStartMin) + '〜' + fmtMin(best.peerEndMin) + '  [2名体制]');
+      }
       if (detourWarn) msgLines.push(detourWarn);
 
       // 追加候補がある場合は表示
@@ -2406,104 +2412,80 @@
       _state.pendingChanges.push(change);
 
       // --- 2名体制ペア連動 ---
-      if (patient && patient.needStaff >= 2) {
-        // 同じpid+origDateStrの未割当ペアを検索（_NEEDエントリも含む=ペアスロット）
+      if (patient && patient.needStaff >= 2 && best.peerStaffId) {
+        // suggestWithRelaxation で事前検証済みのペアデータを使用
+        var peerStaffId = best.peerStaffId;
+        var peerStaffName = best.peerStaffName;
+
+        // ペアの未割当エントリを検索（_NEEDエントリも含む）
         var peerUa = null;
         for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
           var u = _state.unassigned[ui];
-          if (u.pid === pid && (u.dateStr === origDateStr || u.dateStr === newDateStr)) {
+          if (u.pid === pid && (u.dateStr === origDateStr || u.dateStr === newDateStr) &&
+              u.visitId !== visitId) {
             peerUa = u;
             break;
           }
         }
+
+        // ペアの visitId を決定
+        var peerVisitId;
+        var peerIsNeed = false;
         if (peerUa) {
-          // ペアは別スタッフに挿入（同じスタッフはC-1違反）
-          // 1人目が緩和で入っているのでペアも緩和許容（strict: false）
-          var peerResult = ConstraintEngine.suggestTimeSlotsForAll(pid, newDateStr, _state, {
-            strict: false, maxSuggestions: 5
-          });
-          var peerSuggestions = (peerResult.suggestions || []).filter(function(s) {
-            return s.staffId !== best.staffId;
-          });
-
-          if (peerSuggestions.length > 0) {
-            var peerBest = peerSuggestions[0];
-            // ペアの visitId: _NEED エントリの場合は新規IDを生成
-            var peerVisitId = peerUa.visitId;
-            var peerIsNeed = (peerVisitId || '').indexOf('_NEED') >= 0;
-            if (!peerVisitId || peerIsNeed) {
-              peerVisitId = 'UA_' + pid + '_' + origDateStr + '_2';
-            }
-
-            var peerChange = {
-              type:        'move',
-              visitId:     peerVisitId,
-              pid:         pid,
-              fromStaffId: '__UNASSIGNED__',
-              toStaffId:   peerBest.staffId,
-              dateStr:     newDateStr,
-              origDateStr: isDayChange ? origDateStr : undefined,
-              startMin:    null,
-              endMin:      null,
-              svcMin:      (patient && patient.svcMin) || peerUa.svcMin || 30,
-              timeType:    (patient && patient.timeType) || '',
-              area:        (patient && patient.area) || '',
-              newStaffId:   peerBest.staffId,
-              newStaffName: peerBest.staffName,
-              newStartMin:  best.startMin,
-              newEndMin:    best.endMin,
-              newDateStr:   isDayChange ? newDateStr : undefined,
-              pairedWith:   visitId,
-              timestamp:   new Date().toISOString()
-            };
-
-            // _NEEDエントリの場合: unassigned から除去して直接 assignments に追加
-            if (peerIsNeed) {
-              for (var nri = _state.unassigned.length - 1; nri >= 0; nri--) {
-                if (_state.unassigned[nri] === peerUa) {
-                  _state.unassigned.splice(nri, 1);
-                  break;
-                }
-              }
-              peerUa.visitId = peerVisitId;
-              peerUa.staffId = peerBest.staffId;
-              peerUa.staffName = getStaffName(peerBest.staffId);
-              _state.assignments.push(peerUa);
-            } else {
-              applyMoveToState(peerVisitId, '__UNASSIGNED__', peerBest.staffId, origDateStr);
-            }
-            var movedPeer = findVisitById(peerVisitId);
-            if (movedPeer) {
-              movedPeer.startMin = best.startMin;  // 同じ時間
-              movedPeer.endMin   = best.endMin;
-              if (isDayChange) {
-                movedPeer.dateStr = newDateStr;
-                var pParts = newDateStr.split('/');
-                var pNd = new Date(+pParts[0], +pParts[1] - 1, +pParts[2]);
-                var dayN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                movedPeer.weekday = dayN[pNd.getDay()] || '';
-              }
-            }
-            _state.pendingChanges.push(peerChange);
-          } else {
-            // ペアの挿入先が見つからない → 1件目も取り消し
-            applyMoveToState(visitId, best.staffId, '__UNASSIGNED__', isDayChange ? newDateStr : origDateStr);
-            var revert = findVisitById(visitId);
-            if (revert) {
-              revert.startMin = null;
-              revert.endMin = null;
-              if (isDayChange) revert.dateStr = origDateStr;
-            }
-            _state.pendingChanges.pop(); // 1件目のchangeを除去
-            if (!skipRender) {
-              renderGrid();
-              renderSidePanel();
-              updateStatusBar();
-              showToast('2名体制のペアを配置できないため、挿入を取り消しました', 'error');
-            }
-            return false; // 失敗
-          }
+          peerVisitId = peerUa.visitId;
+          peerIsNeed = (peerVisitId || '').indexOf('_NEED') >= 0;
         }
+        if (!peerVisitId || peerIsNeed) {
+          peerVisitId = 'UA_' + pid + '_' + origDateStr + '_2';
+        }
+
+        var peerChange = {
+          type:        'move',
+          visitId:     peerVisitId,
+          pid:         pid,
+          fromStaffId: '__UNASSIGNED__',
+          toStaffId:   peerStaffId,
+          dateStr:     newDateStr,
+          origDateStr: isDayChange ? origDateStr : undefined,
+          startMin:    null,
+          endMin:      null,
+          svcMin:      (patient && patient.svcMin) || (peerUa ? peerUa.svcMin : 30) || 30,
+          timeType:    (patient && patient.timeType) || '',
+          area:        (patient && patient.area) || '',
+          newStaffId:   peerStaffId,
+          newStaffName: peerStaffName,
+          newStartMin:  best.startMin,
+          newEndMin:    best.endMin,
+          newDateStr:   isDayChange ? newDateStr : undefined,
+          pairedWith:   visitId,
+          timestamp:   new Date().toISOString()
+        };
+
+        // unassigned から除去して assignments に追加
+        if (peerUa) {
+          for (var nri = _state.unassigned.length - 1; nri >= 0; nri--) {
+            if (_state.unassigned[nri] === peerUa ||
+                _state.unassigned[nri].visitId === peerUa.visitId) {
+              _state.unassigned.splice(nri, 1);
+              break;
+            }
+          }
+          peerUa.visitId = peerVisitId;
+          peerUa.staffId = peerStaffId;
+          peerUa.staffName = getStaffName(peerStaffId);
+          peerUa.startMin = best.startMin;
+          peerUa.endMin = best.endMin;
+          if (isDayChange) {
+            peerUa.dateStr = newDateStr;
+            var pParts = newDateStr.split('/');
+            var pNd = new Date(+pParts[0], +pParts[1] - 1, +pParts[2]);
+            var dayN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+            peerUa.weekday = dayN[pNd.getDay()] || '';
+          }
+          _state.assignments.push(peerUa);
+        }
+
+        _state.pendingChanges.push(peerChange);
       }
 
       // 2名体制の不足分を再チェック
@@ -2574,7 +2556,13 @@
         var proposal = ConstraintEngine.suggestWithRelaxation(pid, dateStr, _state, { maxSuggestions: 3 });
 
         if (proposal.level === 'impossible') {
-          impossible.push(pName);
+          impossible.push({
+            pName: pName,
+            pid: pid,
+            dateStr: dateStr,
+            reason: proposal.ngReason || '全スタッフ受入不可',
+            needStaff: needStaff
+          });
           continue;
         }
 
@@ -2816,6 +2804,11 @@
               detailText += item.dateStr + ' → ' + best.altDateStr + '  ';
             }
             detailText += best.staffName + '  ' + fmtMin(best.startMin) + '〜' + fmtMin(best.endMin);
+            // 2名体制: ペア情報を表示
+            if (best.peerStaffId) {
+              detailText += '\n  + ' + best.peerStaffName + '  ' + fmtMin(best.peerStartMin) + '〜' + fmtMin(best.peerEndMin) + '  [2名体制]';
+            }
+            detailDiv.style.whiteSpace = 'pre-line';
             detailDiv.textContent = detailText;
           } else {
             detailDiv.textContent = '提案あり（個別の再挿入ボタンで詳細確認）';
@@ -2861,15 +2854,19 @@
         impSection.appendChild(impTitle);
 
         for (var ii = 0; ii < impossible.length; ii++) {
+          var imp = impossible[ii];
           var impDiv = document.createElement('div');
           impDiv.className = 'approval-impossible-item';
           var impName = document.createElement('span');
           impName.className = 'ai-name';
-          impName.textContent = impossible[ii];
+          impName.textContent = (imp.pName || imp) + '  (' + (imp.dateStr || '') + ')';
+          if (imp.needStaff >= 2) impName.textContent += '  [2名体制]';
           impDiv.appendChild(impName);
-          var impReason = document.createElement('span');
+          var impReason = document.createElement('div');
           impReason.className = 'ai-reason';
-          impReason.textContent = '  - 全スタッフ受入不可（手動対応が必要）';
+          impReason.style.fontSize = '11px';
+          impReason.style.marginTop = '2px';
+          impReason.textContent = imp.reason || '全スタッフ受入不可（手動対応が必要）';
           impDiv.appendChild(impReason);
           impSection.appendChild(impDiv);
         }
