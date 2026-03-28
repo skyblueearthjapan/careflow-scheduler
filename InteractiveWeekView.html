@@ -2217,16 +2217,24 @@
           item.appendChild(rd);
         }
 
-        // 再挿入ボタン
+        // 再挿入ボタン（_NEEDエントリはマーカーなので再挿入不可）
+        var isNeedEntry = (ua.visitId || '').indexOf('_NEED') >= 0 ||
+                          (ua.note || '').indexOf('2名体制:2人目未割当') >= 0;
         var reBtn = document.createElement('button');
         reBtn.className = 'ua-reinsert-btn';
-        reBtn.textContent = '再挿入';
-        reBtn.addEventListener('click', (function(pid, dateStr, uaRef, btnRef) {
-          return function(e) {
-            e.stopPropagation();
-            reinsertSinglePatient(pid, dateStr, uaRef, btnRef);
-          };
-        })(ua.pid, ua.dateStr, ua, reBtn));
+        if (isNeedEntry) {
+          reBtn.textContent = '2名不足';
+          reBtn.disabled = true;
+          reBtn.title = '2名体制の不足分です。実体の訪問を再挿入すると自動解消されます。';
+        } else {
+          reBtn.textContent = '再挿入';
+          reBtn.addEventListener('click', (function(pid, dateStr, uaRef, btnRef) {
+            return function(e) {
+              e.stopPropagation();
+              reinsertSinglePatient(pid, dateStr, uaRef, btnRef);
+            };
+          })(ua.pid, ua.dateStr, ua, reBtn));
+        }
         item.appendChild(reBtn);
 
         item.addEventListener('click', (function(pid) {
@@ -2503,7 +2511,11 @@
         return;
       }
 
-      var snapshot = _state.unassigned.slice(); // splice対策コピー
+      // _NEED エントリは2名体制のマーカーであり実体ではないため除外
+      var snapshot = _state.unassigned.filter(function(u) {
+        return (u.visitId || '').indexOf('_NEED') < 0 &&
+               (u.note || '').indexOf('2名体制:2人目未割当') < 0;
+      });
 
       // pid+dateStr でグループ化
       var groups = {};
@@ -2883,11 +2895,13 @@
         var best = freshProposal.suggestions[0];
         var effectiveDateStr = best.altDateStr || item.dateStr;
 
-        // --- 未割当データを現在の _state.unassigned から取得 ---
+        // --- 未割当データを現在の _state.unassigned から取得（_NEEDエントリは除外）---
         var ua = null;
         for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
           var uaCandidate = _state.unassigned[ui];
-          if (uaCandidate.pid === item.pid && uaCandidate.dateStr === item.dateStr) {
+          if (uaCandidate.pid === item.pid && uaCandidate.dateStr === item.dateStr &&
+              (uaCandidate.visitId || '').indexOf('_NEED') < 0 &&
+              (uaCandidate.note || '').indexOf('2名体制:2人目未割当') < 0) {
             ua = uaCandidate;
             break;
           }
