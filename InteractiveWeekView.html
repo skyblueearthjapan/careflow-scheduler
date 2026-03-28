@@ -2407,19 +2407,20 @@
 
       // --- 2名体制ペア連動 ---
       if (patient && patient.needStaff >= 2) {
-        // 同じpid+origDateStrの未割当ペアを検索
+        // 同じpid+origDateStrの未割当ペアを検索（_NEEDエントリも含む=ペアスロット）
         var peerUa = null;
         for (var ui = 0; ui < (_state.unassigned || []).length; ui++) {
           var u = _state.unassigned[ui];
-          if (u.pid === pid && u.dateStr === origDateStr) {
+          if (u.pid === pid && (u.dateStr === origDateStr || u.dateStr === newDateStr)) {
             peerUa = u;
             break;
           }
         }
         if (peerUa) {
-          // ペアは別スタッフに挿入（同じスタッフはC-1違反）- strict モードで探索
+          // ペアは別スタッフに挿入（同じスタッフはC-1違反）
+          // 1人目が緩和で入っているのでペアも緩和許容（strict: false）
           var peerResult = ConstraintEngine.suggestTimeSlotsForAll(pid, newDateStr, _state, {
-            strict: true, maxSuggestions: 5
+            strict: false, maxSuggestions: 5
           });
           var peerSuggestions = (peerResult.suggestions || []).filter(function(s) {
             return s.staffId !== best.staffId;
@@ -2427,7 +2428,12 @@
 
           if (peerSuggestions.length > 0) {
             var peerBest = peerSuggestions[0];
-            var peerVisitId = peerUa.visitId || ('UA_' + pid + '_' + origDateStr + '_2');
+            // ペアの visitId: _NEED エントリの場合は新規IDを生成
+            var peerVisitId = peerUa.visitId;
+            var peerIsNeed = (peerVisitId || '').indexOf('_NEED') >= 0;
+            if (!peerVisitId || peerIsNeed) {
+              peerVisitId = 'UA_' + pid + '_' + origDateStr + '_2';
+            }
 
             var peerChange = {
               type:        'move',
@@ -2451,7 +2457,21 @@
               timestamp:   new Date().toISOString()
             };
 
-            applyMoveToState(peerVisitId, '__UNASSIGNED__', peerBest.staffId, origDateStr);
+            // _NEEDエントリの場合: unassigned から除去して直接 assignments に追加
+            if (peerIsNeed) {
+              for (var nri = _state.unassigned.length - 1; nri >= 0; nri--) {
+                if (_state.unassigned[nri] === peerUa) {
+                  _state.unassigned.splice(nri, 1);
+                  break;
+                }
+              }
+              peerUa.visitId = peerVisitId;
+              peerUa.staffId = peerBest.staffId;
+              peerUa.staffName = getStaffName(peerBest.staffId);
+              _state.assignments.push(peerUa);
+            } else {
+              applyMoveToState(peerVisitId, '__UNASSIGNED__', peerBest.staffId, origDateStr);
+            }
             var movedPeer = findVisitById(peerVisitId);
             if (movedPeer) {
               movedPeer.startMin = best.startMin;  // 同じ時間
