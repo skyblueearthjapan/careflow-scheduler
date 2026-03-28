@@ -3416,15 +3416,34 @@
 
             var ptBest = null;
             var ptBestScore = -Infinity;
-            for (var pwi = 0; pwi < ptAw.windows.length; pwi++) {
-              var pw = ptAw.windows[pwi];
-              for (var pt = pw.startMin; pt + svcMinP <= pw.endMin; pt += 5) {
-                var ptCenter = pt + svcMinP / 2;
-                var ptScore = 1000 - Math.abs(ptCenter - prefCenterP);
-                if (ptRes.status === 'WARN') ptScore -= 100;
-                if (ptScore > ptBestScore) {
-                  ptBestScore = ptScore;
-                  ptBest = { startMin: pt, endMin: pt + svcMinP };
+
+            // まず訪問の現在時間がそのまま入るかチェック
+            // （サービス時間 > 患者希望窓 の場合、窓スキャンでは見つからないため）
+            if (visit.startMin != null && visit.endMin != null) {
+              var visitDur = visit.endMin - visit.startMin;
+              for (var vwi = 0; vwi < ptAw.windows.length; vwi++) {
+                var vw = ptAw.windows[vwi];
+                // 訪問の開始時刻が窓内に含まれるか（終了は多少はみ出しOK）
+                if (visit.startMin >= vw.startMin && visit.startMin < vw.endMin) {
+                  ptBest = { startMin: visit.startMin, endMin: visit.endMin };
+                  ptBestScore = 1200; // 現在時間を最優先
+                  break;
+                }
+              }
+            }
+
+            // 窓スキャン（現在時間で見つからなかった場合）
+            if (!ptBest) {
+              for (var pwi = 0; pwi < ptAw.windows.length; pwi++) {
+                var pw = ptAw.windows[pwi];
+                for (var pt = pw.startMin; pt + svcMinP <= pw.endMin; pt += 5) {
+                  var ptCenter = pt + svcMinP / 2;
+                  var ptScore = 1000 - Math.abs(ptCenter - prefCenterP);
+                  if (ptRes.status === 'WARN') ptScore -= 100;
+                  if (ptScore > ptBestScore) {
+                    ptBestScore = ptScore;
+                    ptBest = { startMin: pt, endMin: pt + svcMinP };
+                  }
                 }
               }
             }
