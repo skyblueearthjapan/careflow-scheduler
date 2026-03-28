@@ -3464,8 +3464,21 @@
           moveProposals.sort(function(a, b) { return b.score - a.score; });
           moveProposals = moveProposals.slice(0, 5);
 
-          // 未割当 + 2名体制: ペア検証
-          if (isUnassigned && needStaffForProposal >= 2 && moveProposals.length > 0) {
+          // 未割当 + 2名体制: 既に何名割当済みかチェック
+          var alreadyAssignedForPair = 0;
+          if (isUnassigned && needStaffForProposal >= 2) {
+            for (var aci = 0; aci < (_state.assignments || []).length; aci++) {
+              if (_state.assignments[aci].pid === visit.pid &&
+                  _state.assignments[aci].dateStr === visit.dateStr &&
+                  _state.assignments[aci].staffId && _state.assignments[aci].staffId !== '__UNASSIGNED__') {
+                alreadyAssignedForPair++;
+              }
+            }
+          }
+          // 2名体制でまだ2人分不足の場合のみペア検証（1人割当済みならあと1人でOK）
+          var needPairValidation = isUnassigned && needStaffForProposal >= 2 &&
+                                   alreadyAssignedForPair === 0;
+          if (needPairValidation && moveProposals.length > 0) {
             moveProposals = moveProposals.filter(function(mp) {
               for (var pk = 0; pk < targetIds.length; pk++) {
                 var peerId = targetIds[pk];
@@ -3556,7 +3569,7 @@
           var noP = document.createElement('div');
           noP.style.cssText = 'font-size:11px;color:#C62828;padding:6px 0';
           noP.textContent = '\u79fb\u52d5\u53ef\u80fd\u306a\u30b9\u30bf\u30c3\u30d5\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093';
-          if (needStaffForProposal >= 2) noP.textContent += '\uff082\u540d\u4f53\u5236: 2\u4eba\u5206\u30bb\u30c3\u30c8\u3067\u78ba\u4fdd\u4e0d\u53ef\uff09';
+          if (needPairValidation) noP.textContent += '\uff082\u540d\u4f53\u5236: 2\u4eba\u5206\u30bb\u30c3\u30c8\u3067\u78ba\u4fdd\u4e0d\u53ef\uff09';
           moveProposalCard.appendChild(noP);
         }
         container.appendChild(moveProposalCard);
