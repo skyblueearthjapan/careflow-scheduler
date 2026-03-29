@@ -293,9 +293,9 @@
     }
 
     .day-cell.highlight-valid {
-      background: rgba(183,211,138,0.08) !important;
-      outline: 1px solid var(--color-green);
-      outline-offset: -1px;
+      background: rgba(255,183,77,0.10) !important;
+      outline: 2px solid #FFB74D;
+      outline-offset: -2px;
     }
 
     .day-cell.highlight-invalid {
@@ -305,6 +305,30 @@
       content: ''; position: absolute;
       top: 50%; left: 10%; right: 10%;
       height: 1px; background: #ccc; pointer-events: none;
+    }
+
+    .cell-suggestion-overlay {
+      position: absolute;
+      bottom: 2px; left: 3px; right: 3px;
+      background: linear-gradient(135deg, #FFF8E1, #FFE0B2);
+      border: 1px solid #FFB74D;
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-size: 10px;
+      color: #E65100;
+      pointer-events: none;
+      z-index: 2;
+      line-height: 1.3;
+      box-shadow: 0 1px 3px rgba(255,152,0,0.2);
+    }
+    .cell-suggestion-overlay .sug-label {
+      font-weight: 600;
+      font-size: 9px;
+      color: #BF360C;
+    }
+    .cell-suggestion-overlay .sug-time {
+      font-size: 10px;
+      color: #E65100;
     }
 
     .drop-indicator {
@@ -3632,6 +3656,8 @@
         prevHL[j].classList.remove('same-patient-highlight');
         prevHL[j].classList.remove('same-patient-sameday');
       }
+      // Clear previous suggestion overlays from cells
+      clearDropHighlights();
       // Add new
       if (visitId) {
         var el = document.querySelector('.visit-card[data-visit-id="' + cssEscAttr(visitId) + '"]');
@@ -3651,6 +3677,24 @@
                 sameCards[k].classList.add('same-patient-highlight');
               }
             }
+          }
+          // Show suggestion overlays in cells for move targets
+          var visit = findVisitById(visitId);
+          if (visit) {
+            highlightDropTargets({
+              visitId:  visit.visitId,
+              pid:      visit.pid,
+              staffId:  visit.staffId,
+              dateStr:  visit.dateStr,
+              startMin: visit.startMin,
+              endMin:   visit.endMin,
+              svcMin:   visit.svcMin,
+              pname:    visit.pname,
+              timeType: visit.timeType,
+              earliestMin: visit.earliestMin,
+              latestMin:   visit.latestMin,
+              kind:     visit.kind
+            });
           }
         }
       }
@@ -3870,9 +3914,8 @@
             c.title = r.quickReason || 'NG';
           } else {
             c.classList.add('highlight-valid');
-            // Add available window tooltip
+            // Show available time windows inside the cell
             if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.computeAvailableWindow) {
-              // Bug4 fix: use target cell's date (cDate) instead of source dateStr
               var aw = ConstraintEngine.computeAvailableWindow(
                 visitData.pid, cDate, cStaff, _state, visitData.visitId
               );
@@ -3883,6 +3926,18 @@
                               ConstraintEngine.minutesToTimeStr(aw.windows[wj].endMin));
                 }
                 c.title = '\u53d7\u5165\u53ef\u80fd: ' + wTexts.join(', ');
+                // Create in-cell suggestion overlay
+                var overlay = document.createElement('div');
+                overlay.className = 'cell-suggestion-overlay';
+                var lbl = document.createElement('div');
+                lbl.className = 'sug-label';
+                lbl.textContent = '\u25B6 \u53d7\u5165\u53ef\u80fd';
+                overlay.appendChild(lbl);
+                var timeDiv = document.createElement('div');
+                timeDiv.className = 'sug-time';
+                timeDiv.textContent = wTexts.join(', ');
+                overlay.appendChild(timeDiv);
+                c.appendChild(overlay);
               }
             }
           }
@@ -3898,6 +3953,9 @@
         cells[i].classList.remove('highlight-valid', 'highlight-invalid',
                                    'drag-over-valid', 'drag-over-invalid');
         cells[i].title = '';
+        // Remove suggestion overlays
+        var overlays = cells[i].querySelectorAll('.cell-suggestion-overlay');
+        for (var j = 0; j < overlays.length; j++) overlays[j].remove();
       }
     }
 
