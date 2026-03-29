@@ -2004,11 +2004,11 @@
       }
 
       // Coupled / 2-staff
-      var isCoupled = (visit.kind === 'coupled');
+      var patient = getPatient(pid);
+      var isCoupled = (visit.kind === 'coupled') || (patient && patient.needStaff >= 2);
       if (isCoupled) div.classList.add('two-staff');
 
       // Insurance type
-      var patient = getPatient(pid);
       var insType = (patient && patient.insuranceType) || '';
       if (insType.indexOf('\u533b\u7642') >= 0) div.classList.add('medical');
       else if (insType.indexOf('\u4ecb\u8b77') >= 0) div.classList.add('nursing');
