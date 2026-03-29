@@ -3721,8 +3721,9 @@
       var distBottom = rect.bottom - clientY;
 
       var AUTOSCROLL_EDGE_TOP = AUTOSCROLL_EDGE * 2; // upward scroll triggers from wider zone
-      if (distTop < AUTOSCROLL_EDGE_TOP && distTop >= 0) {
-        _autoScrollSpeed = -Math.round(AUTOSCROLL_MAX_SPEED * (1 - distTop / AUTOSCROLL_EDGE_TOP));
+      if (distTop < AUTOSCROLL_EDGE_TOP) {
+        var ratio = Math.max(0, distTop) / AUTOSCROLL_EDGE_TOP;
+        _autoScrollSpeed = -Math.round(AUTOSCROLL_MAX_SPEED * (1 - ratio));
       } else if (distBottom < AUTOSCROLL_EDGE && distBottom >= 0) {
         _autoScrollSpeed = Math.round(AUTOSCROLL_MAX_SPEED * (1 - distBottom / AUTOSCROLL_EDGE));
       } else {
@@ -5411,7 +5412,10 @@
     });
 
     // Prevent default drag on page
-    document.addEventListener('dragover', function(e) { e.preventDefault(); });
+    document.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      if (_dragData) updateAutoScroll(e.clientY);
+    });
     document.addEventListener('drop', function(e) { e.preventDefault(); });
 
   })();
