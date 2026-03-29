@@ -3683,7 +3683,7 @@
     // ================================================================
     var _autoScrollRAF = null;
     var _autoScrollSpeed = 0;
-    var AUTOSCROLL_EDGE = 60; // px from edge to trigger
+    var AUTOSCROLL_EDGE = 60; // px from bottom edge to trigger
     var AUTOSCROLL_MAX_SPEED = 18; // px per frame
 
     function startAutoScroll() {
@@ -3710,17 +3710,16 @@
       var scrollEl = document.getElementById('gridScroll');
       if (!scrollEl) return;
       var rect = scrollEl.getBoundingClientRect();
-      // Use thead bottom as top boundary (below weekday headers)
+      // Use scroll container top + sticky header height as top boundary
       var thead = document.getElementById('weekGridHead');
       var topEdge = rect.top;
       if (thead) {
-        var theadRect = thead.getBoundingClientRect();
-        topEdge = theadRect.bottom;
+        topEdge = rect.top + thead.offsetHeight;
       }
       var distTop = clientY - topEdge;
       var distBottom = rect.bottom - clientY;
 
-      var AUTOSCROLL_EDGE_TOP = 300; // upward scroll triggers from wider zone (300px)
+      var AUTOSCROLL_EDGE_TOP = 120; // upward scroll triggers from wider zone
       if (distTop < AUTOSCROLL_EDGE_TOP) {
         var ratio = Math.max(0, distTop) / AUTOSCROLL_EDGE_TOP;
         _autoScrollSpeed = -Math.round(AUTOSCROLL_MAX_SPEED * (1 - ratio));
