@@ -751,6 +751,52 @@
     .suggest-slot.best { border: 2px solid #F57F17; font-weight: 600; }
     .suggest-slot.selected { background: #FFB300; color: #fff; }
 
+    /* 2名体制ペア移動セクション */
+    .paired-move-section {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: #E3F2FD;
+      border: 1px solid #90CAF9;
+      border-radius: 6px;
+    }
+    .paired-move-section h4 {
+      margin: 0 0 8px 0;
+      font-size: 12px;
+      color: #1565C0;
+    }
+    .paired-move-current {
+      font-size: 11px;
+      color: #555;
+      margin-bottom: 8px;
+      padding: 4px 8px;
+      background: #BBDEFB;
+      border-radius: 4px;
+    }
+    .peer-candidate-list { max-height: 180px; overflow-y: auto; }
+    .peer-candidate {
+      display: flex;
+      align-items: center;
+      padding: 6px 8px;
+      margin: 3px 0;
+      background: white;
+      border: 1px solid #E0E0E0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.15s;
+    }
+    .peer-candidate:hover { background: #E3F2FD; border-color: #90CAF9; }
+    .peer-candidate.selected { background: #BBDEFB; border-color: #1565C0; font-weight: 600; }
+    .peer-candidate input[type="radio"] { margin-right: 8px; flex-shrink: 0; }
+    .peer-candidate .peer-name { font-weight: 500; min-width: 80px; }
+    .peer-candidate .peer-time { color: #1565C0; margin-left: 8px; }
+    .peer-candidate .peer-badge { margin-left: auto; padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 600; }
+    .peer-badge.same-time { background: #E8F5E9; color: #2E7D32; }
+    .peer-badge.diff-time { background: #FFF8E1; color: #F57F17; }
+    .peer-no-candidate { padding: 8px; color: #C62828; font-size: 11px; text-align: center; }
+    .peer-fallback-option { margin-top: 8px; padding: 6px 8px; font-size: 11px; color: #666; border-top: 1px solid #E0E0E0; }
+    .peer-fallback-option label { cursor: pointer; }
+
     /* Move proposal cards */
     .move-proposal-card {
       padding: 8px 10px; margin: 6px 0; border-radius: 6px;
@@ -1286,6 +1332,16 @@
           <h4>&#128161; 受入可能な時間帯</h4>
           <div id="suggestWindowText" style="font-size:11px; margin-bottom:6px;"></div>
           <div id="suggestSlotList"></div>
+        </div>
+        <!-- 2名体制ペア移動セクション -->
+        <div class="paired-move-section" id="pairedMoveSection" style="display:none;">
+          <h4>&#128101; 2人目（ペア）の割当先</h4>
+          <div id="pairedMoveCurrent"></div>
+          <div class="peer-candidate-list" id="peerCandidateList"></div>
+          <div class="peer-no-candidate" id="peerNoCandidate" style="display:none;">ペアスタッフが確保できません</div>
+          <div class="peer-fallback-option" id="peerFallbackOption" style="display:none;">
+            <label><input type="checkbox" id="peerFallbackCheck" onchange="onPeerFallbackChange()"> ペア確保不可の場合、1名のみ移動する</label>
+          </div>
         </div>
       </div>
       <div class="btn-confirm-disabled-reason" id="confirmDisabledReason" style="display:none"></div>
@@ -4178,6 +4234,11 @@
                 var allSlots = sugSlotList.querySelectorAll('.suggest-slot');
                 for (var idx = 0; idx < allSlots.length; idx++) allSlots[idx].classList.remove('selected');
                 btnEl.classList.add('selected');
+                if (_pendingMove.is2Staff) {
+                  _pendingMove.peerSelection = null;
+                  renderPeerCandidates(_pendingMove.visitData, _pendingMove.dateStr, _pendingMove.targetStaffId);
+                  updateConfirmButtonForPaired();
+                }
               };
             })(ss, ssBtn));
             sugSlotList.appendChild(ssBtn);
@@ -4212,32 +4273,57 @@
         }
       }
 
-      // --- Paired visit info (2名体制) ---
-      var pairedSec = document.getElementById('pairedVisitSection');
-      if (!pairedSec) {
-        // Create paired section if not in HTML yet
-        pairedSec = document.createElement('div');
-        pairedSec.id = 'pairedVisitSection';
-        pairedSec.style.cssText = 'margin-top:8px;padding:6px 8px;background:#E3F2FD;border-radius:6px;font-size:11px;';
-        sugSec.parentNode.insertBefore(pairedSec, sugSec.nextSibling);
-      }
-      pairedSec.style.display = 'none';
-      pairedSec.innerHTML = '';
+      // === 2名体制ペア移動セクション ===
+      var pairedMoveSection = document.getElementById('pairedMoveSection');
+      var pairedMoveCurrent = document.getElementById('pairedMoveCurrent');
+      var peerCandidateList = document.getElementById('peerCandidateList');
+      var peerNoCandidate = document.getElementById('peerNoCandidate');
+      var peerFallbackOption = document.getElementById('peerFallbackOption');
+      var peerFallbackCheck = document.getElementById('peerFallbackCheck');
+
+      pairedMoveSection.style.display = 'none';
+      peerCandidateList.innerHTML = '';
+      peerNoCandidate.style.display = 'none';
+      peerFallbackOption.style.display = 'none';
+      if (peerFallbackCheck) peerFallbackCheck.checked = false;
+
+      _pendingMove.pairedVisit = null;
+      _pendingMove.peerSelection = null;
+      _pendingMove.is2Staff = false;
+
       if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
-        var paired = ConstraintEngine.findPairedVisits(visitData, _state);
-        if (paired.length > 0) {
-          pairedSec.style.display = '';
-          var pTitle = document.createElement('div');
-          pTitle.style.fontWeight = 'bold';
-          pTitle.style.marginBottom = '4px';
-          pTitle.textContent = '\u26a0 2\u540d\u4f53\u5236: \u30da\u30a2\u8a2a\u554f\u3082\u9023\u52d5\u79fb\u52d5\u3057\u307e\u3059'; // ⚠ 2名体制: ペア訪問も連動移動します
-          pairedSec.appendChild(pTitle);
-          for (var pi = 0; pi < paired.length; pi++) {
-            var pv = paired[pi];
-            var pvLine = document.createElement('div');
-            pvLine.textContent = '\u30da\u30a2: ' + getStaffName(pv.staffId) + ' ' +
-              fmtMin(pv.startMin) + '\u301C' + fmtMin(pv.endMin); // ペア: スタッフ名 HH:MM〜HH:MM
-            pairedSec.appendChild(pvLine);
+        var patient2 = getPatient(visitData.pid);
+        var is2Staff = patient2 && patient2.needStaff >= 2;
+
+        if (is2Staff) {
+          var paired = ConstraintEngine.findPairedVisits(visitData, _state);
+          paired = paired.filter(function(p) { return (p.visitId || '').indexOf('_T_') < 0; });
+
+          _pendingMove.is2Staff = true;
+          _pendingMove.pairedVisit = paired.length > 0 ? paired[0] : null;
+
+          pairedMoveSection.style.display = '';
+
+          if (paired.length > 0) {
+            var pv = paired[0];
+            if (pv.staffId === '__UNASSIGNED__') {
+              pairedMoveCurrent.textContent = '\u73FE\u5728: \u672A\u5272\u5F53';
+            } else {
+              pairedMoveCurrent.textContent = '\u73FE\u5728: ' + getStaffName(pv.staffId) + ' ' +
+                fmtMin(pv.startMin) + '\u301C' + fmtMin(pv.endMin) + ' (' + pv.dateStr + ')';
+            }
+          } else {
+            pairedMoveCurrent.textContent = '\u73FE\u5728: \u672A\u5272\u5F53';
+          }
+
+          renderPeerCandidates(visitData, dateStr, targetStaffId);
+
+          btnConfirm.textContent = '2\u540D\u5206\u3092\u5B9F\u884C\u3059\u308B';
+
+          if (!hasNg) {
+            btnConfirm.disabled = true;
+            disabledEl.textContent = '2\u4EBA\u76EE\u306E\u30B9\u30BF\u30C3\u30D5\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044';
+            disabledEl.style.display = '';
           }
         }
       }
@@ -4248,8 +4334,99 @@
     function closeConfirmDialog() {
       document.getElementById('confirmOverlay').classList.remove('show');
       _pendingMove = null;
+      var btn = document.getElementById('btnConfirm');
+      if (btn) btn.textContent = '\u5B9F\u884C\u3059\u308B';
     }
     window.closeConfirmDialog = closeConfirmDialog;
+
+    // ================================================================
+    // Peer Candidate Rendering for 2-staff patients
+    // ================================================================
+    function renderPeerCandidates(visitData, dateStr, firstStaffId) {
+      var list = document.getElementById('peerCandidateList');
+      var noCandidate = document.getElementById('peerNoCandidate');
+      var fallback = document.getElementById('peerFallbackOption');
+      list.innerHTML = '';
+      noCandidate.style.display = 'none';
+      fallback.style.display = 'none';
+      var selectedTime = _pendingMove.selectedTime;
+      var firstStart = selectedTime ? selectedTime.startMin : (visitData.startMin || 540);
+      var firstEnd = selectedTime ? selectedTime.endMin : (visitData.endMin || 600);
+      var effectiveFirstStaffId = (selectedTime && selectedTime.staffId) ? selectedTime.staffId : firstStaffId;
+      if (typeof ConstraintEngine === 'undefined' || !ConstraintEngine.suggestPeerSlots) {
+        noCandidate.style.display = '';
+        noCandidate.textContent = 'ConstraintEngine\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093';
+        return;
+      }
+      var candidates = ConstraintEngine.suggestPeerSlots(
+        visitData.pid, dateStr, effectiveFirstStaffId, firstStart, firstEnd, _state,
+        { maxCandidates: 10 }
+      );
+      if (!candidates || candidates.length === 0) {
+        noCandidate.style.display = '';
+        fallback.style.display = '';
+        return;
+      }
+      for (var i = 0; i < candidates.length; i++) {
+        var c = candidates[i];
+        var div = document.createElement('div');
+        div.className = 'peer-candidate';
+        var radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'peerCandidate';
+        radio.value = i;
+        radio.addEventListener('change', (function(candidate) {
+          return function() {
+            _pendingMove.peerSelection = candidate;
+            var allCands = document.querySelectorAll('.peer-candidate');
+            for (var j = 0; j < allCands.length; j++) allCands[j].classList.remove('selected');
+            this.closest('.peer-candidate').classList.add('selected');
+            updateConfirmButtonForPaired();
+          };
+        })(c));
+        div.appendChild(radio);
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'peer-name';
+        nameSpan.textContent = c.staffName;
+        div.appendChild(nameSpan);
+        var timeSpan = document.createElement('span');
+        timeSpan.className = 'peer-time';
+        timeSpan.textContent = c.label;
+        div.appendChild(timeSpan);
+        var badge = document.createElement('span');
+        badge.className = 'peer-badge ' + (c.canAcceptAtSameTime ? 'same-time' : 'diff-time');
+        badge.textContent = c.canAcceptAtSameTime ? '\u540C\u6642\u9593OK' : '\u5225\u6642\u9593';
+        div.appendChild(badge);
+        div.addEventListener('click', function() {
+          this.querySelector('input[type="radio"]').click();
+        });
+        list.appendChild(div);
+      }
+    }
+
+    function updateConfirmButtonForPaired() {
+      var btn = document.getElementById('btnConfirm');
+      var disabledEl = document.getElementById('confirmDisabledReason');
+      var fallbackCheck = document.getElementById('peerFallbackCheck');
+      if (!_pendingMove || !_pendingMove.is2Staff) return;
+      var ngSec = document.getElementById('ngSection');
+      if (ngSec && ngSec.style.display !== 'none') { btn.disabled = true; return; }
+      if (_pendingMove.peerSelection) {
+        btn.disabled = false;
+        disabledEl.style.display = 'none';
+      } else if (fallbackCheck && fallbackCheck.checked) {
+        btn.disabled = false;
+        disabledEl.style.display = 'none';
+        btn.textContent = '1\u540D\u306E\u307F\u5B9F\u884C\u3059\u308B';
+      } else {
+        btn.disabled = true;
+        disabledEl.textContent = '2\u4EBA\u76EE\u306E\u30B9\u30BF\u30C3\u30D5\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044';
+        disabledEl.style.display = '';
+      }
+    }
+
+    function onPeerFallbackChange() { updateConfirmButtonForPaired(); }
+    window.onPeerFallbackChange = onPeerFallbackChange;
 
     // ================================================================
     // Execute Move
@@ -4352,41 +4529,68 @@
 
       _state.pendingChanges.push(change);
 
-      // --- 2名体制: ペア訪問も連動移動（絶対時間方式） ---
-      // Bug2 fix: use pre-captured pairedVisits (found before dateStr mutation)
-      for (var pi = 0; pi < pairedVisits.length; pi++) {
+      // === 2名体制ペア移動 ===
+      if (_pendingMove && _pendingMove.is2Staff && _pendingMove.peerSelection) {
+        var peer = _pendingMove.peerSelection;
+        var pairedVisit = _pendingMove.pairedVisit;
+        if (pairedVisit) {
+          var peerChange = {
+            type: 'move', visitId: pairedVisit.visitId, pid: pairedVisit.pid,
+            fromStaffId: pairedVisit.staffId, toStaffId: peer.staffId,
+            dateStr: dateStr,
+            origStartMin: pairedVisit.startMin, origEndMin: pairedVisit.endMin,
+            newStartMin: peer.startMin, newEndMin: peer.endMin,
+            newStaffId: peer.staffId, newStaffName: peer.staffName,
+            pairedWith: vd.visitId, timestamp: new Date().toISOString()
+          };
+          if (dateStr !== pairedVisit.dateStr) {
+            peerChange.newDateStr = dateStr;
+            peerChange.origDateStr = pairedVisit.dateStr;
+          }
+          applyMoveToState(pairedVisit.visitId, pairedVisit.staffId, peer.staffId, dateStr);
+          var movedPeer = findVisitById(pairedVisit.visitId);
+          if (movedPeer) { movedPeer.dateStr = dateStr; movedPeer.startMin = peer.startMin; movedPeer.endMin = peer.endMin; }
+          _state.pendingChanges.push(peerChange);
+          if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.repackStaffDay) {
+            var peerAnchors = [{ visitId: pairedVisit.visitId, startMin: peer.startMin, endMin: peer.endMin, isEvent: false }];
+            var peerRepack = ConstraintEngine.repackStaffDay(peer.staffId, dateStr, peerAnchors, _state);
+            if (peerRepack.schedule) applyNewSchedule(peer.staffId, dateStr, peerRepack.schedule);
+          }
+        }
+      } else if (_pendingMove && _pendingMove.is2Staff && !_pendingMove.peerSelection) {
+        var pairedVisit2 = _pendingMove.pairedVisit;
+        if (pairedVisit2) {
+          applyMoveToState(pairedVisit2.visitId, pairedVisit2.staffId, '__UNASSIGNED__', pairedVisit2.dateStr);
+          _state.pendingChanges.push({
+            type: 'move', visitId: pairedVisit2.visitId, pid: pairedVisit2.pid,
+            fromStaffId: pairedVisit2.staffId, toStaffId: '__UNASSIGNED__',
+            dateStr: pairedVisit2.dateStr, pairedWith: vd.visitId,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } else {
+        for (var pi = 0; pi < pairedVisits.length; pi++) {
           var pv = pairedVisits[pi];
-          // ペアの開始時間を移動先と同じにする（duration は保持）
           var pvDuration = (pv.endMin || 0) - (pv.startMin || 0);
           if (pvDuration <= 0) pvDuration = vd.svcMin || 30;
           var newPairedStart = finalStartMin;
           var newPairedEnd   = finalStartMin + pvDuration;
-          // 既に同じ時間なら変更不要
           if (pv.startMin === newPairedStart && pv.endMin === newPairedEnd) continue;
           var pairedChange = {
-            type:        'timeSet',
-            visitId:     pv.visitId,
-            pid:         pv.pid,
-            staffId:     pv.staffId,
-            // Bug2 fix: use partner's original dateStr, not the primary visit's target dateStr
-            dateStr:     pv.dateStr,
-            origStartMin: pv.startMin,
-            origEndMin:   pv.endMin,
-            newStartMin:  newPairedStart,
-            newEndMin:    newPairedEnd,
-            pairedWith:  vd.visitId,
-            timestamp:   new Date().toISOString()
+            type: 'timeSet', visitId: pv.visitId, pid: pv.pid, staffId: pv.staffId,
+            dateStr: pv.dateStr, origStartMin: pv.startMin, origEndMin: pv.endMin,
+            newStartMin: newPairedStart, newEndMin: newPairedEnd,
+            pairedWith: vd.visitId, timestamp: new Date().toISOString()
           };
           pv.startMin = newPairedStart;
           pv.endMin = newPairedEnd;
           _state.pendingChanges.push(pairedChange);
-          // Repack the paired visit's staff day
-          // Bug6 fix: use pv.dateStr (partner's actual date) instead of dateStr (primary's target date)
           if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.repackStaffDay) {
             var pAnchors = [{ visitId: pv.visitId, startMin: newPairedStart, endMin: newPairedEnd, isEvent: false }];
             var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, pv.dateStr, pAnchors, _state);
             if (pRepack.schedule) applyNewSchedule(pv.staffId, pv.dateStr, pRepack.schedule);
           }
+        }
       }
 
       // ---- Mentor → Trainee ミラー連動 ----

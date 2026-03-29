@@ -2509,6 +2509,91 @@
   // Expose via public API below.
 
   // ===========================================================
+  // 10b. suggestPeerSlots
+  //      2名体制の「2人目」候補スタッフと時間帯を提案する。
+  // ===========================================================
+  function suggestPeerSlots(pid, dateStr, firstStaffId, firstStartMin, firstEndMin, state, options) {
+    var opts = options || {};
+    var maxCandidates = opts.maxCandidates || 10;
+    var stepMin = 5;
+    var patient = getPatient(pid, state);
+    var svcMin = (patient && patient.svcMin) ? patient.svcMin : 30;
+
+    var dummyVisit = {
+      visitId: '__PEER_DUMMY__', pid: pid,
+      pname: patient ? patient.name : '',
+      dateStr: dateStr, youbi: getYoubiEn(dateStr),
+      startMin: firstStartMin, endMin: firstEndMin,
+      svcMin: svcMin, timeType: patient ? patient.timeType : '', staffId: ''
+    };
+    var validationMap = validateAllDropTargets(dummyVisit, state);
+    var allCandidates = [];
+    var staffList = state.staffList || [];
+
+    for (var si = 0; si < staffList.length; si++) {
+      var staff = staffList[si];
+      var staffId = staff.id;
+      if (staffId === firstStaffId) continue;
+      if (validationMap[staffId] && validationMap[staffId].canAccept === false) continue;
+
+      var aw = computeAvailableWindow(pid, dateStr, staffId, state, null);
+      if (!aw.windows || aw.windows.length === 0) continue;
+
+      var canAcceptAtSameTime = false;
+      for (var wi = 0; wi < aw.windows.length; wi++) {
+        var win = aw.windows[wi];
+        if (firstStartMin >= win.startMin && firstEndMin <= win.endMin) {
+          canAcceptAtSameTime = true;
+          break;
+        }
+      }
+
+      if (canAcceptAtSameTime) {
+        var score = 1000;
+        var staffMaster = getStaff(staffId, state);
+        if (staffMaster && staffMaster.lat != null && patient && patient.lat != null) {
+          var distKm = calcDistanceKm(staffMaster.lat, staffMaster.lng, patient.lat, patient.lng);
+          var travelMin = Math.round(distKm / 20 * 60);
+          if (travelMin > 30) score -= 100;
+          else if (travelMin > 15) score -= 30;
+        }
+        if (validationMap[staffId] && validationMap[staffId].status === 'WARN') score -= 100;
+        allCandidates.push({
+          staffId: staffId, staffName: staff.name || staffId,
+          startMin: firstStartMin, endMin: firstEndMin,
+          score: score,
+          label: minutesToTimeStr(firstStartMin) + '\u301C' + minutesToTimeStr(firstEndMin),
+          canAcceptAtSameTime: true
+        });
+      } else {
+        for (var wi2 = 0; wi2 < aw.windows.length; wi2++) {
+          var win2 = aw.windows[wi2];
+          if (win2.endMin - win2.startMin < svcMin) continue;
+          var bestT = null; var bestDist = Infinity;
+          for (var t = win2.startMin; t + svcMin <= win2.endMin; t += stepMin) {
+            var dist = Math.abs(t - firstStartMin);
+            if (dist < bestDist) { bestDist = dist; bestT = t; }
+          }
+          if (bestT == null) continue;
+          var altScore = Math.max(0, 500 - bestDist);
+          if (validationMap[staffId] && validationMap[staffId].status === 'WARN') altScore -= 100;
+          allCandidates.push({
+            staffId: staffId, staffName: staff.name || staffId,
+            startMin: bestT, endMin: bestT + svcMin,
+            score: altScore,
+            label: minutesToTimeStr(bestT) + '\u301C' + minutesToTimeStr(bestT + svcMin),
+            canAcceptAtSameTime: false
+          });
+          break;
+        }
+      }
+    }
+
+    allCandidates.sort(function(a, b) { return b.score - a.score; });
+    return allCandidates.slice(0, maxCandidates);
+  }
+
+  // ===========================================================
   // 11. suggestWithRelaxation
   //     段階的緩和による再挿入提案。
   //     Level 0: 厳格（soft_cap適用、全制約チェック）
@@ -2742,6 +2827,7 @@
     // ---- Paired visit helpers ----
     findPairedVisits: findPairedVisits,
     isPairedVisitId: isPairedVisitId,
+    suggestPeerSlots: suggestPeerSlots,
 
     // ---- Mentor-pair (同行) helpers ----
     isTraineeVisit: isTraineeVisit,

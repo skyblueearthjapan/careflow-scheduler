@@ -277,6 +277,7 @@ function commitChanges(weekStartStr, changesJson) {
         else if (staffChanged)                          changeType = 'スタッフ変更';
         else if (timeChanged)                           changeType = '時間変更';
         else                                            changeType = '更新（差分なし）';
+        if (change.pairedWith) changeType += '/2名体制連動';
 
         // --- ログ用の患者情報 ---
         var pid   = change.pid   || (colPid >= 0 ? String(data[r][colPid] || '') : '');
