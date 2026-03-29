@@ -421,6 +421,22 @@
       border-left-color: var(--color-blue);
       border-left-width: 4px;
     }
+    .visit-card.trainee {
+      border-left: 3px solid #9C27B0 !important;
+      background: #F3E5F5;
+    }
+    .visit-card.trainee .visit-mentor-label {
+      font-size: 9px;
+      color: #7B1FA2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .visit-card .mentor-badge {
+      font-size: 9px;
+      color: #7B1FA2;
+      opacity: 0.8;
+    }
     .visit-card.medical  { border-left-color: var(--color-blue-dark); }
     .visit-card.nursing   { border-left-color: var(--color-green-dark); }
     .visit-card.selected {
@@ -1345,6 +1361,8 @@
     <div class="context-staff-list" id="contextStaffList"></div>
     <div class="context-menu-sep" id="contextDecoupleSection" style="display:none"></div>
     <div class="context-menu-item" id="contextDecoupleItem" style="display:none" onclick="onContextDecouple()">&#128100; 1名体制に変更（ペア解除）</div>
+    <div class="context-menu-sep" id="contextTraineeSection" style="display:none"></div>
+    <div class="context-menu-item" id="contextTraineeItem" style="display:none" onclick="onContextRemoveTrainee()">&#127891; 同行を解除</div>
     <div class="context-menu-sep"></div>
     <div class="context-menu-item" onclick="onContextMoveToUnassigned()">&#8599; 未割当に移動</div>
     <div class="context-menu-sep"></div>
@@ -1455,6 +1473,28 @@
     /**
      * Transform server response into _state consumed by both UI and ConstraintEngine.
      */
+    function buildMentorMaps(mentorPairs, weekDates) {
+      var pairMap = {};
+      var m2tMap = {};
+      var traineeSet = {};
+      for (var i = 0; i < mentorPairs.length; i++) {
+        var mp = mentorPairs[i];
+        for (var d = 0; d < weekDates.length; d++) {
+          var ds = weekDates[d];
+          if (mp.startDate && ds < mp.startDate) continue;
+          if (mp.endDate && ds > mp.endDate) continue;
+          var key = mp.traineeStaffId + '|' + ds + '|' + (mp.band || '\u7D42\u65E5');
+          pairMap[key] = mp;
+          var mKey = mp.mentorStaffId + '|' + ds;
+          if (!m2tMap[mKey]) m2tMap[mKey] = [];
+          m2tMap[mKey].push({ traineeStaffId: mp.traineeStaffId, band: mp.band || '\u7D42\u65E5' });
+          if (!traineeSet[mp.traineeStaffId]) traineeSet[mp.traineeStaffId] = [];
+          traineeSet[mp.traineeStaffId].push({ mentorStaffId: mp.mentorStaffId, band: mp.band || '\u7D42\u65E5' });
+        }
+      }
+      return { pairMap: pairMap, mentorToTraineeMap: m2tMap, traineeSet: traineeSet };
+    }
+
     function onDataLoaded(data) {
       try {
         // --- Build staff master map (id-keyed) ---
@@ -1501,8 +1541,14 @@
           specialWeek:    data.specialWeek || {},
           pendingChanges: [],
           originalAssignments: JSON.parse(JSON.stringify(assignments)),
-          originalUnassigned: JSON.parse(JSON.stringify(data.unassigned || []))
+          originalUnassigned: JSON.parse(JSON.stringify(data.unassigned || [])),
+          mentorPairs: data.mentorPairs || []
         };
+
+        var mentorMaps = buildMentorMaps(_state.mentorPairs, _state.weekDates);
+        _state.mentorPairMap = mentorMaps.pairMap;
+        _state.mentorToTraineeMap = mentorMaps.mentorToTraineeMap;
+        _state.traineeSet = mentorMaps.traineeSet;
 
         WEEK_START_STR = _state.weekStartStr;
 
@@ -1746,6 +1792,23 @@
       cntDiv.className = 'staff-count';
       cntDiv.textContent = '\u9031 ' + cnt + '\u4ef6';
       scDiv.appendChild(cntDiv);
+
+      if (_state.traineeSet && _state.traineeSet[staffId]) {
+        var mentors = _state.traineeSet[staffId];
+        var mentorNames = [];
+        var seen = {};
+        for (var mi = 0; mi < mentors.length; mi++) {
+          if (!seen[mentors[mi].mentorStaffId]) {
+            seen[mentors[mi].mentorStaffId] = true;
+            mentorNames.push(getStaffName(mentors[mi].mentorStaffId) || mentors[mi].mentorStaffId);
+          }
+        }
+        var traineeLabel = document.createElement('div');
+        traineeLabel.style.fontSize = '9px';
+        traineeLabel.style.color = '#7B1FA2';
+        traineeLabel.textContent = '\uD83C\uDF93 \u540C\u884C\u4E2D \u2192 ' + mentorNames.join(', ');
+        scDiv.appendChild(traineeLabel);
+      }
 
       tdStaff.appendChild(scDiv);
       tr.appendChild(tdStaff);
@@ -2073,6 +2136,33 @@
         e.preventDefault(); e.stopPropagation();
         showContextMenu(e, this.getAttribute('data-visit-id'));
       });
+
+      // Trainee visit detection (_T_ pattern)
+      var isTrainee = visitId.indexOf('_T_') >= 0;
+      if (isTrainee) {
+        div.classList.add('trainee');
+        div.setAttribute('draggable', 'false');
+        var baseVisitId = visitId.substring(0, visitId.indexOf('_T_'));
+        var mentorVisit = findVisitById(baseVisitId);
+        var mentorStaffName = mentorVisit ? getStaffName(mentorVisit.staffId) : baseVisitId;
+        var mentorLabel = document.createElement('div');
+        mentorLabel.className = 'visit-mentor-label';
+        mentorLabel.textContent = '\uD83C\uDF93 \u540C\u884C \u2192 ' + mentorStaffName;
+        div.appendChild(mentorLabel);
+      }
+
+      // Mentor badge display
+      if (_state && _state.mentorToTraineeMap) {
+        var mKey = visit.staffId + '|' + visit.dateStr;
+        var trainees = _state.mentorToTraineeMap[mKey];
+        if (trainees && trainees.length > 0 && !isTrainee) {
+          var mBadge = document.createElement('span');
+          mBadge.className = 'mentor-badge';
+          mBadge.textContent = '\uD83C\uDF93';
+          mBadge.title = '\u540C\u884C\u5148: ' + trainees.map(function(t) { return t.traineeStaffId; }).join(', ');
+          div.appendChild(mBadge);
+        }
+      }
 
       return div;
     }
@@ -4209,6 +4299,8 @@
       var pairedVisits = [];
       if (typeof ConstraintEngine !== 'undefined' && ConstraintEngine.findPairedVisits) {
         pairedVisits = ConstraintEngine.findPairedVisits(vd, _state);
+        // trainee行を除外（同行訪問はmentorMirrorで別途連動する）
+        pairedVisits = pairedVisits.filter(function(p) { return (p.visitId || '').indexOf('_T_') < 0; });
       }
 
       // Apply to local state
@@ -4295,6 +4387,43 @@
             var pRepack = ConstraintEngine.repackStaffDay(pv.staffId, pv.dateStr, pAnchors, _state);
             if (pRepack.schedule) applyNewSchedule(pv.staffId, pv.dateStr, pRepack.schedule);
           }
+      }
+
+      // ---- Mentor → Trainee ミラー連動 ----
+      if (_state.mentorToTraineeMap) {
+        var mKey_mirror = vd.staffId + '|' + (dateStr || vd.dateStr);
+        var trainees_mirror = _state.mentorToTraineeMap[mKey_mirror];
+        if (trainees_mirror && trainees_mirror.length > 0) {
+          var mentorVid = vd.visitId;
+          for (var ti = 0; ti < _state.assignments.length; ti++) {
+            var ta = _state.assignments[ti];
+            if (ta.visitId.indexOf(mentorVid + '_T_') === 0) {
+              var mirrorStart = selectedTime ? selectedTime.startMin : (movedVisit ? movedVisit.startMin : null);
+              var mirrorEnd = selectedTime ? selectedTime.endMin : (movedVisit ? movedVisit.endMin : null);
+              if (mirrorStart != null && mirrorEnd != null) {
+                var taOldStart = ta.startMin;
+                var taOldEnd = ta.endMin;
+                ta.startMin = mirrorStart;
+                ta.endMin = mirrorEnd;
+                _state.pendingChanges.push({
+                  type: 'mentorMirror',
+                  visitId: ta.visitId,
+                  pid: ta.pid,
+                  staffId: ta.staffId,
+                  dateStr: ta.dateStr,
+                  origStartMin: taOldStart,
+                  origEndMin: taOldEnd,
+                  newStartMin: mirrorStart,
+                  newEndMin: mirrorEnd,
+                  newStaffId: ta.staffId,
+                  newStaffName: getStaffName(ta.staffId),
+                  pairedWith: mentorVid,
+                  timestamp: new Date().toISOString()
+                });
+              }
+            }
+          }
+        }
       }
 
       closeConfirmDialog();
@@ -4963,6 +5092,17 @@
         decoupleItem.style.display = "none";
       }
 
+      // Show trainee removal option
+      var traineeSection = document.getElementById("contextTraineeSection");
+      var traineeItem = document.getElementById("contextTraineeItem");
+      if (visit && (visit.visitId || '').indexOf('_T_') >= 0) {
+        traineeSection.style.display = "";
+        traineeItem.style.display = "";
+      } else {
+        traineeSection.style.display = "none";
+        traineeItem.style.display = "none";
+      }
+
       // Position, clamped to viewport
       menu.style.left = '0px';
       menu.style.top = '0px';
@@ -5136,6 +5276,30 @@
     }
     window.onContextDecouple = onContextDecouple;
 
+    function onContextRemoveTrainee() {
+      var visit = findVisitById(_contextVisitId);
+      if (!visit) return;
+      if (!confirm('\u3053\u306E\u540C\u884C\u8A2A\u554F\u3092\u89E3\u9664\u3057\u307E\u3059\u304B\uFF1F')) return;
+      for (var i = _state.assignments.length - 1; i >= 0; i--) {
+        if (_state.assignments[i].visitId === visit.visitId) {
+          _state.assignments.splice(i, 1);
+          break;
+        }
+      }
+      _state.pendingChanges.push({
+        type: 'removeTrainee',
+        visitId: visit.visitId,
+        pid: visit.pid,
+        staffId: visit.staffId,
+        dateStr: visit.dateStr,
+        timestamp: new Date().toISOString()
+      });
+      renderGrid();
+      renderSidePanel();
+      updateStatusBar();
+      showToast('\u540C\u884C\u3092\u89E3\u9664\u3057\u307E\u3057\u305F', 'success');
+    }
+    window.onContextRemoveTrainee = onContextRemoveTrainee;
 
     function onContextResetVisit() {
       hideContextMenu();
@@ -5354,7 +5518,8 @@
       if (!_state || !_state.assignments) return 0;
       var n = 0;
       for (var i = 0; i < _state.assignments.length; i++) {
-        if (_state.assignments[i].staffId === staffId) n++;
+        if (_state.assignments[i].staffId === staffId &&
+            (_state.assignments[i].visitId || '').indexOf('_T_') < 0) n++;
       }
       return n;
     }

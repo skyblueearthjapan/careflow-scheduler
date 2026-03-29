@@ -146,7 +146,8 @@ function getInteractiveWeekData(weekStartStr) {
     eventMap: iwv_loadEvents_(ss, weekDates),
     staffChangeMap: iwv_loadStaffChanges_(ss, weekDates),
     changeRequests: iwv_loadChangeRequests_(ss, weekDates),
-    specialWeek: iwv_loadSpecialWeek_(ss, weekDates)
+    specialWeek: iwv_loadSpecialWeek_(ss, weekDates),
+    mentorPairs: iwv_loadMentorPairs_(ss, weekDates)
   };
 }
 
@@ -192,6 +193,35 @@ function commitChanges(weekStartStr, changesJson) {
   var now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
 
   changes.forEach(function(change) {
+    // --- mentorMirror / removeTrainee タイプの処理 ---
+    if (change.type === 'mentorMirror') {
+      for (var mr = 1; mr < data.length; mr++) {
+        if (String(data[mr][col.visitId]) === String(change.visitId)) {
+          if (change.newStartMin != null && change.newEndMin != null) {
+            data[mr][col.startTime] = iwv_minutesToSerial_(change.newStartMin);
+            data[mr][col.endTime]   = iwv_minutesToSerial_(change.newEndMin);
+          }
+          var mNote = String(data[mr][col.note] || '');
+          if (mNote.indexOf('[\u540C\u884C\u8FFD\u5F93]') === -1) {
+            data[mr][col.note] = (mNote ? mNote + ' ' : '') + '[\u540C\u884C\u8FFD\u5F93]';
+          }
+          applied++;
+          break;
+        }
+      }
+      return;
+    }
+    if (change.type === 'removeTrainee') {
+      for (var dr = data.length - 1; dr >= 1; dr--) {
+        if (String(data[dr][col.visitId]) === String(change.visitId)) {
+          sheet.deleteRow(dr + 1);
+          applied++;
+          break;
+        }
+      }
+      return;
+    }
+
     var found = false;
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][col.visitId]) === String(change.visitId)) {
@@ -1033,6 +1063,60 @@ function iwv_loadSpecialWeek_(ss, weekDates) {
     });
   }
   return result;
+}
+
+/**
+ * スタッフ同行割付を読み込み（週でフィルタ）
+ */
+function iwv_loadMentorPairs_(ss, weekDates) {
+  var sheet = ss.getSheetByName('\u30b9\u30bf\u30c3\u30d5\u540c\u884c\u5272\u4ed8');
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var h = data[0];
+
+  var ci = {
+    trainee:      iwv_findHeaderIndex_(h, 'trainee_staff_id'),
+    mentor:       iwv_findHeaderIndex_(h, 'mentor_staff_id'),
+    startDate:    iwv_findHeaderIndex_(h, '\u958b\u59cb\u65e5'),
+    endDate:      iwv_findHeaderIndex_(h, '\u7d42\u4e86\u65e5'),
+    band:         iwv_findHeaderIndex_(h, '\u6642\u9593\u5e2f'),
+    dayCondition: iwv_findHeaderIndex_(h, '\u66dc\u65e5\u6761\u4ef6'),
+    priority:     iwv_findHeaderIndex_(h, '\u512a\u5148\u5ea6')
+  };
+
+  var tz = Session.getScriptTimeZone();
+  var wsDate = iwv_parseDate_(weekDates[0]);
+  var weDate = iwv_parseDate_(weekDates[weekDates.length - 1]);
+
+  var results = [];
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var traineeId = ci.trainee >= 0 ? String(row[ci.trainee] || '').trim() : '';
+    if (!traineeId) continue;
+
+    var sdRaw = ci.startDate >= 0 ? row[ci.startDate] : null;
+    var edRaw = ci.endDate >= 0 ? row[ci.endDate] : null;
+    var sdObj = sdRaw ? ((sdRaw instanceof Date) ? sdRaw : iwv_parseDate_(sdRaw)) : null;
+    var edObj = edRaw ? ((edRaw instanceof Date) ? edRaw : iwv_parseDate_(edRaw)) : null;
+
+    if (sdObj && weDate && sdObj > weDate) continue;
+    if (edObj && wsDate && edObj < wsDate) continue;
+
+    var sdStr = sdObj ? Utilities.formatDate(sdObj, tz, 'yyyy/MM/dd') : '';
+    var edStr = edObj ? Utilities.formatDate(edObj, tz, 'yyyy/MM/dd') : '';
+
+    results.push({
+      traineeStaffId: traineeId,
+      mentorStaffId: ci.mentor >= 0 ? String(row[ci.mentor] || '').trim() : '',
+      startDate: sdStr,
+      endDate: edStr,
+      band: ci.band >= 0 ? String(row[ci.band] || '').trim() : '',
+      dayCondition: ci.dayCondition >= 0 ? String(row[ci.dayCondition] || '').trim() : '',
+      priority: ci.priority >= 0 ? (parseInt(row[ci.priority]) || 0) : 0
+    });
+  }
+  return results;
 }
 
 /**

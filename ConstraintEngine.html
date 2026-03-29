@@ -328,6 +328,26 @@
   }
 
   // ===========================================================
+  // Mentor-pair (同行訪問) helpers
+  // ===========================================================
+
+  function isTraineeVisit(visitData) {
+    return (visitData.visitId || '').indexOf('_T_') >= 0;
+  }
+
+  function getMentorVisitId(visitData) {
+    var vid = visitData.visitId || '';
+    var idx = vid.indexOf('_T_');
+    return idx >= 0 ? vid.substring(0, idx) : null;
+  }
+
+  function getTraineeStaffId(visitData) {
+    var vid = visitData.visitId || '';
+    var idx = vid.indexOf('_T_');
+    return idx >= 0 ? vid.substring(idx + 3) : null;
+  }
+
+  // ===========================================================
   // Violation factory
   // ===========================================================
 
@@ -629,6 +649,16 @@
     // ==========================================================
     // CRITICAL checks (C-1 .. C-13)
     // ==========================================================
+
+    // C-14: 同行行は直接移動不可
+    if (isTraineeVisit(visitData)) {
+      violations.push(violation(
+        'CRITICAL', 'MENTOR', 'C-14',
+        '\u540C\u884C\u884C\u306F\u79FB\u52D5\u4E0D\u53EF',
+        '\u3053\u306E\u8A2A\u554F\u306F\u540C\u884C\uFF08\u7814\u4FEE\uFF09\u306E\u305F\u3081\u3001\u30E1\u30F3\u30BF\u30FC\u306E\u8A2A\u554F\u3092\u79FB\u52D5\u3057\u3066\u304F\u3060\u3055\u3044',
+        'TRAINEE_NO_MOVE'
+      ));
+    }
 
     // C-1: 2名体制 (needStaff >= 2)
     if (patient && patient.needStaff >= 2) {
@@ -1016,6 +1046,32 @@
       }
     }
 
+    // W-11: 同行中スタッフへの追加割当警告
+    if (state.mentorPairMap) {
+      var bands_w11 = ['\u7D42\u65E5', '\u5348\u524D', '\u5348\u5F8C'];
+      for (var bi = 0; bi < bands_w11.length; bi++) {
+        var mpKey = targetStaffId + '|' + (visitData.dateStr || '') + '|' + bands_w11[bi];
+        if (state.mentorPairMap[mpKey]) {
+          var band_w11 = bands_w11[bi];
+          var visitStart_w11 = visitData.startMin || 0;
+          var bandOverlap = false;
+          if (band_w11 === '\u7D42\u65E5') bandOverlap = true;
+          else if (band_w11 === '\u5348\u524D' && visitStart_w11 < 720) bandOverlap = true;
+          else if (band_w11 === '\u5348\u5F8C' && visitStart_w11 >= 720) bandOverlap = true;
+          if (bandOverlap) {
+            var mp_w11 = state.mentorPairMap[mpKey];
+            violations.push(violation(
+              'WARNING', 'MENTOR', 'W-11',
+              '\u540C\u884C\u4E2D\u30B9\u30BF\u30C3\u30D5',
+              targetStaffId + '\u306F' + band_w11 + '\u540C\u884C\u7814\u4FEE\u4E2D\uFF08\u30E1\u30F3\u30BF\u30FC: ' + (mp_w11.mentorStaffId || '') + '\uFF09',
+              'TRAINEE_BUSY'
+            ));
+            break;
+          }
+        }
+      }
+    }
+
     return buildResult(violations);
   }
 
@@ -1101,6 +1157,12 @@
     if (!staff) {
       return { canAccept: false, status: 'NG',
                quickReason: '\u30b9\u30bf\u30c3\u30d5\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093' };
+    }
+
+    // C-14: Trainee visit block
+    if (isTraineeVisit(visitData)) {
+      return { canAccept: false, status: 'NG',
+               quickReason: '\u540C\u884C\u884C\u306F\u79FB\u52D5\u4E0D\u53EF' };
     }
 
     // --- CRITICAL short-circuit checks (cheapest first) ---
@@ -2680,6 +2742,11 @@
     // ---- Paired visit helpers ----
     findPairedVisits: findPairedVisits,
     isPairedVisitId: isPairedVisitId,
+
+    // ---- Mentor-pair (同行) helpers ----
+    isTraineeVisit: isTraineeVisit,
+    getMentorVisitId: getMentorVisitId,
+    getTraineeStaffId: getTraineeStaffId,
 
     // ---- Helper functions (exposed for testing / external use) ----
     isOverlap: isOverlap,

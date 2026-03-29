@@ -2546,7 +2546,18 @@ function 週ビューを更新_(ss, weekStartStr) {
         const pInfo   = pid ? patientGenderMap[pid] : null;
         const pGender = pInfo ? (pInfo.gender || '') : '';
         const isTwo   = (vid.indexOf('-') >= 0) || (noteVal.indexOf('同時訪問') >= 0);
-        const mark    = isTwo ? '👥 ' : '';
+        var isTrainee = vid.indexOf('_T_') >= 0;
+        var traineeMark = '';
+        if (isTrainee) {
+          traineeMark = '🎓 ';
+          var mentorMatch = noteVal.match(/同行\(([^)]+)\)/);
+          if (mentorMatch) {
+            var mentorParts = mentorMatch[1].split(/\s+/);
+            var mentorLabel = mentorParts.length >= 2 ? mentorParts[1] : mentorParts[0];
+            traineeMark = '🎓(' + mentorLabel + ') ';
+          }
+        }
+        const mark    = traineeMark || (isTwo ? '👥 ' : '');
         const isManual = noteVal.indexOf('[手動変更]') >= 0;
 
         let pidPart = '';
