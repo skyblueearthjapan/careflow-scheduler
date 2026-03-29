@@ -1189,11 +1189,11 @@
     <!-- Side Panel -->
     <div class="side-panel" id="sidePanel">
       <div class="side-panel-tabs">
-        <button class="side-panel-tab active" data-tab="changelog" onclick="switchSideTab('changelog')">変更履歴</button>
-        <button class="side-panel-tab" data-tab="unassigned" onclick="switchSideTab('unassigned')">未割当</button>
-        <button class="side-panel-tab" data-tab="constraints" onclick="switchSideTab('constraints')">制約情報</button>
+        <button class="side-panel-tab" data-tab="changelog" onclick="switchSideTab('changelog')">変更履歴</button>
+        <button class="side-panel-tab" data-tab="unassigned" onclick="switchSideTab('unassigned')">自動再割当</button>
+        <button class="side-panel-tab active" data-tab="constraints" onclick="switchSideTab('constraints')">制約情報</button>
       </div>
-      <div class="side-panel-content" id="tabChangelog">
+      <div class="side-panel-content" id="tabChangelog" style="display:none;">
         <div class="change-log-empty" id="changeLogEmpty">変更はまだありません</div>
         <div id="changeLogList"></div>
       </div>
@@ -1202,7 +1202,7 @@
         <div class="unassigned-empty" id="unassignedEmpty">未割当なし</div>
         <div id="unassignedList"></div>
       </div>
-      <div class="side-panel-content" id="tabConstraints" style="display:none;">
+      <div class="side-panel-content" id="tabConstraints">
         <div class="constraint-empty" id="constraintEmpty">カードをクリックして制約情報を表示</div>
         <div id="constraintDetail"></div>
       </div>
