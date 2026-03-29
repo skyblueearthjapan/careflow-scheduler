@@ -3720,8 +3720,9 @@
       var distTop = clientY - topEdge;
       var distBottom = rect.bottom - clientY;
 
-      if (distTop < AUTOSCROLL_EDGE && distTop >= 0) {
-        _autoScrollSpeed = -Math.round(AUTOSCROLL_MAX_SPEED * (1 - distTop / AUTOSCROLL_EDGE));
+      var AUTOSCROLL_EDGE_TOP = AUTOSCROLL_EDGE * 2; // upward scroll triggers from wider zone
+      if (distTop < AUTOSCROLL_EDGE_TOP && distTop >= 0) {
+        _autoScrollSpeed = -Math.round(AUTOSCROLL_MAX_SPEED * (1 - distTop / AUTOSCROLL_EDGE_TOP));
       } else if (distBottom < AUTOSCROLL_EDGE && distBottom >= 0) {
         _autoScrollSpeed = Math.round(AUTOSCROLL_MAX_SPEED * (1 - distBottom / AUTOSCROLL_EDGE));
       } else {
