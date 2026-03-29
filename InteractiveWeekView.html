@@ -3720,7 +3720,7 @@
       var distTop = clientY - topEdge;
       var distBottom = rect.bottom - clientY;
 
-      var AUTOSCROLL_EDGE_TOP = AUTOSCROLL_EDGE * 2; // upward scroll triggers from wider zone
+      var AUTOSCROLL_EDGE_TOP = 300; // upward scroll triggers from wider zone (300px)
       if (distTop < AUTOSCROLL_EDGE_TOP) {
         var ratio = Math.max(0, distTop) / AUTOSCROLL_EDGE_TOP;
         _autoScrollSpeed = -Math.round(AUTOSCROLL_MAX_SPEED * (1 - ratio));
