@@ -7373,7 +7373,7 @@ function applySpecialWeekToWeeklyRequests_(ctx) {
  * メニューから手動で1回だけ実行する想定。
  */
 function migration_addPatientStatusColumn() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(SHEETS.PATIENT_MASTER);
   if (!sheet) {
     SpreadsheetApp.getUi().alert('「患者マスタ」シートが見つかりません。');
