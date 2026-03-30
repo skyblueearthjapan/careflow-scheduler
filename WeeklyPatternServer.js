@@ -77,7 +77,8 @@ function wp_getPatientList() {
       startPref:  findCol_('希望時間帯（開始）'),
       endPref:    findCol_('希望時間帯（終了）'),
       svcMin:     findCol_('サービス時間'),
-      insurance:  findCol_('保険区分')
+      insurance:  findCol_('保険区分'),
+      status:     findCol_('稼働状況')
     };
 
     // デバッグ: 見つからなかった列をログ出力
@@ -117,7 +118,8 @@ function wp_getPatientList() {
         svcMin: svcMin,
         sexLimit: sexLimit,
         fixedStaff: fixedStaff,
-        contPref: contPref
+        contPref: contPref,
+        status: col.status >= 0 ? String(row[col.status] || '') : ''
       });
     }
 

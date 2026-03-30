@@ -1413,6 +1413,9 @@ class AllocationEngine:
                     note=pc.note or "個別変更:追加",
                 )
                 patient = self.patient_map.get(pc.pid)
+                if patient and patient.status and patient.status not in ("稼働", ""):
+                    logger.info("Skipping patient change for inactive patient %s (status=%s)", pc.pid, patient.status)
+                    continue
                 if patient:
                     new_req.pname = patient.name
                     new_req.area = patient.area
@@ -1455,6 +1458,11 @@ class AllocationEngine:
             if header.mode == "REPLACE":
                 result = [r for r in result if r.pid != header.pid]
                 logger.debug("SpecialWeek REPLACE: removed requests for %s", header.pid)
+            # Skip inactive patients
+            sw_patient = self.patient_map.get(header.pid)
+            if sw_patient and sw_patient.status and sw_patient.status not in ("稼働", ""):
+                logger.info("Skipping special week for inactive patient %s (status=%s)", header.pid, sw_patient.status)
+                continue
             for i, detail in enumerate(details):
                 new_req = VisitRequest(
                     request_id=f"SW_{header.special_week_id}_{i}",
@@ -1574,6 +1582,9 @@ class AllocationEngine:
         for pid, pats in patient_patterns.items():
             patient = self.patient_map.get(pid)
             if not patient:
+                continue
+            # Skip inactive patients
+            if patient.status and patient.status not in ("稼働", ""):
                 continue
             ng_days = set(patient.ng_days) if patient.ng_days else set()
 

@@ -81,6 +81,7 @@ const AUDIT_TAGS = {
   STAFF_DAY_OFF: 'スタッフ休み',
   STAFF_HALF_DAY_OFF: 'スタッフ半休中',
   STAFF_RESTRICTED: 'スタッフ時間制限',
+  INACTIVE_PATIENT: '非稼働患者割当',
   WORKDAY_VIOLATION: '勤務日外',
   STAFF_TIME_OVERLAP: 'スタッフ時間重複',
   // サービス品質系

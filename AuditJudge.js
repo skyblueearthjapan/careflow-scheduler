@@ -27,6 +27,23 @@ function audit_judgePatientDay_(dataset, expectedByPidDate, pid, dateStr) {
   var tags = [];
   var status = AUDIT_STATUS.OK;
 
+  // 非稼働患者への割当チェック
+  var master = dataset.patientMasterMap ? dataset.patientMasterMap[pid] : null;
+  if (master && master.status && master.status !== '稼働') {
+    if (actuals.length > 0) {
+      status = AUDIT_STATUS.NG;
+      tags.push(AUDIT_TAGS.INACTIVE_PATIENT);
+      checks.push({
+        type: 'inactivePatient',
+        status: AUDIT_STATUS.NG,
+        reason: '非稼働患者（' + master.status + '）への割当'
+      });
+      return { status: status, tags: tags, checks: checks };
+    }
+    // 非稼働で実績もなし → 判定不要
+    return { status: AUDIT_STATUS.OK, tags: [], checks: [] };
+  }
+
   // 期待がない場合
   if (!dayExpected || dayExpected.visits.length === 0) {
     if (actuals.length > 0) {

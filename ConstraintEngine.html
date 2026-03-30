@@ -647,8 +647,18 @@
     var visitId = visitData.visitId;
 
     // ==========================================================
-    // CRITICAL checks (C-1 .. C-13)
+    // CRITICAL checks (C-0 .. C-15)
     // ==========================================================
+
+    // C-15: 非稼働患者チェック (INACTIVE_PATIENT)
+    if (patient && patient.status && patient.status !== '稼働' && patient.status !== '') {
+      violations.push(violation(
+        'CRITICAL', 'PATIENT', 'C-15',
+        '非稼働患者への割当',
+        patient.name + 'は現在「' + patient.status + '」のため割当できません',
+        'INACTIVE_PATIENT'
+      ));
+    }
 
     // C-14: 同行行は直接移動不可
     if (isTraineeVisit(visitData)) {

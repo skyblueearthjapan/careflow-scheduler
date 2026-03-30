@@ -42,6 +42,10 @@ function audit_buildExpected_(dataset) {
   for (var pid in targetPids) {
     var master = patientMasterMap[pid];
 
+    // 非稼働患者は期待生成をスキップ
+    var patMaster = dataset.patientMasterMap ? dataset.patientMasterMap[pid] : null;
+    if (patMaster && patMaster.status && patMaster.status !== '稼働') continue;
+
     weekDates.forEach(function(wd) {
       var dateStr = wd.dateStr;
       var youbi = wd.youbi;

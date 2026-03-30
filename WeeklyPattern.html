@@ -696,6 +696,10 @@
           <span class="info-label">&#x7D99;&#x7D9A;&#x5E0C;&#x671B;:</span>
           <span class="info-value" id="infoContPref">-</span>
         </div>
+        <div class="info-item">
+          <span class="info-label">&#x7A3C;&#x50CD;&#x72B6;&#x6CC1;:</span>
+          <span class="info-value" id="infoStatus">-</span>
+        </div>
         <div class="pattern-status" id="patternStatus"></div>
       </div>
     </div>
@@ -959,6 +963,13 @@
             return;
           }
           allPatients = result.patients;
+          // 非稼働患者をリスト末尾に移動
+          allPatients.sort(function(a, b) {
+            var aActive = (!a.status || a.status === '稼働') ? 0 : 1;
+            var bActive = (!b.status || b.status === '稼働') ? 0 : 1;
+            if (aActive !== bActive) return aActive - bActive;
+            return 0;
+          });
           filteredPatients = allPatients.slice();
           populateDropdown(filteredPatients);
           elPatientSelect.disabled = false;
@@ -982,7 +993,9 @@
         var p = patients[i];
         var opt = document.createElement('option');
         opt.value = p.pid;
-        opt.textContent = p.pid + ' ' + p.name;
+        var suffix = (p.status && p.status !== '稼働' && p.status !== '') ? ' (' + p.status + ')' : '';
+        opt.textContent = p.pid + ' ' + p.name + suffix;
+        if (suffix) opt.style.color = '#999';
         elPatientSelect.appendChild(opt);
       }
     }
@@ -1154,6 +1167,16 @@
         p.sexLimit || '\u306A\u3057';
       document.getElementById('infoContPref').textContent =
         p.contPref || '-';
+
+      var statusEl = document.getElementById('infoStatus');
+      statusEl.textContent = p.status || '稼働';
+      if (p.status && p.status !== '稼働' && p.status !== '') {
+        statusEl.style.color = '#e74c3c';
+        statusEl.style.fontWeight = 'bold';
+      } else {
+        statusEl.style.color = '';
+        statusEl.style.fontWeight = '';
+      }
     }
 
     /* ==============================================================

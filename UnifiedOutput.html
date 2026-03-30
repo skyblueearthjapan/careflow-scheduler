@@ -3031,7 +3031,8 @@
       'WEEKLY_COUNT_MISMATCH': '週回数不一致',
       'SVC_DURATION_MISMATCH': 'サービス時間不一致',
       'WORKDAY_VIOLATION': '勤務日外',
-      'TIME_PARSE_ERROR': '時刻解析エラー'
+      'TIME_PARSE_ERROR': '時刻解析エラー',
+      'INACTIVE_PATIENT': '非稼働患者割当'
     };
 
     /**
@@ -3060,7 +3061,8 @@
           tag.indexOf('CANCELLED_BUT') >= 0 || tag.indexOf('OUT_OF') >= 0 ||
           tag.indexOf('VIOLATION') >= 0 || tag.indexOf('違反') >= 0 ||
           tag.indexOf('MISMATCH') >= 0 || tag.indexOf('不一致') >= 0 ||
-          tag.indexOf('不足') >= 0 || tag.indexOf('重複') >= 0) return 'ng';
+          tag.indexOf('不足') >= 0 || tag.indexOf('重複') >= 0 ||
+          tag.indexOf('INACTIVE_PATIENT') >= 0 || tag.indexOf('非稼働') >= 0) return 'ng';
       if (tag.indexOf('DIFF') >= 0 || tag.indexOf('MISSING') >= 0 ||
           tag.indexOf('EXTRA') >= 0 || tag.indexOf('実績なし') >= 0 ||
           tag.indexOf('余剰') >= 0 || tag.indexOf('ズレ') >= 0 ||
@@ -3133,6 +3135,10 @@
         }
         if (data.master.ngStaff) {
           html += '<div class="audit-info-item"><span class="label">NGスタッフ:</span> <span class="value severity-critical">' + data.master.ngStaff + '</span></div>';
+        }
+        if (data.master.status) {
+          var statusCls = (data.master.status !== '稼働') ? ' severity-critical' : '';
+          html += '<div class="audit-info-item"><span class="label">稼働状況:</span> <span class="value' + statusCls + '">' + escapeHtml(data.master.status) + '</span></div>';
         }
         html += '</div></details>';
       }

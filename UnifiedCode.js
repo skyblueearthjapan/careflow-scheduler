@@ -1039,7 +1039,7 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     // ★必要な列が存在しない場合は自動追加（末尾に追加）
     var requiredColumns = {
       'スタッフマスタ': ['割当量'],
-      '患者マスタ': ['訪問頻度', '訪問週', '保険区分'],
+      '患者マスタ': ['訪問頻度', '訪問週', '保険区分', '稼働状況'],
       '個別変更リクエスト': ['時間タイプ', '希望最早', '希望最遅']
     };
     var columnsToAdd = requiredColumns[formType] || [];
@@ -1097,6 +1097,7 @@ function input_createRowFromWizard(formType, answers, insertAfterRow) {
     // ヘッダー名とキーのマッピング定義
     var headerMapping = {
       // 患者マスタ用
+      'status': '稼働状況',
       'name': '患者名',
       'sex': '性別',
       'address': '住所',
@@ -5616,6 +5617,8 @@ function 週間リクエストを生成_(ss, weekStartStr) {
     if (missing.length > 0) throw new Error('患者マスタのヘッダーが足りません：\n' + missing.join('\n'));
 
     const timeTypeColIndex = pHeader.indexOf('時間タイプ');
+    // 稼働状況（オプション列）
+    const statusColIndex = pHeader.indexOf('稼働状況');
     // 訪問頻度・訪問週（オプション列）
     const visitFrequencyColIndex = pHeader.indexOf('訪問頻度');
     const visitWeeksColIndex = pHeader.indexOf('訪問週');
@@ -5743,6 +5746,11 @@ function 週間リクエストを生成_(ss, weekStartStr) {
     pData.forEach(row => {
       const pid = row[idx['patient_id']];
       if (!pid) return;
+
+      // 非稼働患者をスキップ
+      var patStatus = statusColIndex >= 0 ? String(row[statusColIndex] || '') : '';
+      if (patStatus && patStatus !== '稼働') return;
+
       const info = patientInfoMap[pid] || {};
       const visits = toHalfWidthNumber_(row[idx['週訪問回数']], 0);
       if (!visits || visits <= 0) return;
@@ -7353,4 +7361,72 @@ function applySpecialWeekToWeeklyRequests_(ctx) {
   });
 
   return { added: added, removed: removed };
+}
+
+// ============================================================
+// マイグレーション: 患者マスタに「稼働状況」列を追加
+// ============================================================
+
+/**
+ * 患者マスタに「稼働状況」列を追加し、プルダウンバリデーションを設定する。
+ * 既に列が存在する場合はスキップ。
+ * メニューから手動で1回だけ実行する想定。
+ */
+function migration_addPatientStatusColumn() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEETS.PATIENT_MASTER);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('「患者マスタ」シートが見つかりません。');
+    return;
+  }
+
+  var lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    SpreadsheetApp.getUi().alert('「患者マスタ」シートにヘッダーがありません。');
+    return;
+  }
+
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  // 既に列が存在するか確認
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i]).trim() === '稼働状況') {
+      SpreadsheetApp.getUi().alert('「稼働状況」列は既に存在します。');
+      return;
+    }
+  }
+
+  // patient_id列の直後に挿入
+  var pidIdx = headers.indexOf('patient_id');
+  var insertCol;
+  if (pidIdx >= 0) {
+    insertCol = pidIdx + 2; // patient_id列(1-based: pidIdx+1)の直後
+    sheet.insertColumnAfter(pidIdx + 1);
+  } else {
+    // patient_id列が見つからない場合は末尾に追加
+    insertCol = lastCol + 1;
+  }
+
+  // ヘッダー設定
+  sheet.getRange(1, insertCol).setValue('稼働状況');
+
+  // プルダウンバリデーション設定
+  var lastRow = Math.max(sheet.getLastRow(), 2);
+  if (lastRow >= 2) {
+    var range = sheet.getRange(2, insertCol, lastRow - 1, 1);
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['稼働', '休止', '未開始', '未契約', '解約'], true)
+      .setAllowInvalid(false)
+      .build();
+    range.setDataValidation(rule);
+
+    // 既存データの稼働状況をデフォルト「稼働」に設定
+    var values = [];
+    for (var r = 0; r < lastRow - 1; r++) {
+      values.push(['稼働']);
+    }
+    range.setValues(values);
+  }
+
+  SpreadsheetApp.getUi().alert('「稼働状況」列を追加しました。全患者を「稼働」に設定しました。');
 }

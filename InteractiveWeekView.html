@@ -1207,6 +1207,11 @@
     .ctx-badge.ok { background: #C8E6C9; color: #2E7D32; }
     .ctx-badge.warn { background: #FFF3E0; color: #E65100; }
     .ctx-badge.ng { background: #FFCDD2; color: #C62828; }
+
+    /* 非稼働患者グレーアウト */
+    .inactive-patient { opacity: 0.5; background: #f0f0f0 !important; }
+    .inactive-patient::after { content: ' [非稼働]'; color: #999; font-size: 0.8em; }
+    .unassigned-item.inactive-patient { opacity: 0.5; background: #f0f0f0 !important; }
   </style>
 </head>
 <body>
@@ -2127,6 +2132,11 @@
       var isCoupled = (visit.kind === 'coupled') || (patient && patient.needStaff >= 2);
       if (isCoupled) div.classList.add('two-staff');
 
+      // 非稼働患者のグレーアウト
+      if (patient && patient.status && patient.status !== '稼働' && patient.status !== '') {
+        div.classList.add('inactive-patient');
+      }
+
       // Insurance type
       var insType = (patient && patient.insuranceType) || '';
       if (insType.indexOf('\u533b\u7642') >= 0) div.classList.add('medical');
@@ -2398,6 +2408,11 @@
         var patient = getPatient(ua.pid);
         var item = document.createElement('div');
         item.className = 'unassigned-item';
+
+        // 非稼働患者のグレーアウト
+        if (patient && patient.status && patient.status !== '稼働' && patient.status !== '') {
+          item.classList.add('inactive-patient');
+        }
 
         var nd = document.createElement('div');
         var ns = document.createElement('span');
@@ -3231,6 +3246,7 @@
         if (patient.fixedStaff) rows.push(['\u6307\u5b9a\u30b9\u30bf\u30c3\u30d5', patient.fixedStaff + (patient.fixedType ? ' (' + patient.fixedType + ')' : '')]);
         if (patient.ngStaff) rows.push(['NG\u30b9\u30bf\u30c3\u30d5', patient.ngStaff]);
         if (patient.sexLimit) rows.push(['\u6027\u5225\u5236\u9650', patient.sexLimit]);
+        if (patient.status) rows.push(['\u7a3c\u50cd\u72b6\u6cc1', patient.status]);
       }
       for (var r = 0; r < rows.length; r++) {
         var rd = document.createElement('div');

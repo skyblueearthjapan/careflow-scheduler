@@ -683,7 +683,8 @@ function iwv_loadPatientMaster_(ss) {
     weeklyCount:iwv_findHeaderIndex_(h, '週訪問回数'),
     insurance:  iwv_findHeaderIndex_(h, '保険区分'),
     lat:        iwv_findHeaderIndex_(h, '緯度'),
-    lng:        iwv_findHeaderIndex_(h, '経度')
+    lng:        iwv_findHeaderIndex_(h, '経度'),
+    status:     iwv_findHeaderIndex_(h, '稼働状況')
   };
 
   var map = {};
@@ -710,7 +711,8 @@ function iwv_loadPatientMaster_(ss) {
       weeklyCount: ci.weeklyCount >= 0 ? (parseInt(row[ci.weeklyCount]) || 0) : 0,
       insuranceType: ci.insurance >= 0 ? String(row[ci.insurance]).trim() : '',
       lat: ci.lat >= 0 ? Number(row[ci.lat]) || null : null,
-      lng: ci.lng >= 0 ? Number(row[ci.lng]) || null : null
+      lng: ci.lng >= 0 ? Number(row[ci.lng]) || null : null,
+      status: ci.status >= 0 ? String(row[ci.status] || '') : ''
     };
   }
   return map;

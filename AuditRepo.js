@@ -144,7 +144,8 @@ function audit_loadPatientMaster_(ss, tz) {
     fixedStaff: audit_findHeaderIdx_(header, '指定スタッフID'),
     fixedType: audit_findHeaderIdx_(header, '指定タイプ'),
     ngStaff: audit_findHeaderIdx_(header, 'NGスタッフID'),
-    weeklyCount: audit_findHeaderIdx_(header, '週訪問回数')
+    weeklyCount: audit_findHeaderIdx_(header, '週訪問回数'),
+    status: audit_findHeaderIdx_(header, '稼働状況')
   };
 
   var map = {};
@@ -168,7 +169,8 @@ function audit_loadPatientMaster_(ss, tz) {
       fixedStaff: idx.fixedStaff >= 0 ? String(row[idx.fixedStaff] || '') : '',
       fixedType: idx.fixedType >= 0 ? String(row[idx.fixedType] || '') : '',
       ngStaff: idx.ngStaff >= 0 ? String(row[idx.ngStaff] || '') : '',
-      weeklyCount: idx.weeklyCount >= 0 ? audit_toNumber_(row[idx.weeklyCount], 0) : 0
+      weeklyCount: idx.weeklyCount >= 0 ? audit_toNumber_(row[idx.weeklyCount], 0) : 0,
+      status: idx.status >= 0 ? String(row[idx.status] || '') : ''
     };
   });
 

@@ -363,7 +363,8 @@ function pyb_loadPatientMasters_(ss, tz) {
   var ci = {
     pid: fc('patient_id'), name: fc('患者名'), area: fc('エリア'),
     lat: fc('緯度'), lng: fc('経度'), svc: fc('サービス時間'),
-    dayPriority: fc('曜日優先度')
+    dayPriority: fc('曜日優先度'),
+    status: fc('稼働状況')
   };
 
   var results = [];
@@ -378,7 +379,8 @@ function pyb_loadPatientMasters_(ss, tz) {
       latitude: ci.lat >= 0 ? (r[ci.lat] || null) : null,
       longitude: ci.lng >= 0 ? (r[ci.lng] || null) : null,
       service_minutes: ci.svc >= 0 ? (Number(r[ci.svc]) || 60) : 60,
-      day_priority: ci.dayPriority >= 0 ? String(r[ci.dayPriority] || '低') : '低'
+      day_priority: ci.dayPriority >= 0 ? String(r[ci.dayPriority] || '低') : '低',
+      status: ci.status >= 0 ? String(r[ci.status] || '') : ''
     });
   }
   return results;
