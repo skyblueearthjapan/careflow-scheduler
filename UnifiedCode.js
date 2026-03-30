@@ -7396,14 +7396,17 @@ function migration_addPatientStatusColumn() {
     }
   }
 
-  // patient_id列の直後に挿入
-  var pidIdx = headers.indexOf('patient_id');
+  // フリガナ列の直後（性別の前）に挿入 → D列相当
+  var furiganaIdx = -1;
+  for (var j = 0; j < headers.length; j++) {
+    if (String(headers[j]).trim() === 'フリガナ') { furiganaIdx = j; break; }
+  }
   var insertCol;
-  if (pidIdx >= 0) {
-    insertCol = pidIdx + 2; // patient_id列(1-based: pidIdx+1)の直後
-    sheet.insertColumnAfter(pidIdx + 1);
+  if (furiganaIdx >= 0) {
+    insertCol = furiganaIdx + 2; // フリガナ列(1-based: furiganaIdx+1)の直後
+    sheet.insertColumnAfter(furiganaIdx + 1);
   } else {
-    // patient_id列が見つからない場合は末尾に追加
+    // フリガナ列が見つからない場合は末尾に追加
     insertCol = lastCol + 1;
   }
 
