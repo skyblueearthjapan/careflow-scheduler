@@ -7376,13 +7376,13 @@ function migration_addPatientStatusColumn() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(SHEETS.PATIENT_MASTER);
   if (!sheet) {
-    SpreadsheetApp.getUi().alert('「患者マスタ」シートが見つかりません。');
+    Logger.log('「患者マスタ」シートが見つかりません。');
     return;
   }
 
   var lastCol = sheet.getLastColumn();
   if (lastCol === 0) {
-    SpreadsheetApp.getUi().alert('「患者マスタ」シートにヘッダーがありません。');
+    Logger.log('「患者マスタ」シートにヘッダーがありません。');
     return;
   }
 
@@ -7391,7 +7391,7 @@ function migration_addPatientStatusColumn() {
   // 既に列が存在するか確認
   for (var i = 0; i < headers.length; i++) {
     if (String(headers[i]).trim() === '稼働状況') {
-      SpreadsheetApp.getUi().alert('「稼働状況」列は既に存在します。');
+      Logger.log('「稼働状況」列は既に存在します。');
       return;
     }
   }
@@ -7428,5 +7428,5 @@ function migration_addPatientStatusColumn() {
     range.setValues(values);
   }
 
-  SpreadsheetApp.getUi().alert('「稼働状況」列を追加しました。全患者を「稼働」に設定しました。');
+  Logger.log('「稼働状況」列を追加しました。全患者を「稼働」に設定しました。');
 }
