@@ -898,7 +898,7 @@
       if (h.includes('優先度') || h === '曜日優先度') return 'priority_select';
       if (h.includes('時間タイプ')) return 'time_type_select';
       if (h.includes('性別制限')) return 'sex_limit_select';
-      if (hOrig === '稼働状況') return 'status_select';
+      if (hOrig.trim() === '稼働状況' || hOrig.replace(/\s/g, '') === '稼働状況' || h.includes('稼働状況')) return 'status_select';
       if (h.includes('必要スタッフ') || h.includes('訪問回数') || h.includes('最大訪問') || h.includes('サービス時間')) return 'number';
       if (h.includes('指定タイプ') || h.includes('継続希望')) return 'staff_type_select';
       if (h.includes('操作')) return 'operation_select';
