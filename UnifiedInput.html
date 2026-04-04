@@ -782,7 +782,6 @@
         <button class="operation-btn" onclick="openSpecialWeekWizard()"><span class="icon">📅</span>特別訪問週間</button>
         <button class="operation-btn" onclick="openPatientChangeGrid()"><span class="icon">📋</span>患者個別変更（週グリッド）</button>
         <button class="operation-btn" onclick="openStaffChangeGrid()"><span class="icon">📋</span>スタッフ個別変更（週グリッド）</button>
-        <button class="operation-btn" onclick="goToPattern()"><span class="icon">📅</span>週間訪問パターン設定</button>
       </div>
       <div class="operation-group">
         <div class="operation-group-title">行操作</div>
@@ -2184,12 +2183,6 @@
     function goToOutput() {
       if (isDirty && !confirm('未保存の変更があります。破棄して移動しますか？')) return;
       var targetUrl = baseUrl ? baseUrl + '?page=output' : window.location.href.split('?')[0] + '?page=output';
-      try { window.open(targetUrl, '_top'); } catch (e) { window.location.href = targetUrl; }
-    }
-
-    function goToPattern() {
-      if (isDirty && !confirm('未保存の変更があります。破棄して移動しますか？')) return;
-      var targetUrl = baseUrl ? baseUrl + '?page=pattern' : window.location.href.split('?')[0] + '?page=pattern';
       try { window.open(targetUrl, '_top'); } catch (e) { window.location.href = targetUrl; }
     }
 
