@@ -933,11 +933,11 @@
     }
 
     /* ==============================================================
-       Populate start-time dropdown (07:00 - 19:00 in 15-min steps)
+       Populate start-time dropdown (07:00 - 20:00 in 15-min steps)
        ============================================================== */
     (function() {
       var startMinutes = 7 * 60;  // 07:00
-      var endMinutes = 19 * 60;   // 19:00
+      var endMinutes = 20 * 60;   // 20:00
       for (var m = startMinutes; m <= endMinutes; m += 15) {
         var opt = document.createElement('option');
         opt.value = m;
