@@ -620,7 +620,9 @@ function input_updateCells(sheetName, updates) {
       var addressUpdated = validUpdates.some(u => u.col === addrColIdx + 1);
       if (addressUpdated) {
         try {
-          updateSheetLatLng_(sheet, addrH2, '緯度', '経度');
+          // 住所が変更された行は緯度経度を強制更新
+          var updatedRows = validUpdates.filter(u => u.col === addrColIdx + 1).map(u => u.row);
+          updateSheetLatLng_(sheet, addrH2, '緯度', '経度', updatedRows);
         } catch (geoErr) {
           console.warn('自動位置情報更新でエラー:', geoErr);
         }
@@ -6163,7 +6165,7 @@ function 位置情報を更新_(ss) {
   return { message: '位置情報を更新しました' };
 }
 
-function updateSheetLatLng_(sheet, addrHeader, latHeader, lngHeader) {
+function updateSheetLatLng_(sheet, addrHeader, latHeader, lngHeader, forceRows) {
   if (!sheet) return;
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) return;
@@ -6171,11 +6173,20 @@ function updateSheetLatLng_(sheet, addrHeader, latHeader, lngHeader) {
   const idxAddr = header.indexOf(addrHeader), idxLat = header.indexOf(latHeader), idxLng = header.indexOf(lngHeader);
   if (idxAddr === -1 || idxLat === -1 || idxLng === -1) return;
 
+  // forceRows: 住所変更された行番号の配列（1-indexed）。指定行は緯度経度が既存でも強制更新
+  var forceSet = {};
+  if (forceRows && forceRows.length > 0) {
+    for (var f = 0; f < forceRows.length; f++) { forceSet[forceRows[f]] = true; }
+  }
+
   const geocoder = Maps.newGeocoder();
   let changed = false;
   data.forEach((row, i) => {
     const addr = row[idxAddr], lat = row[idxLat], lng = row[idxLng];
-    if (addr && (lat === '' || lng === '' || lat == null || lng == null)) {
+    const sheetRow = i + 2; // 1-indexed, ヘッダー分+1
+    const isForced = forceSet[sheetRow] === true;
+    const needsUpdate = addr && (isForced || lat === '' || lng === '' || lat == null || lng == null);
+    if (needsUpdate) {
       const res = geocoder.geocode(addr);
       if (res.status === 'OK' && res.results && res.results.length > 0) {
         const loc = res.results[0].geometry.location;
