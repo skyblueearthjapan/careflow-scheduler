@@ -27,7 +27,7 @@ class Patient:
     start_pref_min: Optional[int] = None  # minutes from midnight
     end_pref_min: Optional[int] = None
     day_priority: str = "低"         # "低","中","高" - 曜日優先度
-    status: str = ""                 # "稼働","休止","未開始","未契約","解約",""
+    status: str = ""                 # "稼働","休止","入院","未開始","未契約","解約",""
 
 
 @dataclass

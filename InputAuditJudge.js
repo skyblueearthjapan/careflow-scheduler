@@ -140,7 +140,10 @@ function inputAudit_judgePatientRow_(headers, row, rowIdx) {
   }
   // P-E08: 時間帯なのに開始/終了が空
   if (timeType === '時間帯' && !startTime) {
-    issues.push(inputAudit_issue_(rowIdx, h['希望時間帯（開始）'], '希望時間帯（開始）', 'NG', 'P-E08', '時間タイプが「時間帯」ですが時間枠が未入力です'));
+    issues.push(inputAudit_issue_(rowIdx, h['希望時間帯（開始）'], '希望時間帯（開始）', 'NG', 'P-E08', '時間タイプが「時間帯」ですが開始時刻が未入力です'));
+  }
+  if (timeType === '時間帯' && !endTime) {
+    issues.push(inputAudit_issue_(rowIdx, h['希望時間帯（終了）'], '希望時間帯（終了）', 'NG', 'P-E08', '時間タイプが「時間帯」ですが終了時刻が未入力です'));
   }
   // P-E09: 開始 >= 終了
   if (startTime && endTime) {

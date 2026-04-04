@@ -7418,7 +7418,7 @@ function migration_addPatientStatusColumn() {
   if (lastRow >= 2) {
     var range = sheet.getRange(2, insertCol, lastRow - 1, 1);
     var rule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['稼働', '休止', '未開始', '未契約', '解約'], true)
+      .requireValueInList(['稼働', '休止', '入院', '未開始', '未契約', '解約'], true)
       .setAllowInvalid(false)
       .build();
     range.setDataValidation(rule);
