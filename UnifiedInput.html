@@ -422,6 +422,50 @@
     .staff-change-grid select { width: auto; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 11px; }
     .staff-change-grid input[type="text"] { width: 100%; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 11px; }
     .staff-change-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--color-border); background: #f9f9f9; }
+    /* ============================================================
+       入力監査ビュー
+       ============================================================ */
+    .data-table td.audit-ng { border: 2px solid var(--color-error) !important; background: #FFF0F0 !important; }
+    .data-table td.audit-warn { border: 2px solid var(--color-orange) !important; background: #FFF8F0 !important; }
+    .data-table td.audit-ng::after { content: ' \2717'; color: var(--color-error); font-size: 10px; font-weight: bold; }
+    .data-table td.audit-warn::after { content: ' \25B3'; color: var(--color-orange); font-size: 10px; font-weight: bold; }
+    .data-table tr.audit-row-ng td:first-child { border-left: 4px solid var(--color-error) !important; }
+    .data-table tr.audit-row-warn td:first-child { border-left: 4px solid var(--color-orange) !important; }
+    .audit-summary-bar { display: none; align-items: center; gap: 12px; padding: 8px 14px; background: #FFF8E1; border-radius: 8px; border: 1px solid #FFE082; margin-bottom: 8px; font-size: 13px; }
+    .audit-summary-bar.active { display: flex; }
+    .audit-stat { display: flex; align-items: center; gap: 4px; }
+    .audit-stat.ng { color: #C62828; font-weight: 600; }
+    .audit-stat.warn { color: #E65100; font-weight: 600; }
+    .audit-stat.ok { color: #2E7D32; font-weight: 600; }
+    .audit-filter-btns { display: flex; gap: 4px; }
+    .audit-filter-btn { padding: 4px 10px; border: 1px solid var(--color-border); border-radius: 4px; background: white; font-size: 11px; cursor: pointer; }
+    .audit-filter-btn.active { background: var(--color-blue); color: white; border-color: var(--color-blue); }
+    .audit-filter-btn:hover:not(.active) { background: var(--color-blue-light); }
+    .audit-run-btn { padding: 6px 14px; background: #FF9800; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
+    .audit-run-btn:hover { background: #F57C00; }
+    .audit-run-btn:disabled { background: var(--color-disabled); cursor: not-allowed; }
+    .tab-btn .tab-audit-badge { display: none; margin-left: 4px; font-size: 9px; padding: 1px 5px; border-radius: 8px; font-weight: 700; color: white; }
+    .tab-btn .tab-audit-badge.has-ng { display: inline-block; background: var(--color-error); }
+    .tab-btn .tab-audit-badge.has-warn { display: inline-block; background: var(--color-orange); }
+    .audit-modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 2000; justify-content: center; align-items: center; }
+    .audit-modal-overlay.active { display: flex; }
+    .audit-modal { background: white; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); width: 520px; max-height: 80vh; overflow-y: auto; }
+    .audit-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--color-border); background: #F5F5F5; border-radius: 12px 12px 0 0; }
+    .audit-modal-header h3 { margin: 0; font-size: 15px; }
+    .audit-modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #999; padding: 4px 8px; border-radius: 4px; }
+    .audit-modal-close:hover { background: #eee; }
+    .audit-modal-body { padding: 16px 20px; }
+    .audit-issue-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+    .audit-issue-item.ng { background: #FFEBEE; border-left: 4px solid var(--color-error); }
+    .audit-issue-item.warn { background: #FFF3E0; border-left: 4px solid var(--color-orange); }
+    .audit-issue-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .audit-issue-content { flex: 1; }
+    .audit-issue-rule { font-size: 10px; color: #999; margin-top: 2px; }
+    .audit-issue-field { font-weight: 600; color: var(--color-text); }
+    .audit-modal-footer { padding: 12px 20px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 8px; }
+    .audit-modal-footer button { padding: 8px 16px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--color-border); background: white; }
+    .audit-modal-footer button.primary { background: var(--color-blue); color: white; border-color: var(--color-blue); }
+    .audit-modal-footer button:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
@@ -702,6 +746,20 @@
         <button onclick="clearWeekFilter()" style="padding:4px 10px; font-size:11px; border:1px solid #90caf9; background:#fff; border-radius:4px; cursor:pointer;">フィルタ解除</button>
         <span class="week-filter-badge" id="weekFilterBadge" style="display:none;">フィルタ中</span>
       </div>
+      <!-- 入力監査サマリバー -->
+      <div class="audit-summary-bar active" id="auditSummaryBar">
+        <button class="audit-run-btn" id="auditRunBtn" onclick="runInputAudit()">入力監査を実行</button>
+        <div class="audit-stat ng" id="auditStatNg" style="display:none;">&#10007; <span id="auditNgCount">0</span>件</div>
+        <div class="audit-stat warn" id="auditStatWarn" style="display:none;">&#9651; <span id="auditWarnCount">0</span>件</div>
+        <div class="audit-stat ok" id="auditStatOk" style="display:none;">&#10003; <span id="auditOkCount">0</span>件</div>
+        <div class="audit-filter-btns" id="auditFilterBtns" style="display:none;">
+          <button class="audit-filter-btn active" data-filter="all" onclick="setAuditFilter('all')">全て</button>
+          <button class="audit-filter-btn" data-filter="issues" onclick="setAuditFilter('issues')">NG+WARN</button>
+          <button class="audit-filter-btn" data-filter="ng" onclick="setAuditFilter('ng')">NGのみ</button>
+        </div>
+        <span style="flex:1;"></span>
+        <span id="auditTimestamp" style="font-size:11px;color:#999;"></span>
+      </div>
       <div id="mainContent">
         <div id="normalTableArea">
           <div class="table-container">
@@ -755,12 +813,12 @@
 
   <div class="bottom-bar">
     <div class="tabs-left">
-      <button class="tab-btn active" data-sheet="患者マスタ" onclick="showSheet('患者マスタ', this)">患者マスタ</button>
-      <button class="tab-btn" data-sheet="スタッフマスタ" onclick="showSheet('スタッフマスタ', this)">スタッフマスタ</button>
-      <button class="tab-btn" data-sheet="個別変更リクエスト" onclick="showSheet('個別変更リクエスト', this)">患者個別変更</button>
-      <button class="tab-btn" data-sheet="スタッフ個別変更リクエスト" onclick="showSheet('スタッフ個別変更リクエスト', this)">スタッフ個別変更</button>
-      <button class="tab-btn" data-sheet="イベントリクエスト" onclick="showSheet('イベントリクエスト', this)">イベント</button>
-      <button class="tab-btn" data-sheet="スタッフ同行割付" onclick="showSheet('スタッフ同行割付', this)">同行割付</button>
+      <button class="tab-btn active" data-sheet="患者マスタ" onclick="showSheet('患者マスタ', this)">患者マスタ<span class="tab-audit-badge" id="auditBadge_患者マスタ"></span></button>
+      <button class="tab-btn" data-sheet="スタッフマスタ" onclick="showSheet('スタッフマスタ', this)">スタッフマスタ<span class="tab-audit-badge" id="auditBadge_スタッフマスタ"></span></button>
+      <button class="tab-btn" data-sheet="個別変更リクエスト" onclick="showSheet('個別変更リクエスト', this)">患者個別変更<span class="tab-audit-badge" id="auditBadge_個別変更リクエスト"></span></button>
+      <button class="tab-btn" data-sheet="スタッフ個別変更リクエスト" onclick="showSheet('スタッフ個別変更リクエスト', this)">スタッフ個別変更<span class="tab-audit-badge" id="auditBadge_スタッフ個別変更リクエスト"></span></button>
+      <button class="tab-btn" data-sheet="イベントリクエスト" onclick="showSheet('イベントリクエスト', this)">イベント<span class="tab-audit-badge" id="auditBadge_イベントリクエスト"></span></button>
+      <button class="tab-btn" data-sheet="スタッフ同行割付" onclick="showSheet('スタッフ同行割付', this)">同行割付<span class="tab-audit-badge" id="auditBadge_スタッフ同行割付"></span></button>
       <button class="tab-btn" data-sheet="特別訪問週間" onclick="showSpecialWeekSheet(this)">特別訪問週間</button>
     </div>
     <div class="tabs-right"><a class="nav-link" onclick="goToOutput()">出力画面へ →</a></div>
@@ -1213,6 +1271,7 @@
       editingCell = null;
       focusedCell = null;
       updateButtonStates();
+      clearAuditState();
     }
 
     function loadSheet(sheetName) {
@@ -1292,7 +1351,10 @@
 
       document.getElementById('dataTable').innerHTML = '<thead>' + headerHtml + '</thead><tbody>' + rowsHtml + '</tbody>';
       attachTableEvents();
-
+      // 監査結果があれば再適用
+      if (auditResults && auditResults.success && auditResults.sheetName === currentSheetName) {
+        applyAuditResults();
+      }
     }
 
     function formatCellDisplay(value, headerName) {
@@ -1375,6 +1437,10 @@
         if (td.hasAttribute('data-col')) {
           var colIdx = parseInt(td.getAttribute('data-col'));
           setFocusedCell(rowIdx, colIdx);
+          // 監査セルのシングルクリックでモーダル表示
+          if (e.detail === 1 && (td.classList.contains('audit-ng') || td.classList.contains('audit-warn'))) {
+            showAuditCellModal(rowIdx, colIdx);
+          }
           if (e.detail === 2) { // ダブルクリック
             startCellEdit(rowIdx, colIdx);
           }
@@ -4475,6 +4541,202 @@
         .input_saveStaffChangeGrid(payload);
     }
 
+    // ============================================================
+    // 入力監査
+    // ============================================================
+    var auditResults = null;
+    var auditFilter = 'all';
+    var auditModalContext = null;
+
+    function runInputAudit() {
+      var btn = document.getElementById('auditRunBtn');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.textContent = '監査中...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.textContent = '入力監査を実行';
+          if (result && result.success) {
+            auditResults = result;
+            applyAuditResults();
+            showToast('info', '監査完了: NG ' + result.summary.ng + '件, WARN ' + result.summary.warn + '件');
+          } else {
+            showToast('error', '監査エラー: ' + ((result && result.error) || '不明'));
+          }
+        })
+        .withFailureHandler(function(e) {
+          btn.disabled = false;
+          btn.textContent = '入力監査を実行';
+          showToast('error', '監査エラー: ' + e.message);
+        })
+        .inputAudit_runAudit(currentSheetName);
+    }
+
+    function applyAuditResults() {
+      if (!auditResults || !auditResults.success) return;
+      var bar = document.getElementById('auditSummaryBar');
+      bar.classList.add('active');
+      var ngCount = auditResults.summary.ng;
+      var warnCount = auditResults.summary.warn;
+      var okCount = auditResults.summary.ok;
+      document.getElementById('auditNgCount').textContent = ngCount;
+      document.getElementById('auditWarnCount').textContent = warnCount;
+      document.getElementById('auditOkCount').textContent = okCount;
+      document.getElementById('auditStatNg').style.display = ngCount > 0 ? 'flex' : 'none';
+      document.getElementById('auditStatWarn').style.display = warnCount > 0 ? 'flex' : 'none';
+      document.getElementById('auditStatOk').style.display = 'flex';
+      document.getElementById('auditFilterBtns').style.display = 'flex';
+      document.getElementById('auditTimestamp').textContent = '最終実行: ' + new Date(auditResults.timestamp).toLocaleTimeString('ja-JP');
+
+      // セルから既存の監査クラスを除去
+      document.querySelectorAll('#dataTable td.audit-ng, #dataTable td.audit-warn').forEach(function(td) {
+        td.classList.remove('audit-ng', 'audit-warn');
+      });
+      document.querySelectorAll('#dataTable tr.audit-row-ng, #dataTable tr.audit-row-warn').forEach(function(tr) {
+        tr.classList.remove('audit-row-ng', 'audit-row-warn');
+      });
+
+      // セルに監査クラスを適用
+      var cellResults = auditResults.cellResults || [];
+      for (var i = 0; i < cellResults.length; i++) {
+        var cr = cellResults[i];
+        var td = document.querySelector('td[data-row="' + cr.rowIdx + '"][data-col="' + cr.colIdx + '"]');
+        if (td) {
+          if (cr.level === 'NG') { td.classList.remove('audit-warn'); td.classList.add('audit-ng'); }
+          else if (cr.level === 'WARN' && !td.classList.contains('audit-ng')) { td.classList.add('audit-warn'); }
+        }
+      }
+
+      // 行レベルの監査クラスを適用
+      var rowResults = auditResults.rowResults || [];
+      for (var j = 0; j < rowResults.length; j++) {
+        var rr = rowResults[j];
+        var tr = document.querySelector('#dataTable tbody tr[data-row="' + rr.rowIdx + '"]');
+        if (tr) {
+          if (rr.level === 'NG') tr.classList.add('audit-row-ng');
+          else if (rr.level === 'WARN') tr.classList.add('audit-row-warn');
+        }
+      }
+      applyAuditFilter();
+      updateTabAuditBadge(currentSheetName, ngCount, warnCount);
+    }
+
+    function setAuditFilter(filter) {
+      auditFilter = filter;
+      document.querySelectorAll('.audit-filter-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-filter') === filter);
+      });
+      applyAuditFilter();
+    }
+
+    function applyAuditFilter() {
+      if (!auditResults || !auditResults.success) return;
+      var rows = document.querySelectorAll('#dataTable tbody tr');
+      var rowLevelMap = {};
+      var rowResults = auditResults.rowResults || [];
+      for (var i = 0; i < rowResults.length; i++) { rowLevelMap[rowResults[i].rowIdx] = rowResults[i].level; }
+      rows.forEach(function(tr) {
+        var rowIdx = parseInt(tr.getAttribute('data-row'));
+        if (isNaN(rowIdx)) return;
+        var level = rowLevelMap[rowIdx] || 'OK';
+        if (auditFilter === 'all') { tr.style.display = ''; }
+        else if (auditFilter === 'issues') { tr.style.display = (level === 'NG' || level === 'WARN') ? '' : 'none'; }
+        else if (auditFilter === 'ng') { tr.style.display = (level === 'NG') ? '' : 'none'; }
+      });
+    }
+
+    function showAuditCellModal(rowIdx, colIdx) {
+      if (!auditResults || !auditResults.cellResults) return;
+      var issues = auditResults.cellResults.filter(function(cr) { return cr.rowIdx === rowIdx && cr.colIdx === colIdx; });
+      var rowIssues = auditResults.cellResults.filter(function(cr) { return cr.rowIdx === rowIdx; });
+      if (issues.length === 0 && rowIssues.length === 0) return;
+      var fieldName = (tableData && tableData.header && tableData.header[colIdx]) || '';
+      var cellValue = '';
+      if (tableData && tableData.rows && tableData.rows[rowIdx]) {
+        cellValue = tableData.rows[rowIdx][colIdx];
+        if (cellValue === null || cellValue === undefined) cellValue = '(空)';
+        else cellValue = String(cellValue);
+      }
+      auditModalContext = { rowIdx: rowIdx, colIdx: colIdx };
+      document.getElementById('auditModalTitle').textContent = '行 ' + (rowIdx + 1) + ' - ' + fieldName;
+      var html = '<div style="margin-bottom:12px;padding:8px 12px;background:#F5F5F5;border-radius:6px;">';
+      html += '<span style="font-size:11px;color:#999;">現在の値:</span> <strong>' + escapeHtml(cellValue) + '</strong></div>';
+      if (issues.length > 0) {
+        html += '<div style="margin-bottom:8px;font-size:12px;font-weight:600;">このセルの問題</div>';
+        for (var i = 0; i < issues.length; i++) {
+          var iss = issues[i];
+          html += '<div class="audit-issue-item ' + (iss.level === 'NG' ? 'ng' : 'warn') + '">';
+          html += '<span class="audit-issue-icon">' + (iss.level === 'NG' ? '&#10007;' : '&#9651;') + '</span>';
+          html += '<div class="audit-issue-content"><div>' + escapeHtml(iss.message) + '</div>';
+          html += '<div class="audit-issue-rule">' + iss.ruleId + '</div></div></div>';
+        }
+      }
+      var otherIssues = rowIssues.filter(function(ri) { return ri.colIdx !== colIdx; });
+      if (otherIssues.length > 0) {
+        html += '<div style="margin-top:16px;margin-bottom:8px;font-size:12px;font-weight:600;color:#666;">この行の他の問題</div>';
+        for (var j = 0; j < otherIssues.length; j++) {
+          var oi = otherIssues[j];
+          html += '<div class="audit-issue-item ' + (oi.level === 'NG' ? 'ng' : 'warn') + '" style="opacity:0.7;">';
+          html += '<span class="audit-issue-icon">' + (oi.level === 'NG' ? '&#10007;' : '&#9651;') + '</span>';
+          html += '<div class="audit-issue-content"><span class="audit-issue-field">' + escapeHtml(oi.field) + ':</span> ';
+          html += escapeHtml(oi.message) + '<div class="audit-issue-rule">' + oi.ruleId + '</div></div></div>';
+        }
+      }
+      document.getElementById('auditModalBody').innerHTML = html;
+      document.getElementById('auditModalOverlay').classList.add('active');
+    }
+
+    function closeAuditModal() {
+      document.getElementById('auditModalOverlay').classList.remove('active');
+      auditModalContext = null;
+    }
+
+    function editAuditCell() {
+      if (!auditModalContext) return;
+      var ctx = auditModalContext;
+      closeAuditModal();
+      startCellEdit(ctx.rowIdx, ctx.colIdx);
+    }
+
+    function updateTabAuditBadge(sheetName, ngCount, warnCount) {
+      var badge = document.getElementById('auditBadge_' + sheetName);
+      if (!badge) return;
+      if (ngCount > 0) { badge.textContent = ngCount; badge.className = 'tab-audit-badge has-ng'; }
+      else if (warnCount > 0) { badge.textContent = warnCount; badge.className = 'tab-audit-badge has-warn'; }
+      else { badge.className = 'tab-audit-badge'; }
+    }
+
+    function clearAuditState() {
+      auditResults = null;
+      auditFilter = 'all';
+      document.getElementById('auditStatNg').style.display = 'none';
+      document.getElementById('auditStatWarn').style.display = 'none';
+      document.getElementById('auditStatOk').style.display = 'none';
+      document.getElementById('auditFilterBtns').style.display = 'none';
+      document.getElementById('auditTimestamp').textContent = '';
+      // フィルターボタンをリセット
+      document.querySelectorAll('.audit-filter-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-filter') === 'all');
+      });
+    }
+
   </script>
+
+  <!-- 入力監査詳細モーダル -->
+  <div class="audit-modal-overlay" id="auditModalOverlay" onclick="if(event.target===this)closeAuditModal()">
+    <div class="audit-modal">
+      <div class="audit-modal-header">
+        <h3 id="auditModalTitle">監査詳細</h3>
+        <button class="audit-modal-close" onclick="closeAuditModal()">&#215;</button>
+      </div>
+      <div class="audit-modal-body" id="auditModalBody"></div>
+      <div class="audit-modal-footer">
+        <button onclick="closeAuditModal()">閉じる</button>
+        <button class="primary" onclick="editAuditCell()">この項目を編集</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
