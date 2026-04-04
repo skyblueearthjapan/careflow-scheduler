@@ -116,6 +116,7 @@ class WeeklyPattern:
     service_min: int = 60
     need_staff: int = 1
     note: str = ""
+    time_type: str = ""           # "固定","午前","午後","終日","時間帯",""
 
 
 @dataclass

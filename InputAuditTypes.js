@@ -194,7 +194,29 @@ var INPUT_AUDIT_RULES = [
   { id: 'M-E05', sheet: 'スタッフ同行割付', field: '開始日', level: 'NG',
     message: '開始日が終了日より後になっています', condition: '開始 > 終了' },
   { id: 'M-E06', sheet: 'スタッフ同行割付', field: 'trainee_staff_id', level: 'NG',
-    message: '研修スタッフとメンターが同一人物です', condition: 'trainee = mentor' }
+    message: '研修スタッフとメンターが同一人物です', condition: 'trainee = mentor' },
+
+  // ────────────────────────────────────────
+  // 週間訪問パターン — ERROR
+  // ────────────────────────────────────────
+  { id: 'WP-E01', sheet: '週間訪問パターン', field: 'patient_id', level: 'NG',
+    message: '患者IDが未設定です', condition: '空' },
+  { id: 'WP-E02', sheet: '週間訪問パターン', field: '曜日コード', level: 'NG',
+    message: '曜日コードが未設定です', condition: '空' },
+  { id: 'WP-E03', sheet: '週間訪問パターン', field: '開始時刻', level: 'NG',
+    message: '時間タイプが「固定」または「時間帯」ですが開始時刻が未入力です', condition: '固定/時間帯 かつ 開始空' },
+  { id: 'WP-E04', sheet: '週間訪問パターン', field: 'サービス時間', level: 'NG',
+    message: 'サービス時間が未入力です', condition: '空' },
+  { id: 'WP-E05', sheet: '週間訪問パターン', field: '時間タイプ', level: 'NG',
+    message: '時間タイプの値が不正です', condition: '空でなく選択肢外の値' },
+
+  // ────────────────────────────────────────
+  // 週間訪問パターン — WARN
+  // ────────────────────────────────────────
+  { id: 'WP-W01', sheet: '週間訪問パターン', field: '時間タイプ', level: 'WARN',
+    message: '時間タイプが未設定です。「時間帯」として扱われます', condition: '空' },
+  { id: 'WP-W02', sheet: '週間訪問パターン', field: '開始時刻', level: 'WARN',
+    message: '時間タイプが午前/午後/終日ですが開始時刻が入力されています。開始時刻は無視されます', condition: '午前/午後/終日 かつ 開始あり' }
 ];
 
 // ============================================================

@@ -726,11 +726,22 @@
       <div class="modal-title" id="modalTitle">&#x8A2A;&#x554F;&#x67A0;&#x3092;&#x8A2D;&#x5B9A;</div>
 
       <div class="modal-field">
+        <label>時間タイプ</label>
+        <select id="modalTimeType" onchange="onTimeTypeChange()">
+          <option value="時間帯">時間帯（希望範囲）</option>
+          <option value="固定">固定</option>
+          <option value="午前">午前（9:00-12:00）</option>
+          <option value="午後">午後（13:00-17:00）</option>
+          <option value="終日">終日（9:00-18:00）</option>
+        </select>
+      </div>
+
+      <div class="modal-field" id="modalStartRow">
         <label>&#x958B;&#x59CB;&#x6642;&#x523B;</label>
         <select id="modalStart"></select>
       </div>
 
-      <div class="modal-field">
+      <div class="modal-field" id="modalSvcRow">
         <label>&#x30B5;&#x30FC;&#x30D3;&#x30B9;&#x6642;&#x9593;</label>
         <select id="modalSvcMin">
           <option value="15">15&#x5206;</option>
@@ -1112,7 +1123,8 @@
                 endMin: s.endMin,
                 svcMin: s.svcMin,
                 needStaff: s.needStaff,
-                note: s.note || ''
+                note: s.note || '',
+                timeType: s.timeType || ''
               };
             }
           }
@@ -1239,10 +1251,17 @@
           // Filled cell
           html += '<div class="day-cell day-cell-filled" data-action="edit" data-day="' + escHtml(dayCode) + '">';
           html += '<button class="btn-delete-slot" data-action="delete" data-day="' + escHtml(dayCode) + '" title="\u524A\u9664">&times;</button>';
-          html += '<div class="slot-time">' + fmtMin(slot.startMin) + '</div>';
-          html += '<div class="slot-time">\u301C</div>';
-          html += '<div class="slot-time">' + fmtMin(slot.endMin) + '</div>';
-          html += '<div class="slot-duration">' + (slot.svcMin || '') + '\u5206</div>';
+          var tt = slot.timeType || '';
+          if (tt === '午前' || tt === '午後' || tt === '終日') {
+            html += '<div class="slot-time" style="color:#1565c0;font-weight:600;">' + tt + '</div>';
+            html += '<div class="slot-duration">' + (slot.svcMin || '') + '\u5206</div>';
+          } else {
+            if (tt === '固定') html += '<div style="font-size:10px;color:#999;">固定</div>';
+            html += '<div class="slot-time">' + fmtMin(slot.startMin) + '</div>';
+            html += '<div class="slot-time">\u301C</div>';
+            html += '<div class="slot-time">' + fmtMin(slot.endMin) + '</div>';
+            html += '<div class="slot-duration">' + (slot.svcMin || '') + '\u5206</div>';
+          }
           if (slot.needStaff && slot.needStaff > 1) {
             html += '<div class="slot-staff">' + slot.needStaff + '\u540D\u4F53\u5236</div>';
           }
@@ -1328,8 +1347,33 @@
 
       elModalNote.value = '';
 
+      // 時間タイプのデフォルト: 患者マスタの設定を参照
+      var defaultTimeType = '時間帯';
+      if (currentPatient && currentPatient.timeType) {
+        defaultTimeType = currentPatient.timeType;
+      }
+      document.getElementById('modalTimeType').value = defaultTimeType;
+      onTimeTypeChange();
+
       updateModalEnd();
       elSlotModal.classList.add('active');
+    }
+
+    /* ==============================================================
+       Time Type Change Handler
+       ============================================================== */
+    function onTimeTypeChange() {
+      var tt = document.getElementById('modalTimeType').value;
+      var startRow = document.getElementById('modalStartRow');
+      var endRow = document.getElementById('modalEndDisplay').parentElement;
+      if (tt === '午前' || tt === '午後' || tt === '終日') {
+        if (startRow) startRow.style.display = 'none';
+        if (endRow) endRow.style.display = 'none';
+      } else {
+        if (startRow) startRow.style.display = '';
+        if (endRow) endRow.style.display = '';
+      }
+      updateModalEnd();
     }
 
     /* ==============================================================
@@ -1352,6 +1396,10 @@
       elModalNeedStaff.value = slot.needStaff || 1;
       elModalNote.value = slot.note || '';
 
+      // 時間タイプを復元
+      document.getElementById('modalTimeType').value = slot.timeType || '時間帯';
+      onTimeTypeChange();
+
       updateModalEnd();
       elSlotModal.classList.add('active');
     }
@@ -1373,17 +1421,23 @@
     elModalConfirm.addEventListener('click', function() {
       if (!modalEditingDay) return;
 
+      var timeType = document.getElementById('modalTimeType').value;
       var startMin = parseInt(elModalStart.value, 10);
       var svcMin = parseInt(elModalSvcMin.value, 10);
       var needStaff = parseInt(elModalNeedStaff.value, 10);
       var note = elModalNote.value || '';
 
-      if (isNaN(startMin) || isNaN(svcMin)) {
-        showToast('\u6642\u523B\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044', 'warn');
-        return;
+      // 午前/午後/終日の場合、開始時刻は不要
+      if (timeType === '午前' || timeType === '午後' || timeType === '終日') {
+        startMin = null;
+        var endMin = null;
+      } else {
+        if (isNaN(startMin) || isNaN(svcMin)) {
+          showToast('\u6642\u523B\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044', 'warn');
+          return;
+        }
+        var endMin = startMin + svcMin;
       }
-
-      var endMin = startMin + svcMin;
 
       currentSlots[modalEditingDay] = {
         dayCode: modalEditingDay,
@@ -1391,7 +1445,8 @@
         endMin: endMin,
         svcMin: svcMin,
         needStaff: needStaff,
-        note: note
+        note: note,
+        timeType: timeType
       };
 
       // Check if slot is on NG day

@@ -1156,6 +1156,18 @@ def api_allocate():
                 lat=p.get("latitude"),
                 lng=p.get("longitude"),
                 service_minutes=p.get("service_minutes", 60),
+                weekly_count=p.get("weekly_count", 0),
+                need_staff=p.get("need_staff", 1),
+                sex_limit=p.get("sex_limit", ""),
+                cont_pref=p.get("continuation_pref", ""),
+                fixed_staff_ids=p.get("fixed_staff_ids", []),
+                fixed_type=p.get("fixed_type", ""),
+                ng_staff_ids=p.get("ng_staff_ids", []),
+                pref_days=p.get("pref_days", []),
+                ng_days=p.get("ng_days", []),
+                time_type=p.get("time_type", ""),
+                start_pref_min=p.get("start_pref_minutes"),
+                end_pref_min=p.get("end_pref_minutes"),
                 day_priority=p.get("day_priority", "低"),
                 status=p.get("status", ""),
             )
@@ -1198,6 +1210,7 @@ def api_allocate():
                 service_min=wp.get("service_minutes", 60),
                 need_staff=wp.get("need_staff", 1),
                 note=wp.get("note", ""),
+                time_type=wp.get("time_type", ""),
             ))
 
         # Parse confirmed history (optional)

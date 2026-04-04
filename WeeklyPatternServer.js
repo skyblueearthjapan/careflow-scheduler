@@ -162,6 +162,7 @@ function wp_getPattern(patientId) {
     var colSvc = headers.indexOf('サービス時間');
     var colStaff = headers.indexOf('必要スタッフ数');
     var colNote = headers.indexOf('備考');
+    var colTimeType = headers.indexOf('時間タイプ');
 
     var slots = [];
     for (var i = 1; i < data.length; i++) {
@@ -174,7 +175,8 @@ function wp_getPattern(patientId) {
         endMin: colEnd >= 0 ? wp_serialToMinutes_(row[colEnd]) : null,
         svcMin: colSvc >= 0 ? Number(row[colSvc]) || 0 : 0,
         needStaff: colStaff >= 0 ? Number(row[colStaff]) || 1 : 1,
-        note: colNote >= 0 ? String(row[colNote] || '') : ''
+        note: colNote >= 0 ? String(row[colNote] || '') : '',
+        timeType: colTimeType >= 0 ? String(row[colTimeType] || '') : ''
       });
     }
 
@@ -241,7 +243,8 @@ function wp_savePattern(patientId, patientName, slotsJson) {
           endSerial,
           Number(slot.svcMin) || 0,
           Number(slot.needStaff) || 1,
-          slot.note || ''
+          slot.note || '',
+          slot.timeType || ''
         ];
         sheet.appendRow(newRow);
       }
@@ -269,9 +272,9 @@ function wp_ensureSheet_(ss) {
   var sheet = ss.getSheetByName('週間訪問パターン');
   if (!sheet) {
     sheet = ss.insertSheet('週間訪問パターン');
-    sheet.getRange(1, 1, 1, 8).setValues([[
+    sheet.getRange(1, 1, 1, 9).setValues([[
       'patient_id', '患者名', '曜日コード', '開始時刻', '終了時刻',
-      'サービス時間', '必要スタッフ数', '備考'
+      'サービス時間', '必要スタッフ数', '備考', '時間タイプ'
     ]]);
     sheet.setFrozenRows(1);
   }

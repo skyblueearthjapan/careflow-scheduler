@@ -77,6 +77,8 @@ function inputAudit_judgeRow_(sheetName, headers, row, rowIdx) {
       return inputAudit_judgeEventRow_(headers, row, rowIdx);
     case 'スタッフ同行割付':
       return inputAudit_judgeMentorRow_(headers, row, rowIdx);
+    case '週間訪問パターン':
+      return inputAudit_judgePatternRow_(headers, row, rowIdx);
     default:
       return [];
   }
@@ -402,6 +404,44 @@ function inputAudit_judgeMentorRow_(headers, row, rowIdx) {
   // M-E06: 同一人物
   if (trainee && mentor && trainee === mentor) {
     issues.push(inputAudit_issue_(rowIdx, h['trainee_staff_id'], 'trainee_staff_id', 'NG', 'M-E06', '研修スタッフとメンターが同一人物です'));
+  }
+
+  return issues;
+}
+
+// ============================================================
+// 週間訪問パターン判定
+// ============================================================
+
+function inputAudit_judgePatternRow_(headers, row, rowIdx) {
+  var issues = [];
+  var h = inputAudit_headerMap_(headers);
+
+  var pid = inputAudit_getVal_(row, h['patient_id']);
+  var dayCode = inputAudit_getVal_(row, h['曜日コード']);
+  var startTime = inputAudit_getVal_(row, h['開始時刻']);
+  var svcTime = inputAudit_getVal_(row, h['サービス時間']);
+  var timeType = inputAudit_getVal_(row, h['時間タイプ']);
+
+  // WP-E01
+  if (!pid) issues.push(inputAudit_issue_(rowIdx, h['patient_id'], 'patient_id', 'NG', 'WP-E01', '患者IDが未設定です'));
+  // WP-E02
+  if (!dayCode) issues.push(inputAudit_issue_(rowIdx, h['曜日コード'], '曜日コード', 'NG', 'WP-E02', '曜日コードが未設定です'));
+  // WP-E04
+  if (!svcTime) issues.push(inputAudit_issue_(rowIdx, h['サービス時間'], 'サービス時間', 'NG', 'WP-E04', 'サービス時間が未入力です'));
+  // WP-E05: 時間タイプの値が不正
+  if (timeType && !inputAudit_isValidChoice(timeType, '時間タイプ')) {
+    issues.push(inputAudit_issue_(rowIdx, h['時間タイプ'], '時間タイプ', 'NG', 'WP-E05', '時間タイプの値が不正です（「' + timeType + '」）'));
+  }
+  // WP-E03: 固定/時間帯なのに開始時刻空
+  if ((timeType === '固定' || timeType === '時間帯') && !startTime) {
+    issues.push(inputAudit_issue_(rowIdx, h['開始時刻'], '開始時刻', 'NG', 'WP-E03', '時間タイプが「' + timeType + '」ですが開始時刻が未入力です'));
+  }
+  // WP-W01: 時間タイプ空
+  if (!timeType) issues.push(inputAudit_issue_(rowIdx, h['時間タイプ'], '時間タイプ', 'WARN', 'WP-W01', '時間タイプが未設定です。「時間帯」として扱われます'));
+  // WP-W02: 午前/午後/終日なのに開始時刻あり
+  if ((timeType === '午前' || timeType === '午後' || timeType === '終日') && startTime) {
+    issues.push(inputAudit_issue_(rowIdx, h['開始時刻'], '開始時刻', 'WARN', 'WP-W02', '時間タイプが「' + timeType + '」ですが開始時刻が入力されています。開始時刻は無視されます'));
   }
 
   return issues;

@@ -363,6 +363,13 @@ function pyb_loadPatientMasters_(ss, tz) {
   var ci = {
     pid: fc('patient_id'), name: fc('患者名'), area: fc('エリア'),
     lat: fc('緯度'), lng: fc('経度'), svc: fc('サービス時間'),
+    weeklyCount: fc('週訪問回数'), needStaff: fc('必要スタッフ数'),
+    sexLimit: fc('性別制限'), contPref: fc('継続希望'),
+    fixedStaff: fc('指定スタッフID'), fixedType: fc('指定タイプ'),
+    ngStaff: fc('NGスタッフID'),
+    prefDays: fc('希望曜日'), ngDays: fc('曜日NG'),
+    timeType: fc('時間タイプ'),
+    startPref: fc('希望時間帯（開始）'), endPref: fc('希望時間帯（終了）'),
     dayPriority: fc('曜日優先度'),
     status: fc('稼働状況')
   };
@@ -379,6 +386,18 @@ function pyb_loadPatientMasters_(ss, tz) {
       latitude: ci.lat >= 0 ? (r[ci.lat] || null) : null,
       longitude: ci.lng >= 0 ? (r[ci.lng] || null) : null,
       service_minutes: ci.svc >= 0 ? (Number(r[ci.svc]) || 60) : 60,
+      weekly_count: ci.weeklyCount >= 0 ? (Number(r[ci.weeklyCount]) || 0) : 0,
+      need_staff: ci.needStaff >= 0 ? (Number(r[ci.needStaff]) || 1) : 1,
+      sex_limit: ci.sexLimit >= 0 ? String(r[ci.sexLimit] || '') : '',
+      continuation_pref: ci.contPref >= 0 ? String(r[ci.contPref] || '') : '',
+      fixed_staff_ids: ci.fixedStaff >= 0 ? String(r[ci.fixedStaff] || '').split(',').map(function(s){return s.trim();}).filter(function(s){return s;}) : [],
+      fixed_type: ci.fixedType >= 0 ? String(r[ci.fixedType] || '') : '',
+      ng_staff_ids: ci.ngStaff >= 0 ? String(r[ci.ngStaff] || '').split(',').map(function(s){return s.trim();}).filter(function(s){return s;}) : [],
+      pref_days: ci.prefDays >= 0 ? pyb_normalizeWeekdays_(String(r[ci.prefDays] || '')) : [],
+      ng_days: ci.ngDays >= 0 ? pyb_normalizeWeekdays_(String(r[ci.ngDays] || '')) : [],
+      time_type: ci.timeType >= 0 ? String(r[ci.timeType] || '') : '',
+      start_pref_minutes: ci.startPref >= 0 ? pyb_timeToMin_(r[ci.startPref], tz) : null,
+      end_pref_minutes: ci.endPref >= 0 ? pyb_timeToMin_(r[ci.endPref], tz) : null,
       day_priority: ci.dayPriority >= 0 ? String(r[ci.dayPriority] || '低') : '低',
       status: ci.status >= 0 ? String(r[ci.status] || '') : ''
     });
@@ -572,7 +591,7 @@ function pyb_loadWeeklyPatterns_(ss, tz) {
     return -1;
   }
 
-  var ci = { pid: fc('patient_id'), name: fc('患者名'), day: fc('曜日コード'), start: fc('開始時刻'), end: fc('終了時刻'), svc: fc('サービス時間'), need: fc('必要スタッフ数'), note: fc('備考') };
+  var ci = { pid: fc('patient_id'), name: fc('患者名'), day: fc('曜日コード'), start: fc('開始時刻'), end: fc('終了時刻'), svc: fc('サービス時間'), need: fc('必要スタッフ数'), note: fc('備考'), timeType: fc('時間タイプ') };
 
   var results = [];
   for (var i = 1; i < data.length; i++) {
@@ -587,7 +606,8 @@ function pyb_loadWeeklyPatterns_(ss, tz) {
       end_time_minutes: ci.end >= 0 ? pyb_timeToMin_(r[ci.end], tz) : null,
       service_minutes: ci.svc >= 0 ? (Number(r[ci.svc]) || 60) : 60,
       need_staff: ci.need >= 0 ? (Number(r[ci.need]) || 1) : 1,
-      note: ci.note >= 0 ? String(r[ci.note] || '') : ''
+      note: ci.note >= 0 ? String(r[ci.note] || '') : '',
+      time_type: ci.timeType >= 0 ? String(r[ci.timeType] || '') : ''
     });
   }
   return results;
@@ -986,4 +1006,11 @@ function pyb_normalizeWeekday_(val) {
   var dayMap = {'月':'Mon','火':'Tue','水':'Wed','木':'Thu','金':'Fri','土':'Sat','日':'Sun',
     'Mon':'Mon','Tue':'Tue','Wed':'Wed','Thu':'Thu','Fri':'Fri','Sat':'Sat','Sun':'Sun'};
   return dayMap[s] || s;
+}
+
+function pyb_normalizeWeekdays_(str) {
+  if (!str) return [];
+  return String(str).split(/[,、\s\/]+/).map(function(s) {
+    return pyb_normalizeWeekday_(s.trim());
+  }).filter(function(s) { return s; });
 }

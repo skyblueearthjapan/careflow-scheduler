@@ -1558,9 +1558,12 @@ class AllocationEngine:
                 if req.latest_min is None:
                     end = pat.end_min if pat.end_min is not None else pat.start_min + (pat.service_min or 60)
                     req.latest_min = end
-                # Set time_type to 時間帯 (flexible window) instead of 固定
+                # Set time_type: prefer pattern's time_type, fallback to 時間帯
                 if not req.time_type:
-                    req.time_type = "時間帯"
+                    if pat.time_type:
+                        req.time_type = pat.time_type
+                    elif pat.start_min is not None:
+                        req.time_type = "時間帯"
             if pat.service_min and req.service_min == 60:
                 req.service_min = pat.service_min
 
@@ -1644,7 +1647,7 @@ class AllocationEngine:
                     ng_staff_ids=list(patient.ng_staff_ids) if patient.ng_staff_ids else [],
                     sex_limit=patient.sex_limit or "",
                     cont_pref=patient.cont_pref or "",
-                    time_type="時間帯" if pat_start is not None else (patient.time_type or ""),
+                    time_type=pat.time_type or ("時間帯" if pat_start is not None else (patient.time_type or "")),
                     earliest_min=pat_start,
                     latest_min=pat_end,
                     change_type="通常",
