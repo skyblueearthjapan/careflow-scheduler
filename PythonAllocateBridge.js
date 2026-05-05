@@ -929,6 +929,12 @@ function pyb_writeAssignmentResults_(ss, tz, assignments) {
     ]);
   }
 
+  // GAS の Date 書込制限（1実行約112件）でレスキュー行（V###-3以降）が日付なしになるのを防ぐため
+  // レスキューエントリを先頭に移動して制限内に収める
+  var rescueRows = rows.filter(function(r) { return /^V\d+-[3-9]$/.test(String(r[0] || '')); });
+  var otherRows  = rows.filter(function(r) { return !/^V\d+-[3-9]$/.test(String(r[0] || '')); });
+  rows = rescueRows.concat(otherRows);
+
   sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 }
 
